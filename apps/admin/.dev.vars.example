@@ -1,0 +1,8 @@
+# Copy to .dev.vars for local provider testing. Never commit a real key.
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-3.7-flash
+
+# Exact comma-separated browser origins. Native iOS/Android requests do not
+# send Origin. Local development already permits http://localhost:8081.
+MOBILE_ALLOWED_ORIGINS=
+RELEASE_VERSION=local

@@ -1,0 +1,92 @@
+import type { DashboardState } from '@/shared/domain';
+
+export const DEMO_STATE: DashboardState = {
+  actor: {
+    id: 'user-admin-demo',
+    name: 'Ana Fernandez',
+    email: 'seedy@sites.test',
+    role: 'system_admin',
+    parishId: null,
+    parishName: 'Vicariate-wide',
+    clergyProfileId: null,
+  },
+  parishes: [
+    { id: 'metropolitan-cathedral', name: 'Metropolitan Cathedral of San Fernando' },
+    { id: 'san-guillermo', name: 'San Guillermo Parish' },
+    { id: 'sanctuario-san-jose', name: 'Sanctuario de San Jose Parish' },
+    { id: 'sta-lucia', name: 'Sta. Lucia Parish' },
+    { id: 'sto-nino', name: 'Sto. Niño Parish' },
+    { id: 'san-isidro-labrador', name: 'San Isidro Labrador Parish' },
+    { id: 'st-joseph', name: 'St. Joseph Parish' },
+    { id: 'our-lady-of-lourdes', name: 'Archdiocesan Shrine of Our Lady of Lourdes' },
+  ],
+  clergyOptions: [
+    { id: 'clergy-dizon', name: 'Msgr. R. Dizon', parishId: 'metropolitan-cathedral' },
+    { id: 'clergy-manalo', name: 'Fr. A. Manalo', parishId: 'san-guillermo' },
+    { id: 'clergy-pineda', name: 'Fr. M. Pineda', parishId: 'sta-lucia' },
+  ],
+  venueOptions: [
+    { id: 'venue-cathedral-main', name: 'Main church', parishId: 'metropolitan-cathedral' },
+    { id: 'venue-sg-main', name: 'Main church', parishId: 'san-guillermo' },
+    { id: 'venue-sg-baptistry', name: 'Baptistry', parishId: 'san-guillermo' },
+    { id: 'venue-sl-main', name: 'Main church', parishId: 'sta-lucia' },
+  ],
+  accessUsers: [
+    { id: 'user-admin-demo', name: 'Ana Fernandez', email: 'seedy@sites.test', role: 'system_admin', parish: 'Vicariate-wide', isActive: true },
+    { id: 'user-clergy-dizon', name: 'Msgr. R. Dizon', email: 'dizon@example.test', role: 'clergy', parish: 'Metropolitan Cathedral of San Fernando', isActive: true },
+  ],
+  appointments: [
+    {
+      id: 'appt-1001', reference: 'PL-2026-1001', parishioner: 'Liza Gomez', service: 'Wedding',
+      parishId: 'metropolitan-cathedral', parish: 'Metropolitan Cathedral of San Fernando', clergy: 'Msgr. R. Dizon',
+      venue: 'Main church', participants: 'Liza Gomez, Marco Gomez', startsAt: '2026-09-18T09:30:00+08:00', endsAt: '2026-09-18T11:00:00+08:00',
+      status: 'documents_pending', verifiedDocuments: 4, requiredDocuments: 6, reviewNote: 'Marriage license and banns remain pending.', conflict: false, version: 1,
+    },
+    {
+      id: 'appt-1002', reference: 'PL-2026-1002', parishioner: 'Ronald Dizon', service: 'Baptism',
+      parishId: 'san-guillermo', parish: 'San Guillermo Parish', clergy: 'Fr. A. Manalo', venue: 'Baptistry', participants: 'Miguel Dizon',
+      startsAt: '2026-09-21T08:00:00+08:00', endsAt: '2026-09-21T09:00:00+08:00', status: 'under_review',
+      verifiedDocuments: 3, requiredDocuments: 4, reviewNote: null, conflict: false, version: 1,
+    },
+    {
+      id: 'appt-1003', reference: 'PL-2026-1003', parishioner: 'Angela Reyes', service: 'Confirmation',
+      parishId: 'sta-lucia', parish: 'Sta. Lucia Parish', clergy: 'Fr. M. Pineda', venue: 'Main church', participants: 'Angela Reyes',
+      startsAt: '2026-09-24T13:30:00+08:00', endsAt: '2026-09-24T14:30:00+08:00', status: 'ready_to_approve',
+      verifiedDocuments: 2, requiredDocuments: 2, reviewNote: null, conflict: false, version: 1,
+    },
+    {
+      id: 'appt-1004', reference: 'PL-2026-1004', parishioner: 'Carla Nunez', service: 'Wedding',
+      parishId: 'metropolitan-cathedral', parish: 'Metropolitan Cathedral of San Fernando', clergy: 'Msgr. R. Dizon',
+      venue: 'Main church', participants: 'Carla Nunez, Paolo Nunez', startsAt: '2026-09-18T10:30:00+08:00', endsAt: '2026-09-18T12:00:00+08:00',
+      status: 'submitted', verifiedDocuments: 0, requiredDocuments: 6, reviewNote: null, conflict: true, version: 1,
+    },
+  ],
+  documents: [
+    { id: 'doc-1', requirementId: 'wedding-license', appointmentId: 'appt-1001', reference: 'PL-2026-1001', parishioner: 'Liza Gomez', service: 'Wedding', requirement: 'Marriage License', fileName: 'marriage-license.pdf', status: 'submitted', reviewNote: null, submittedAt: '2026-08-25T10:15:00+08:00' },
+    { id: 'doc-2', requirementId: 'wedding-banns', appointmentId: 'appt-1001', reference: 'PL-2026-1001', parishioner: 'Liza Gomez', service: 'Wedding', requirement: 'Marriage Banns', fileName: null, status: 'not_submitted', reviewNote: null, submittedAt: null },
+    { id: 'doc-3', requirementId: 'baptism-godparent', appointmentId: 'appt-1002', reference: 'PL-2026-1002', parishioner: 'Ronald Dizon', service: 'Baptism', requirement: 'Godparent qualification form', fileName: 'godparent-form.jpg', status: 'under_review', reviewNote: null, submittedAt: '2026-08-26T09:40:00+08:00' },
+    { id: 'doc-4', requirementId: 'confirmation-baptismal', appointmentId: 'appt-1003', reference: 'PL-2026-1003', parishioner: 'Angela Reyes', service: 'Confirmation', requirement: 'Baptismal Certificate', fileName: 'baptismal-certificate.pdf', status: 'verified', reviewNote: null, submittedAt: '2026-08-22T14:20:00+08:00' },
+  ],
+  queue: [
+    { id: 'queue-16', number: 'A-016', parishId: 'san-guillermo', parish: 'San Guillermo Parish', service: 'Wedding inquiry', parishioner: 'Marites Santos', status: 'serving', priority: 0, issuedAt: '2026-08-26T13:42:00+08:00', calledAt: '2026-08-26T14:04:00+08:00', counter: 'Window 2' },
+    { id: 'queue-17', number: 'A-017', parishId: 'san-guillermo', parish: 'San Guillermo Parish', service: 'Document submission', parishioner: 'Joel Cruz', status: 'waiting', priority: 0, issuedAt: '2026-08-26T13:48:00+08:00', calledAt: null, counter: null },
+    { id: 'queue-18', number: 'A-018', parishId: 'san-guillermo', parish: 'San Guillermo Parish', service: 'Baptism inquiry', parishioner: 'Nina Reyes', status: 'waiting', priority: 0, issuedAt: '2026-08-26T13:55:00+08:00', calledAt: null, counter: null },
+    { id: 'queue-19', number: 'A-019', parishId: 'san-guillermo', parish: 'San Guillermo Parish', service: 'Certificate request', parishioner: 'Paolo Garcia', status: 'waiting', priority: 0, issuedAt: '2026-08-26T14:01:00+08:00', calledAt: null, counter: null },
+  ],
+  announcements: [
+    { id: 'ann-1', title: 'Office hours update', body: 'The parish office will close at 3:00 PM on Friday for a diocesan meeting.', audience: 'San Guillermo Parish', parish: 'San Guillermo Parish', publishedAt: '2026-08-25T16:00:00+08:00', author: 'Ana Fernandez' },
+    { id: 'ann-2', title: 'Confirmation orientation', body: 'Registered candidates and sponsors are invited to the September 12 orientation.', audience: 'All parishioners', parish: 'Vicariate-wide', publishedAt: '2026-08-24T09:30:00+08:00', author: 'Msgr. R. Dizon' },
+  ],
+  records: [
+    { id: 'record-1', type: 'Baptismal', subject: 'Jose Miguel Santos', parish: 'San Guillermo Parish', eventDate: '2019-03-10', reference: 'BAP-SGP-2019-0310-0042', status: 'verified_against_archive' },
+    { id: 'record-2', type: 'Marriage', subject: 'Liza Gomez & Paulo Ramos', parish: 'Metropolitan Cathedral of San Fernando', eventDate: '2022-06-04', reference: 'MAR-MCSF-2022-0604-0018', status: 'verified_against_archive' },
+    { id: 'record-3', type: 'Confirmation', subject: 'Angela Reyes', parish: 'Sta. Lucia Parish', eventDate: '2021-11-20', reference: 'CON-SLP-2021-1120-0086', status: 'working_copy' },
+  ],
+  clergyAssignments: [
+    { id: 'assign-1', clergy: 'Fr. A. Manalo', parish: 'San Guillermo Parish', venue: 'Main church', service: 'Daily Mass', startsAt: '2026-08-27T08:00:00+08:00', endsAt: '2026-08-27T09:00:00+08:00' },
+    { id: 'assign-2', clergy: 'Msgr. R. Dizon', parish: 'Metropolitan Cathedral of San Fernando', venue: 'Main church', service: 'Wedding', startsAt: '2026-09-18T09:30:00+08:00', endsAt: '2026-09-18T11:00:00+08:00' },
+    { id: 'assign-3', clergy: 'Fr. M. Pineda', parish: 'Sta. Lucia Parish', venue: 'Main church', service: 'Confirmation', startsAt: '2026-09-24T13:30:00+08:00', endsAt: '2026-09-24T14:30:00+08:00' },
+  ],
+  generatedAt: '2026-08-26T14:10:00+08:00',
+  source: 'demo',
+};

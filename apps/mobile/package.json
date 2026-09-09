@@ -1,0 +1,46 @@
+{
+  "name": "parishlink-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "main": "node_modules/expo/AppEntry.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "config:check": "expo config --type public",
+    "export:all": "expo export --platform all --output-dir dist-release-check --clear",
+    "release:check": "node ./scripts/release-check.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --configLoader runner",
+    "test:watch": "vitest --configLoader runner"
+  },
+  "dependencies": {
+    "@expo-google-fonts/cormorant-garamond": "^0.4.1",
+    "@expo-google-fonts/inter": "^0.4.2",
+    "@expo/vector-icons": "^15.1.0",
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "expo": "^57.0.17",
+    "expo-crypto": "~57.0.2",
+    "expo-document-picker": "~57.0.1",
+    "expo-font": "~57.0.1",
+    "expo-linear-gradient": "~57.0.1",
+    "expo-secure-store": "~57.0.2",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-web": "^0.21.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.0",
+    "@vitest/coverage-v8": "^3.2.4",
+    "babel-preset-expo": "~57.0.9",
+    "typescript": "~6.0.3",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}
