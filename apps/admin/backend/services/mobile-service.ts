@@ -1,5 +1,8 @@
 import { validCalendarDate, validPhoneNumber, utcTimestamp } from '@/shared/validation';
 import { resourceConflict } from '@/shared/scheduling';
+import { parishionerChangeOptions } from '@/shared/change-policy';
+import type { AppointmentStatus } from '@/shared/domain';
+import { generateDueReminders } from '@/backend/services/reminders';
 import { ensurePublicRuntimeDatabase, getRawDb } from '@/db/runtime';
 import { MobileServiceError, type MobileActor, type MobileProfile } from '@/backend/auth/mobile-auth';
 import { sha256Hex } from '@/backend/security/idempotency';
@@ -31,11 +34,15 @@ export async function loadMobileCatalog() {
   await ensurePublicRuntimeDatabase();
   const db = getRawDb();
   const [parishes, clergy, venues, services, requirements] = await Promise.all([
-    db.prepare(`SELECT id, name FROM parishes WHERE is_active = 1 ORDER BY CASE id
+    db.prepare(`SELECT id, name, address, office_hours AS officeHours, contact_phone AS contactPhone,
+      contact_email AS contactEmail, description FROM parishes WHERE is_active = 1 ORDER BY CASE id
       WHEN 'metropolitan-cathedral' THEN 1 WHEN 'san-guillermo' THEN 2
       WHEN 'sanctuario-san-jose' THEN 3 WHEN 'sta-lucia' THEN 4
       WHEN 'sto-nino' THEN 5 WHEN 'san-isidro-labrador' THEN 6
-      WHEN 'st-joseph' THEN 7 WHEN 'our-lady-of-lourdes' THEN 8 ELSE 99 END`).all<{ id: string; name: string }>(),
+      WHEN 'st-joseph' THEN 7 WHEN 'our-lady-of-lourdes' THEN 8 ELSE 99 END`).all<{
+        id: string; name: string; address: string | null; officeHours: string | null;
+        contactPhone: string | null; contactEmail: string | null; description: string | null;
+      }>(),
     db.prepare(`SELECT id, display_title AS name, home_parish_id AS parishId
       FROM clergy_profiles WHERE is_active = 1 AND EXISTS (SELECT 1 FROM users u WHERE u.id = clergy_profiles.user_id AND u.is_active = 1) ORDER BY display_title`).all<{ id: string; name: string; parishId: string | null }>(),
     db.prepare(`SELECT id, parish_id AS parishId FROM venues WHERE is_active = 1 ORDER BY name`).all<{ id: string; parishId: string }>(),
@@ -53,10 +60,12 @@ export async function loadMobileCatalog() {
     'first-communion': 'sun', 'funeral-mass': 'flame',
   };
   return {
-    parishes: parishes.results.map((parish) => ({
+    parishes: parishes.results.map(({ address, officeHours, contactPhone, contactEmail, description, ...parish }) => ({
       ...parish,
       clergy: clergy.results.filter((item) => item.parishId === parish.id).map(({ id, name }) => ({ id, name })),
       venueId: venues.results.find((item) => item.parishId === parish.id)?.id ?? '',
+      // Public contact details entered by the parish (null until published).
+      contact: { address, officeHours, phone: contactPhone, email: contactEmail, description },
     })),
     services: services.results.map((service) => ({
       id: SERVICE_TO_MOBILE[service.id] ?? service.id,
@@ -88,6 +97,13 @@ type AppointmentRow = {
   status: string;
   submittedAt: string;
   updatedAt: string;
+  pendingKind: 'reschedule' | 'cancel' | null;
+  pendingProposedStartsAt: string | null;
+  pendingReason: string | null;
+  pendingCreatedAt: string | null;
+  lastDecisionKind: 'reschedule' | 'cancel' | null;
+  lastDecisionStatus: 'approved' | 'rejected' | null;
+  lastDecisionNote: string | null;
 };
 
 type DocumentRow = {
@@ -192,6 +208,18 @@ function appointmentDto(row: AppointmentRow, documents: DocumentRow[], participa
     })),
     submittedAt: utcTimestamp(row.submittedAt),
     updatedAt: utcTimestamp(row.updatedAt),
+    /** Raw workflow status for precise labels (the simplified `status` above is kept for older clients). */
+    workflowStatus: row.status,
+    pendingChange: row.pendingKind ? {
+      kind: row.pendingKind,
+      ...(row.pendingProposedStartsAt ? { proposedDate: displayDate(row.pendingProposedStartsAt), proposedTime: displayTime(row.pendingProposedStartsAt) } : {}),
+      reason: row.pendingReason ?? '',
+      requestedAt: utcTimestamp(row.pendingCreatedAt ?? row.updatedAt),
+    } : null,
+    lastChangeDecision: row.lastDecisionKind && row.lastDecisionStatus ? {
+      kind: row.lastDecisionKind, status: row.lastDecisionStatus, ...(row.lastDecisionNote ? { note: row.lastDecisionNote } : {}),
+    } : null,
+    allowedChanges: parishionerChangeOptions(row.status as AppointmentStatus, row.startsAt, Boolean(row.pendingKind)),
   };
 }
 
@@ -201,10 +229,20 @@ async function loadAppointments(userId: string) {
     db.prepare(`SELECT a.id, a.reference, a.parishioner_user_id AS parishionerId,
       a.service_type_id AS serviceTypeId, a.parish_id AS parishId,
       COALESCE(a.clergy_id, '') AS clergyId, COALESCE(a.venue_id, '') AS venueId,
-      a.starts_at AS startsAt, s.duration_minutes AS durationMinutes,
-      s.buffer_before_minutes AS bufferBeforeMinutes, s.buffer_after_minutes AS bufferAfterMinutes,
-      a.status, a.created_at AS submittedAt, a.updated_at AS updatedAt
+      a.starts_at AS startsAt,
+      CAST(ROUND((julianday(a.ends_at) - julianday(a.starts_at)) * 1440) AS INTEGER) AS durationMinutes,
+      COALESCE(a.buffer_before_minutes, s.buffer_before_minutes) AS bufferBeforeMinutes,
+      COALESCE(a.buffer_after_minutes, s.buffer_after_minutes) AS bufferAfterMinutes,
+      a.status, a.created_at AS submittedAt, a.updated_at AS updatedAt,
+      pending.kind AS pendingKind, pending.proposed_starts_at AS pendingProposedStartsAt,
+      pending.reason AS pendingReason, pending.created_at AS pendingCreatedAt,
+      decided.kind AS lastDecisionKind, decided.status AS lastDecisionStatus, decided.decision_note AS lastDecisionNote
       FROM appointments a JOIN service_types s ON s.id = a.service_type_id
+      LEFT JOIN appointment_change_requests pending ON pending.appointment_id = a.id AND pending.status = 'pending'
+      LEFT JOIN appointment_change_requests decided ON decided.id = (
+        SELECT id FROM appointment_change_requests
+        WHERE appointment_id = a.id AND status IN ('approved','rejected')
+        ORDER BY decided_at DESC, id DESC LIMIT 1)
       WHERE a.parishioner_user_id = ? ORDER BY a.starts_at DESC`)
       .bind(userId).all<AppointmentRow>(),
     db.prepare(`SELECT ds.id, ds.appointment_id AS appointmentId,
@@ -299,11 +337,37 @@ async function activeQueueTicket(userId: string) {
   };
 }
 
+/** Published, unexpired announcements for the parishioner's home parish and the whole Vicariate. */
+async function loadAnnouncements(actor: MobileActor) {
+  const result = await getRawDb().prepare(`SELECT an.id, an.title, an.body, an.parish_id AS parishId,
+      COALESCE(p.name, 'Vicariate-wide') AS parishName, an.published_at AS publishedAt
+    FROM announcements an LEFT JOIN parishes p ON p.id = an.parish_id
+    WHERE an.status = 'published' AND (an.parish_id IS NULL OR an.parish_id = ?)
+      AND (an.expires_at IS NULL OR datetime(an.expires_at) > datetime('now'))
+    ORDER BY an.published_at DESC LIMIT 20`).bind(actor.homeParishId).all<{
+      id: string; title: string; body: string; parishId: string | null; parishName: string; publishedAt: string | null;
+    }>();
+  return result.results.map((row) => ({
+    id: row.id,
+    title: row.title,
+    body: row.body,
+    scope: row.parishId ? 'parish' as const : 'vicariate' as const,
+    parishName: row.parishName,
+    publishedAt: utcTimestamp(row.publishedAt ?? ''),
+  }));
+}
+
 export async function loadMobileSnapshot(actor: MobileActor) {
-  const [appointments, notifications, queue] = await Promise.all([
+  // Due reminders are created before notifications are read so they appear immediately.
+  await generateDueReminders({ userId: actor.id }).catch((error) => {
+    recordServerFailure('reminder-generation', error);
+    return 0;
+  });
+  const [appointments, notifications, queue, announcements] = await Promise.all([
     loadAppointments(actor.id),
     loadNotifications(actor.id),
     activeQueueTicket(actor.id),
+    loadAnnouncements(actor),
   ]);
   return {
     source: 'api' as const,
@@ -317,6 +381,7 @@ export async function loadMobileSnapshot(actor: MobileActor) {
     },
     appointments,
     notifications,
+    announcements,
     ...(queue ? { activeQueueTicket: queue } : {}),
   };
 }
@@ -328,7 +393,8 @@ function textField(value: unknown, name: string, max: number): string {
   return result;
 }
 
-function startsAtFromInput(date: string, time: string): Date {
+/** Convert an offered date and slot (Asia/Manila) into an instant; shared by booking and reschedule requests. */
+export function startsAtFromInput(date: string, time: string): Date {
   if (!validCalendarDate(date)) throw new MobileServiceError('Choose a valid appointment date.');
   if (!(MOBILE_TIME_SLOTS as readonly string[]).includes(time.trim())) throw new MobileServiceError('Choose one of the offered appointment times.');
   const match = /^(1[0-2]|0?[1-9]):([0-5]\d)\s*(AM|PM)$/i.exec(time.trim());

@@ -17,7 +17,11 @@ import {
   type QueueTicket,
 } from '@/shared/domain';
 import { allowedAppointmentTransitions } from '@/shared/workflow';
-import { occupiedStart, occupiedEnd, resourceConflict } from '@/shared/scheduling';
+import { TERMINAL_STATUSES } from '@/shared/change-policy';
+import { occupiedStart, occupiedEnd, resourceConflict, NON_BLOCKING_APPOINTMENT_STATUSES_SQL } from '@/shared/scheduling';
+import { canDecideChangeRequest, loadChangeRequests } from '@/backend/services/change-requests';
+import { generateDueReminders } from '@/backend/services/reminders';
+import { recordServerFailure } from '@/backend/observability/server-log';
 import { validCalendarDate } from '@/shared/validation';
 import { scoped } from '@/backend/services/admin-scope';
 import { loadDashboardMetrics } from '@/backend/services/dashboard-metrics';
@@ -221,7 +225,12 @@ export async function loadDashboardState(actor: Actor): Promise<DashboardState> 
         COALESCE(p.name, 'Vicariate-wide') AS parish, u.is_active AS isActive
       FROM users u LEFT JOIN parishes p ON p.id = u.home_parish_id WHERE 0 = 1`);
 
-  const [appointmentsResult, documentsResult, queueResult, announcementsResult, recordsResult, assignmentsResult, parishesResult, clergyOptionsResult, venueOptionsResult, accessUsersResult, metrics] = await Promise.all([
+  // Portal loads also create any due parishioner reminders (local deployment has no scheduler).
+  await generateDueReminders().catch((error) => {
+    recordServerFailure('reminder-generation', error);
+    return 0;
+  });
+  const [appointmentsResult, documentsResult, queueResult, announcementsResult, recordsResult, assignmentsResult, parishesResult, clergyOptionsResult, venueOptionsResult, accessUsersResult, metrics, changeRequests] = await Promise.all([
     appointmentQuery.all<AppointmentRow>(),
     documentQuery.all<AppointmentDocument>(),
     queueQuery.all<QueueTicket>(),
@@ -233,6 +242,7 @@ export async function loadDashboardState(actor: Actor): Promise<DashboardState> 
     venueOptionQuery.all<{ id: string; name: string; parishId: string }>(),
     accessUserQuery.all<{ id: string; name: string; email: string; role: InternalUserRole; parish: string; isActive: number }>(),
     loadDashboardMetrics(actor),
+    loadChangeRequests(actor),
   ]);
 
   const appointments: Appointment[] = appointmentsResult.results.map((row) => ({
@@ -256,6 +266,7 @@ export async function loadDashboardState(actor: Actor): Promise<DashboardState> 
     announcements: announcementsResult.results,
     records: recordsResult.results,
     clergyAssignments: assignmentsResult.results,
+    changeRequests,
     metrics,
     generatedAt: new Date().toISOString(),
     // Local development always runs on seeded synthetic demonstration data.
@@ -445,6 +456,12 @@ async function transitionAppointment(
       WHERE EXISTS (SELECT 1 FROM appointment_events WHERE id = ?)`)
       .bind(crypto.randomUUID(), actor.id, mutation.appointmentId, current.parishId,
         `${current.status} -> ${mutation.status}${reason ? `: ${reason}` : ''}`, eventId),
+    // Closing an appointment also closes any open reschedule/cancellation request for it.
+    db.prepare(`UPDATE appointment_change_requests SET status = 'withdrawn',
+        decision_note = 'Closed because the appointment is now ' || ?, decided_by = ?, decided_at = datetime('now'), updated_at = datetime('now')
+      WHERE appointment_id = ? AND status = 'pending' AND ? IN ${NON_BLOCKING_APPOINTMENT_STATUSES_SQL}
+        AND EXISTS (SELECT 1 FROM appointment_events WHERE id = ?)`)
+      .bind(statusLabel, actor.id, mutation.appointmentId, mutation.status, eventId),
     adminIdempotencyStatement(actor, idempotency, mutation.appointmentId, 'appointment_events', eventId),
   ]);
 
@@ -457,6 +474,147 @@ async function transitionAppointment(
     throw new AdminServiceError('The appointment could not be updated.', 409);
   }
 
+}
+
+type ChangeRequestRow = {
+  id: string;
+  kind: 'reschedule' | 'cancel';
+  requestStatus: string;
+  requestedBy: string;
+  previousStartsAt: string | null;
+  proposedStartsAt: string | null;
+  proposedEndsAt: string | null;
+  reason: string;
+  appointmentId: string;
+  reference: string;
+  parishionerUserId: string;
+  parishId: string;
+  clergyId: string | null;
+  venueId: string | null;
+  appointmentStatus: AppointmentStatus;
+  startsAt: string;
+  bufferBefore: number;
+  bufferAfter: number;
+};
+
+function manilaWhen(iso: string): string {
+  return new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Manila' }).format(new Date(iso));
+}
+
+/**
+ * Decide a parishioner's reschedule or cancellation request.
+ * - Only parish staff of the appointment's parish or the assigned priest may decide.
+ * - Approving a reschedule re-runs the conflict check atomically (excluding the
+ *   appointment itself) and moves the appointment; an approved appointment returns to
+ *   "ready to approve" so the priest re-confirms the new time.
+ * - Approving a cancellation cancels the appointment. Rejections require a note.
+ */
+async function decideChangeRequest(
+  actor: Actor,
+  mutation: Extract<AdminMutation, { action: 'change_request.decide' }>,
+  idempotency: AdminIdempotencyContext,
+): Promise<void> {
+  if (actor.role === 'system_admin') {
+    throw new AdminServiceError('Technical administration does not include scheduling decisions. Parish staff or the assigned priest decide change requests.', 403);
+  }
+  const db = getRawDb();
+  const row = await db.prepare(`SELECT cr.id, cr.kind, cr.status AS requestStatus, cr.requested_by AS requestedBy,
+      cr.previous_starts_at AS previousStartsAt, cr.proposed_starts_at AS proposedStartsAt, cr.proposed_ends_at AS proposedEndsAt,
+      cr.reason, a.id AS appointmentId, a.reference, a.parishioner_user_id AS parishionerUserId, a.parish_id AS parishId,
+      a.clergy_id AS clergyId, a.venue_id AS venueId, a.status AS appointmentStatus, a.starts_at AS startsAt,
+      COALESCE(a.buffer_before_minutes, s.buffer_before_minutes, 0) AS bufferBefore,
+      COALESCE(a.buffer_after_minutes, s.buffer_after_minutes, 0) AS bufferAfter
+    FROM appointment_change_requests cr
+    JOIN appointments a ON a.id = cr.appointment_id
+    JOIN service_types s ON s.id = a.service_type_id
+    WHERE cr.id = ?`).bind(mutation.requestId).first<ChangeRequestRow>();
+  if (!row) throw new AdminServiceError('Change request not found.', 404);
+  if (!canDecideChangeRequest(actor, row)) throw new AdminServiceError('Only parish staff of this parish or the assigned priest can decide this request.', 403);
+  if (row.requestStatus !== 'pending') throw new AdminServiceError('This request was already decided or withdrawn. Refresh to see its outcome.', 409);
+  const note = mutation.note?.trim() ?? '';
+  if (mutation.decision === 'reject' && note.length < 4) throw new AdminServiceError('Give the parishioner a short reason for declining the request.');
+
+  const eventId = crypto.randomUUID();
+  const label = row.kind === 'reschedule' ? 'reschedule' : 'cancellation';
+  const closeRequest = (status: 'approved' | 'rejected') => db.prepare(`UPDATE appointment_change_requests SET status = ?, decided_by = ?,
+      decided_at = datetime('now'), decision_note = ?, updated_at = datetime('now')
+    WHERE id = ? AND status = 'pending' AND EXISTS (SELECT 1 FROM appointment_events WHERE id = ?)`)
+    .bind(status, actor.id, note || null, row.id, eventId);
+  const notify = (title: string, body: string) => db.prepare(`INSERT INTO notifications
+      (id, recipient_user_id, type, title, body, entity_type, entity_id)
+    SELECT ?, ?, 'appointment', ?, ?, 'appointment', ? WHERE EXISTS (SELECT 1 FROM appointment_events WHERE id = ?)`)
+    .bind(crypto.randomUUID(), row.parishionerUserId, title, body.slice(0, 1000), row.appointmentId, eventId);
+  const audit = (detail: string) => db.prepare(`INSERT INTO audit_logs
+      (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+    SELECT ?, ?, ?, 'appointment_change_request', ?, ?, 'success', ? WHERE EXISTS (SELECT 1 FROM appointment_events WHERE id = ?)`)
+    .bind(crypto.randomUUID(), actor.id, `change_request.${mutation.decision}`, row.id, row.parishId, detail.slice(0, 1000), eventId);
+
+  if (mutation.decision === 'reject') {
+    const results = await db.batch([
+      db.prepare(`INSERT INTO appointment_events (id, appointment_id, actor_id, event_type, detail)
+        SELECT ?, ?, ?, 'change_request_rejected', ? WHERE EXISTS (SELECT 1 FROM appointment_change_requests WHERE id = ? AND status = 'pending')`)
+        .bind(eventId, row.appointmentId, actor.id, `${label} request declined: ${note}`, row.id),
+      closeRequest('rejected'),
+      notify(`${row.kind === 'reschedule' ? 'Reschedule' : 'Cancellation'} request declined`,
+        `The parish declined your ${label} request for ${row.reference}. ${note} Your appointment remains as scheduled.`),
+      audit(`${label} rejected: ${note}`),
+      adminIdempotencyStatement(actor, idempotency, row.id, 'appointment_events', eventId),
+    ]);
+    if (Number(results[1]?.meta.changes ?? 0) < 1) throw new AdminServiceError('This request changed in another session. Refresh and try again.', 409);
+    return;
+  }
+
+  if (TERMINAL_STATUSES.includes(row.appointmentStatus)) {
+    throw new AdminServiceError(`The appointment is already ${row.appointmentStatus.replaceAll('_', ' ')}; this request can no longer be approved.`, 409);
+  }
+
+  if (row.kind === 'cancel') {
+    const results = await db.batch([
+      db.prepare(`UPDATE appointments SET status = 'cancelled', review_note = ?, version = version + 1, updated_at = datetime('now')
+        WHERE id = ? AND status NOT IN ${NON_BLOCKING_APPOINTMENT_STATUSES_SQL}`)
+        .bind(`Cancelled at the parishioner's request: ${row.reason}`, row.appointmentId),
+      db.prepare(`INSERT INTO appointment_events (id, appointment_id, actor_id, event_type, from_status, to_status, detail)
+        SELECT ?, ?, ?, 'status_changed', ?, 'cancelled', ? WHERE changes() = 1`)
+        .bind(eventId, row.appointmentId, actor.id, row.appointmentStatus, `Cancellation request approved${note ? `: ${note}` : ''}`),
+      closeRequest('approved'),
+      notify('Cancellation confirmed', `The parish confirmed the cancellation of ${row.reference}.${note ? ` ${note}` : ''}`),
+      audit(`cancellation approved${note ? `: ${note}` : ''}`),
+      adminIdempotencyStatement(actor, idempotency, row.id, 'appointment_events', eventId),
+    ]);
+    if (Number(results[0]?.meta.changes ?? 0) !== 1) throw new AdminServiceError('The appointment changed in another session. Refresh and try again.', 409);
+    return;
+  }
+
+  // Reschedule
+  if (!row.proposedStartsAt || !row.proposedEndsAt || !row.clergyId || !row.venueId) throw new AdminServiceError('This reschedule request is incomplete.', 409);
+  if (new Date(row.proposedStartsAt).getTime() < Date.now() + 60 * 60_000) {
+    throw new AdminServiceError('The proposed time has already passed or is less than an hour away. Decline the request so the parishioner can choose another time.', 409);
+  }
+  const conflict = resourceConflict({
+    blockedStart: new Date(new Date(row.proposedStartsAt).getTime() - Number(row.bufferBefore) * 60_000).toISOString(),
+    blockedEnd: new Date(new Date(row.proposedEndsAt).getTime() + Number(row.bufferAfter) * 60_000).toISOString(),
+    clergyId: row.clergyId, venueId: row.venueId, parishId: row.parishId, excludeAppointmentId: row.appointmentId,
+  });
+  const wasApproved = row.appointmentStatus === 'approved';
+  const nextStatus: AppointmentStatus = wasApproved ? 'ready_to_approve' : row.appointmentStatus;
+  const results = await db.batch([
+    db.prepare(`UPDATE appointments SET starts_at = ?, ends_at = ?, status = ?, version = version + 1, updated_at = datetime('now')
+      WHERE id = ? AND starts_at = ? AND status NOT IN ${NON_BLOCKING_APPOINTMENT_STATUSES_SQL} AND NOT ${conflict.sql}`)
+      .bind(row.proposedStartsAt, row.proposedEndsAt, nextStatus, row.appointmentId, row.previousStartsAt ?? row.startsAt, ...conflict.values),
+    db.prepare(`INSERT INTO appointment_events (id, appointment_id, actor_id, event_type, from_status, to_status, detail)
+      SELECT ?, ?, ?, 'rescheduled', ?, ?, ? WHERE changes() = 1`)
+      .bind(eventId, row.appointmentId, actor.id, row.appointmentStatus, nextStatus,
+        `Moved from ${row.startsAt} to ${row.proposedStartsAt}${note ? `: ${note}` : ''}`),
+    closeRequest('approved'),
+    notify('Reschedule approved', `${row.reference} is now scheduled for ${manilaWhen(row.proposedStartsAt)}.${wasApproved ? ' The priest will re-confirm the new time.' : ''}${note ? ` ${note}` : ''}`),
+    audit(`reschedule approved: ${row.startsAt} -> ${row.proposedStartsAt}${note ? `: ${note}` : ''}`),
+    adminIdempotencyStatement(actor, idempotency, row.id, 'appointment_events', eventId),
+  ]);
+  if (Number(results[0]?.meta.changes ?? 0) !== 1) {
+    const replay = await existingAdminIdempotency(actor, idempotency);
+    if (replay?.requestHash === idempotency.requestHash) return;
+    throw new AdminServiceError('The proposed time is no longer free for this priest or venue, or the appointment changed. Decline the request so the parishioner can choose another time.', 409);
+  }
 }
 
 async function reviewDocument(
@@ -890,5 +1048,7 @@ export async function performAdminMutation(
     case 'venue.create':
       await createVenue(actor, mutation);
       return finishAdminIdempotency(actor, idempotency);
+    case 'change_request.decide':
+      return decideChangeRequest(actor, mutation, idempotency);
   }
 }

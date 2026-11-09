@@ -131,6 +131,16 @@ function parseMutation(value: unknown): AdminMutation {
     case 'user.set_active':
       if (typeof value.isActive !== 'boolean') throw new AdminServiceError('Access state must be active or inactive.');
       return { action, userId: stringField(value.userId, 'User', 100) as string, isActive: value.isActive };
+    case 'change_request.decide': {
+      const decision = stringField(value.decision, 'Decision', 20);
+      if (decision !== 'approve' && decision !== 'reject') throw new AdminServiceError('Choose approve or reject.');
+      return {
+        action,
+        requestId: stringField(value.requestId, 'Request', 100) as string,
+        decision,
+        note: stringField(value.note, 'Decision note', 500, false),
+      };
+    }
     case 'venue.create': {
       const capacity = value.capacity === undefined || value.capacity === null || value.capacity === '' ? undefined : Number(value.capacity);
       if (capacity !== undefined && !Number.isInteger(capacity)) throw new AdminServiceError('Venue capacity must be a whole number.');

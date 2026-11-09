@@ -123,6 +123,34 @@ export type ClergyAssignment = {
 export type AssignmentCursor = { startsAt: string; id: string };
 export type AssignmentPage = { assignments: ClergyAssignment[]; nextCursor: AssignmentCursor | null };
 
+/** A parishioner's reschedule or cancellation request (migration 0007). */
+export type ChangeRequest = {
+  id: string;
+  appointmentId: string;
+  reference: string;
+  parishioner: string;
+  service: string;
+  parishId: string;
+  parish: string;
+  clergy: string;
+  venue: string;
+  kind: 'reschedule' | 'cancel';
+  status: 'pending' | 'approved' | 'rejected' | 'withdrawn';
+  appointmentStatus: AppointmentStatus;
+  currentStartsAt: string;
+  proposedStartsAt: string | null;
+  proposedEndsAt: string | null;
+  reason: string;
+  decisionNote: string | null;
+  decidedBy: string | null;
+  createdAt: string;
+  decidedAt: string | null;
+  /** Whether the signed-in person may decide this request (staff of the parish or the assigned priest). */
+  canDecide: boolean;
+  /** For pending reschedules: whether the proposed time is still free right now. */
+  proposedSlotAvailable: boolean | null;
+};
+
 export type DashboardMetrics = {
   appointmentStatuses: Partial<Record<AppointmentStatus, number>>;
   awaitingDocumentReview: number | null;
@@ -147,6 +175,7 @@ export type DashboardState = {
   announcements: Announcement[];
   records: ParishRecord[];
   clergyAssignments: ClergyAssignment[];
+  changeRequests: ChangeRequest[];
   generatedAt: string;
   source: 'd1' | 'demo';
 };
@@ -164,7 +193,8 @@ export type AdminMutation =
   | { action: 'clergy.assignment.cancel'; assignmentId: string }
   | { action: 'user.provision'; fullName: string; email: string; role: 'parish_staff' | 'clergy'; parishId: string }
   | { action: 'user.set_active'; userId: string; isActive: boolean }
-  | { action: 'venue.create'; parishId: string; name: string; capacity?: number };
+  | { action: 'venue.create'; parishId: string; name: string; capacity?: number }
+  | { action: 'change_request.decide'; requestId: string; decision: 'approve' | 'reject'; note?: string };
 
 export function humanizeStatus(status: string): string {
   return status.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());

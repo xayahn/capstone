@@ -92,6 +92,7 @@ export const DEMO_STATE: DashboardState = {
     { id: 'assign-2', clergy: 'Msgr. R. Dizon', parish: 'Metropolitan Cathedral of San Fernando', venue: 'Main church', service: 'Wedding', startsAt: '2026-09-18T09:30:00+08:00', endsAt: '2026-09-18T11:00:00+08:00' },
     { id: 'assign-3', clergy: 'Fr. M. Pineda', parish: 'Sta. Lucia Parish', venue: 'Main church', service: 'Confirmation', startsAt: '2026-09-24T13:30:00+08:00', endsAt: '2026-09-24T14:30:00+08:00' },
   ],
+  changeRequests: [],
   generatedAt: '2026-08-26T14:10:00+08:00',
   source: 'demo',
 };
