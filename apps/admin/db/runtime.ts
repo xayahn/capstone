@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers';
-import type { ChatGPTUser } from '@/app/chatgpt-auth';
 import { PUSH_SCHEMA_STATEMENTS } from '@/db/push-schema';
 import { ACCOUNT_SCHEMA_STATEMENTS } from '@/db/account-schema';
+import { STAFF_SCHEMA_STATEMENTS } from '@/db/staff-schema';
 
 export function getRawDb(): D1Database {
   if (!env.DB) throw new Error('The ParishLink D1 database binding is unavailable.');
@@ -196,6 +196,7 @@ const schemaStatements = [
   `CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_logs(entity_type, entity_id, created_at)`,
   ...PUSH_SCHEMA_STATEMENTS,
   ...ACCOUNT_SCHEMA_STATEMENTS,
+  ...STAFF_SCHEMA_STATEMENTS,
 ];
 
 const parishes = [
@@ -267,6 +268,8 @@ const EXPECTED_PRODUCTION_TABLES = [
   'queue_tickets',
   'sacramental_records',
   'service_types',
+  'staff_credentials',
+  'staff_sessions',
   'user_parish_memberships',
   'users',
   'venues',
@@ -382,22 +385,58 @@ async function seedCatalog(db: D1Database): Promise<void> {
   await db.batch(statements);
 }
 
-async function bootstrapFirstAdministrator(db: D1Database, user: ChatGPTUser): Promise<void> {
-  const existing = await db.prepare("SELECT COUNT(*) AS count FROM users WHERE role IN ('parish_staff','clergy','system_admin')").first<{ count: number }>();
-  if (Number(existing?.count ?? 0) > 0) return;
-  await db.prepare(`INSERT INTO users
-    (id, external_auth_id, email, full_name, role, home_parish_id, last_login_at)
-    VALUES (?, ?, ?, ?, 'system_admin', NULL, datetime('now'))`)
-    .bind(crypto.randomUUID(), user.userId, user.email.toLowerCase(), user.fullName ?? user.displayName)
-    .run();
+/**
+ * Local demonstration accounts for the internal portal. These are seeded ONLY
+ * when NODE_ENV is not "production" and exist so each role can be demonstrated.
+ * The shared password is published in docs/DEMO_ACCOUNTS.md and must never be
+ * used with real personal data.
+ */
+export const LOCAL_DEMO_STAFF_PASSWORD = 'ParishLink2026!';
+export const LOCAL_DEMO_STAFF_ACCOUNTS = [
+  { userId: 'user-admin-demo', email: 'admin@parishlink.test', role: 'system_admin', label: 'System administrator (vicariate-wide)' },
+  { userId: 'user-staff-cathedral', email: 'staff.cathedral@parishlink.test', role: 'parish_staff', label: 'Parish staff, Metropolitan Cathedral' },
+  { userId: 'user-staff-sanguillermo', email: 'staff.sanguillermo@parishlink.test', role: 'parish_staff', label: 'Parish staff, San Guillermo Parish' },
+  { userId: 'user-clergy-dizon', email: 'dizon@example.test', role: 'clergy', label: 'Clergy, Msgr. R. Dizon (Metropolitan Cathedral)' },
+  { userId: 'user-clergy-manalo', email: 'manalo@example.test', role: 'clergy', label: 'Clergy, Fr. A. Manalo (San Guillermo Parish)' },
+  { userId: 'user-clergy-pineda', email: 'pineda@example.test', role: 'clergy', label: 'Clergy, Fr. M. Pineda (Sta. Lucia Parish)' },
+] as const;
+
+async function pbkdf2Hex(password: string, salt: string, iterations: number): Promise<string> {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode(salt), iterations }, key, 256);
+  return Array.from(new Uint8Array(bits), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-async function seedLocalDemo(db: D1Database, user: ChatGPTUser): Promise<void> {
+async function seedLocalDemoStaffCredentials(db: D1Database): Promise<void> {
+  const ids = LOCAL_DEMO_STAFF_ACCOUNTS.map((account) => account.userId);
+  const existing = await db.prepare(`SELECT user_id AS userId FROM staff_credentials
+    WHERE user_id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all<{ userId: string }>();
+  const present = new Set(existing.results.map((row) => row.userId));
+  const statements: D1PreparedStatement[] = [];
+  for (const account of LOCAL_DEMO_STAFF_ACCOUNTS) {
+    if (present.has(account.userId)) continue;
+    const saltBytes = new Uint8Array(16);
+    crypto.getRandomValues(saltBytes);
+    const salt = Array.from(saltBytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    const hash = await pbkdf2Hex(LOCAL_DEMO_STAFF_PASSWORD, salt, 210_000);
+    statements.push(db.prepare(`INSERT OR IGNORE INTO staff_credentials
+      (user_id, password_hash, password_salt, password_iterations, must_change_password)
+      SELECT ?, ?, ?, 210000, 0 WHERE EXISTS (SELECT 1 FROM users WHERE id = ?)`)
+      .bind(account.userId, hash, salt, account.userId));
+  }
+  if (statements.length > 0) await db.batch(statements);
+}
+
+async function seedLocalDemo(db: D1Database): Promise<void> {
   const seeds: D1PreparedStatement[] = [
+    // Earlier local builds used the hosted ChatGPT bridge identity for this account.
+    db.prepare(`UPDATE users SET email = 'admin@parishlink.test', external_auth_id = NULL
+      WHERE id = 'user-admin-demo' AND email = 'seedy@sites.test'`),
     db.prepare(`INSERT OR IGNORE INTO users
-      (id, external_auth_id, email, full_name, role, home_parish_id, last_login_at)
-      VALUES ('user-admin-demo', ?, ?, ?, 'system_admin', NULL, datetime('now'))`)
-      .bind(user.userId, user.email.toLowerCase(), user.fullName ?? 'Ana Fernandez'),
+      (id, email, full_name, role, home_parish_id)
+      VALUES ('user-admin-demo', 'admin@parishlink.test', 'Ana Fernandez', 'system_admin', NULL)`),
+    db.prepare("INSERT OR IGNORE INTO users (id,email,full_name,role,home_parish_id) VALUES ('user-staff-cathedral','staff.cathedral@parishlink.test','Maria Santos','parish_staff','metropolitan-cathedral')"),
+    db.prepare("INSERT OR IGNORE INTO users (id,email,full_name,role,home_parish_id) VALUES ('user-staff-sanguillermo','staff.sanguillermo@parishlink.test','Jose Bautista','parish_staff','san-guillermo')"),
     db.prepare("INSERT OR IGNORE INTO users (id,email,full_name,role,home_parish_id) VALUES ('parishioner-1','liza@example.test','Liza Gomez','parishioner','metropolitan-cathedral')"),
     db.prepare("INSERT OR IGNORE INTO users (id,email,full_name,role,home_parish_id) VALUES ('parishioner-2','ronald@example.test','Ronald Dizon','parishioner','san-guillermo')"),
     db.prepare("INSERT OR IGNORE INTO users (id,email,full_name,role,home_parish_id) VALUES ('parishioner-3','angela@example.test','Angela Reyes','parishioner','sta-lucia')"),
@@ -459,21 +498,16 @@ async function seedLocalDemo(db: D1Database, user: ChatGPTUser): Promise<void> {
     db.prepare("INSERT OR IGNORE INTO clergy_assignments (id,clergy_id,clergy_name,parish_id,venue_id,venue_name,service,starts_at,ends_at,created_by) VALUES ('assign-3','clergy-pineda','Fr. M. Pineda','sta-lucia','venue-sl-main','Main church','Confirmation','2026-09-24T13:30:00+08:00','2026-09-24T14:30:00+08:00','user-admin-demo')"),
   ];
   await db.batch(seeds);
+  await seedLocalDemoStaffCredentials(db);
 }
 
-export async function ensureRuntimeDatabase(user: ChatGPTUser): Promise<void> {
-  const db = getRawDb();
-  if (process.env.NODE_ENV === 'production') {
-    await assertProductionSchema(db);
-    return;
-  }
-
-  await ensureSchema(db);
-  await ensureDevelopmentReleaseSchema(db);
-  await seedCatalog(db);
-  if (user.email.endsWith('@sites.test')) await seedLocalDemo(db, user);
-  else await bootstrapFirstAdministrator(db, user);
-  await db.prepare('PRAGMA optimize').run();
+/**
+ * Prepare the database for a request. In production the migrated schema is
+ * verified and never mutated. In local development the schema, catalogue and
+ * synthetic demonstration data (including demo staff accounts) are created.
+ */
+export async function ensureRuntimeDatabase(): Promise<void> {
+  return ensurePublicRuntimeDatabase();
 }
 
 export async function ensurePublicRuntimeDatabase(): Promise<void> {
@@ -487,12 +521,7 @@ export async function ensurePublicRuntimeDatabase(): Promise<void> {
     await ensureSchema(db);
     await ensureDevelopmentReleaseSchema(db);
     await seedCatalog(db);
-    await seedLocalDemo(db, {
-      userId: 'local-public-bootstrap',
-      displayName: 'Local ParishLink Administrator',
-      email: 'seedy@sites.test',
-      fullName: 'Local ParishLink Administrator',
-    });
+    await seedLocalDemo(db);
     await db.prepare('PRAGMA optimize').run();
   })().catch(error => { publicReady = null; throw error; });
   await publicReady;

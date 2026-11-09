@@ -52,7 +52,7 @@ DEC-001, DEC-004 through DEC-008, and DEC-014 in [`ASSUMPTIONS_GAPS.md`](ASSUMPT
 - Rotate refresh/session tokens; store mobile secrets in OS-protected storage and browser sessions in secure, `HttpOnly`, appropriate `SameSite` cookies.
 - Rate-limit authentication/recovery and use generic responses that do not reveal account or appointment existence.
 - Parishioner email challenges must remain hashed, newest-only, single-use, session-bound where verification requires it, short-lived, attempt-limited, and unavailable until the configured provider accepts the send request. Never log or retry a plaintext code.
-- A parishioner password reset revokes all mobile sessions and push bindings. It never signs the client in automatically. Internal staff/clergy/system-administrator recovery remains in the managed SSO process and must not be routed through the public parishioner endpoint.
+- A parishioner password reset revokes all mobile sessions and push bindings. It never signs the client in automatically. Internal staff/clergy/system-administrator accounts use a separate email/password sign-in; a forgotten internal password is reset only by a system administrator issuing a one-time temporary password (see [STAFF_AUTHENTICATION.md](STAFF_AUTHENTICATION.md)). Internal recovery is never routed through the public parishioner endpoint.
 - Email-verification state is returned by the server, but appointment enforcement is not yet implemented. Do not claim verified-email booking protection until the policy, legacy-account migration, support exception, and negative tests are approved.
 - No shared admin accounts and no biometric authentication feature. Device biometrics may only unlock OS-secured credentials if later approved; the app must not collect biometric templates.
 
@@ -159,7 +159,7 @@ Operational steps are in [`OPERATIONS_RUNBOOK.md`](OPERATIONS_RUNBOOK.md).
 - Client bundles and logs contain no secret or private fixture.
 - Critical/high findings closed; medium residual risks have owner/date/acceptance.
 - Backup restore, credential rotation, provider outage, and incident exercise completed in staging.
-- Account email sender/domain and Resend configuration accepted in staging; generic reset behavior, code expiry/attempt limits, session/push revocation, and no-delivery/provider-failure paths evidenced. Internal SSO recovery is tested separately.
+- Account email sender/domain and Resend configuration accepted in staging; generic reset behavior, code expiry/attempt limits, session/push revocation, and no-delivery/provider-failure paths evidenced. Internal temporary-password recovery is tested separately (tests/staff-auth.test.ts).
 - Physical native acceptance follows [`NATIVE_ACCEPTANCE.md`](NATIVE_ACCEPTANCE.md); an unsigned export or provider credential assignment is not device evidence.
 - Access review and production administrator list approved.
 - Monitoring, alert routing, audit retention, and emergency contacts confirmed.

@@ -54,7 +54,9 @@ function load(file) {
   const localRequire = (name) => {
     if (name === '@/db/runtime') return { getRawDb:() => db, ensureRuntimeDatabase:async()=>{}, ensurePublicRuntimeDatabase:async()=>{} };
     if (name === 'cloudflare:workers') return { env };
-    if (name === 'next/headers') return { headers:async()=>new Headers(identity ? { 'oai-authenticated-user-id':identity.userId,'oai-authenticated-user-email':identity.email } : {}) };
+    // Internal routes resolve the signed-in person from the ParishLink staff session cookie.
+    if (name === '@/backend/auth/staff-session') return { getStaffUser:async()=>identity ? { ...identity, fullName:identity.email, displayName:identity.email, role:'parish_staff', sessionId:'audit-session', mustChangePassword:false } : null };
+    if (name === 'next/headers') return { headers:async()=>new Headers() };
     if (name === 'next/navigation') return { redirect:(p)=>{throw new Error('redirect '+p);} };
     if (name.startsWith('@/')) return load(resolve(root, name.slice(2)+'.ts'));
     return require(name);
@@ -157,7 +159,7 @@ try {
   record('clergy and technical admin cannot read private sacramental records',states.slice(2).map(s=>s.records.length),[0,0,0],states.slice(2).every(s=>s.records.length===0));
   const wrongWrite=await mutate(otherStaff,{action:'document.review',documentId:doc.id,status:'verified',expectedSha256:originalDoc.sha256});
   record('wrong-parish review denied',wrongWrite.status,403,wrongWrite.status===403);
-  identity={userId:'audit-admin-identity',email:admin.email};
+  identity={userId:admin.id,email:admin.email};
   const downloaded=await downloadRoute.GET(new Request('http://localhost'),{params:Promise.resolve({id:doc.id})});
   record('technical admin private download denied',downloaded.status,403,downloaded.status===403);
   const memberships=sql.prepare("PRAGMA foreign_key_list('appointments')").all();
@@ -281,7 +283,7 @@ try {
   identity=null;
   const anonymousSearch=await recordRoute.POST(searchRequest());
   record('record search requires authentication',anonymousSearch.status,401,anonymousSearch.status===401);
-  identity={userId:'audit-staff-identity',email:staff.email};
+  identity={userId:staff.id,email:staff.email};
   const searched=await recordRoute.POST(searchRequest()),searchedBody=await searched.json();
   record('protected record search route returns one page',{status:searched.status,count:searchedBody.records?.length},'200 and 25',searched.status===200&&searchedBody.records.length===25);
   const crossOriginSearch=await recordRoute.POST(new Request('http://localhost/api/admin/records',{method:'POST',headers:{Origin:'https://untrusted.example','Content-Type':'application/json'},body:'{}'}));
@@ -342,7 +344,7 @@ try {
   identity=null;
   const anonymousSchedule=await assignmentRoute.POST(scheduleRequest());
   record('schedule search requires authentication',anonymousSchedule.status,401,anonymousSchedule.status===401);
-  identity={userId:'audit-staff-identity',email:staff.email};
+  identity={userId:staff.id,email:staff.email};
   const scheduleResponse=await assignmentRoute.POST(scheduleRequest()),scheduleBody=await scheduleResponse.json();
   record('schedule route serves a bounded private page',{status:scheduleResponse.status,count:scheduleBody.assignments?.length,cache:scheduleResponse.headers.get('Cache-Control')},'200, 25, no-store',scheduleResponse.status===200&&scheduleBody.assignments.length===25&&scheduleResponse.headers.get('Cache-Control').includes('no-store'));
   const crossOriginSchedule=await assignmentRoute.POST(scheduleRequest('https://untrusted.example'));

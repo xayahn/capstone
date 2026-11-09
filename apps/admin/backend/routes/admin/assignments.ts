@@ -1,4 +1,4 @@
-import { getChatGPTUser } from '@/app/chatgpt-auth';
+import { getStaffUser } from '@/backend/auth/staff-session';
 import { AdminServiceError, resolveActor } from '@/backend/services/admin-service';
 import { searchClergyAssignments } from '@/backend/services/assignment-search-service';
 import { readSmallJson, RequestBodyError } from '@/backend/http/small-json';
@@ -13,7 +13,7 @@ const json = (body: unknown, status = 200) => Response.json(body, {
 export async function POST(request: Request): Promise<Response> {
   try {
     if (request.headers.get('origin') !== new URL(request.url).origin) throw new AdminServiceError('The request origin could not be verified.', 403);
-    const identity = await getChatGPTUser();
+    const identity = await getStaffUser();
     if (!identity) throw new AdminServiceError('Sign in to continue.', 401);
     return json(await searchClergyAssignments(await resolveActor(identity), await readSmallJson(request)));
   } catch (error) {

@@ -55,7 +55,7 @@ Clients send the selected platform's secure session credential. The backend deri
 
 ### Implemented parishioner recovery and email verification
 
-These routes apply only to mobile parishioner credentials. Internal parish staff, clergy, and system-administrator recovery remains a separate managed SSO/identity-provider process.
+These routes apply only to mobile parishioner credentials. Internal parish staff, clergy, and system-administrator sign-in and recovery use the separate `/api/admin/auth/*` endpoints documented in [STAFF_AUTHENTICATION.md](STAFF_AUTHENTICATION.md).
 
 | Method/path | Request | Success | Important behavior |
 |---|---|---|---|

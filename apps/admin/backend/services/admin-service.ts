@@ -1,4 +1,4 @@
-import type { ChatGPTUser } from '@/app/chatgpt-auth';
+import type { StaffIdentity } from '@/backend/auth/staff-auth';
 import { ensureRuntimeDatabase, getRawDb } from '@/db/runtime';
 import { sha256Hex } from '@/backend/security/idempotency';
 import {
@@ -61,8 +61,14 @@ type AppointmentAccessRow = {
   version: number;
 };
 
-export async function resolveActor(identity: ChatGPTUser): Promise<Actor> {
-  await ensureRuntimeDatabase(identity);
+/** Minimal identity needed to resolve an actor; produced by the staff session cookie. */
+export type ActorIdentity = Pick<StaffIdentity, 'userId' | 'email' | 'mustChangePassword'>;
+
+export async function resolveActor(identity: ActorIdentity): Promise<Actor> {
+  if (identity.mustChangePassword) {
+    throw new AdminServiceError('Change your temporary password before using the portal.', 403);
+  }
+  await ensureRuntimeDatabase();
   const db = getRawDb();
   const row = await db.prepare(`SELECT
       u.id AS id, u.full_name AS fullName, u.email AS email, u.role AS role,
@@ -71,10 +77,9 @@ export async function resolveActor(identity: ChatGPTUser): Promise<Actor> {
     FROM users u
     LEFT JOIN parishes p ON p.id = u.home_parish_id
     LEFT JOIN clergy_profiles cp ON cp.user_id = u.id AND cp.is_active = 1
-    WHERE u.external_auth_id = ? OR (u.external_auth_id IS NULL AND lower(u.email) = lower(?))
-    ORDER BY CASE WHEN u.external_auth_id = ? THEN 0 ELSE 1 END
+    WHERE u.id = ?
     LIMIT 1`)
-    .bind(identity.userId, identity.email, identity.userId)
+    .bind(identity.userId)
     .first<ActorRow>();
 
   if (!row || !row.isActive) throw new AdminServiceError('Your ParishLink access is inactive or has not been provisioned.', 403);
@@ -89,11 +94,6 @@ export async function resolveActor(identity: ChatGPTUser): Promise<Actor> {
     throw new AdminServiceError('The signed-in identity does not match the provisioned account.', 403);
   }
 
-  const bound = await db.prepare(`UPDATE users SET external_auth_id = ?, last_login_at = datetime('now'),
-    updated_at = datetime('now') WHERE id = ? AND (external_auth_id IS NULL OR external_auth_id = ?)`)
-    .bind(identity.userId, row.id, identity.userId).run();
-  if (Number(bound.meta.changes) !== 1) throw new AdminServiceError('The account is bound to a different identity.', 403);
-
   return {
     id: row.id,
     name: row.fullName,
@@ -105,7 +105,7 @@ export async function resolveActor(identity: ChatGPTUser): Promise<Actor> {
   };
 }
 
-export async function loadDashboardState(actor: Actor, sourceEmail: string): Promise<DashboardState> {
+export async function loadDashboardState(actor: Actor): Promise<DashboardState> {
   const db = getRawDb();
   const appointmentScope = scoped('a', actor, true);
   const parishScope = scoped('q', actor);
@@ -258,7 +258,8 @@ export async function loadDashboardState(actor: Actor, sourceEmail: string): Pro
     clergyAssignments: assignmentsResult.results,
     metrics,
     generatedAt: new Date().toISOString(),
-    source: sourceEmail.endsWith('@sites.test') ? 'demo' : 'd1',
+    // Local development always runs on seeded synthetic demonstration data.
+    source: process.env.NODE_ENV === 'production' ? 'd1' : 'demo',
   };
 }
 
@@ -829,8 +830,13 @@ async function setUserActive(actor: Actor, mutation: Extract<AdminMutation, { ac
     .first<{ id: string; parishId: string | null; role: string; isActive: number }>();
   if (!target) throw new AdminServiceError('Internal user not found.', 404);
   if (Boolean(target.isActive) === mutation.isActive) throw new AdminServiceError('That access state is already set.', 409);
-  await getRawDb().prepare(`UPDATE users SET is_active = ?, updated_at = datetime('now') WHERE id = ?`)
-    .bind(mutation.isActive ? 1 : 0, target.id).run();
+  await getRawDb().batch([
+    getRawDb().prepare(`UPDATE users SET is_active = ?, updated_at = datetime('now') WHERE id = ?`)
+      .bind(mutation.isActive ? 1 : 0, target.id),
+    // Deactivation ends every open internal portal session for that person immediately.
+    getRawDb().prepare(`UPDATE staff_sessions SET revoked_at = datetime('now')
+      WHERE user_id = ? AND revoked_at IS NULL AND ? = 0`).bind(target.id, mutation.isActive ? 1 : 0),
+  ]);
   await writeAudit(actor, 'user.set_active', 'user', target.id, target.parishId, 'success', mutation.isActive ? 'Access activated' : 'Access deactivated');
 }
 

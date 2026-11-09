@@ -1,4 +1,4 @@
-import { getChatGPTUser } from '@/app/chatgpt-auth';
+import { getStaffUser } from '@/backend/auth/staff-session';
 import { AdminServiceError, resolveActor } from '@/backend/services/admin-service';
 import { MobileServiceError } from '@/backend/auth/mobile-auth';
 import { getRawDb } from '@/db/runtime';
@@ -9,7 +9,7 @@ const json = (body: unknown, status = 200) => Response.json(body, { status, head
 export async function POST(request: Request): Promise<Response> {
   try {
     if (request.headers.get('origin') !== new URL(request.url).origin) throw new AdminServiceError('The request origin could not be verified.', 403);
-    const identity = await getChatGPTUser();
+    const identity = await getStaffUser();
     if (!identity) throw new AdminServiceError('Sign in to continue.', 401);
     const actor = await resolveActor(identity);
     if (actor.role !== 'parish_staff' || !actor.parishId) throw new AdminServiceError('Document assistance requires assigned parish staff access.', 403);

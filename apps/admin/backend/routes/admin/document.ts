@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { getChatGPTUser } from '@/app/chatgpt-auth';
+import { getStaffUser } from '@/backend/auth/staff-session';
 import { AdminServiceError, resolveActor } from '@/backend/services/admin-service';
 import { getRawDb } from '@/db/runtime';
 import { recordServerFailure } from '@/backend/observability/server-log';
@@ -22,7 +22,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   try {
-    const identity = await getChatGPTUser();
+    const identity = await getStaffUser();
     if (!identity) throw new AdminServiceError('Sign in to continue.', 401);
     const actor = await resolveActor(identity);
     if (!env.FILES) throw new AdminServiceError('Private document storage is unavailable.', 503);

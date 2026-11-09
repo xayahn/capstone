@@ -26,7 +26,7 @@ const expectedTables = [
   'clergy_profiles', 'document_requirements', 'document_submissions', 'evaluation_responses',
   'idempotency_keys', 'mobile_credentials', 'mobile_email_challenges', 'mobile_rate_limits', 'mobile_sessions',
   'notifications', 'parishes', 'push_deliveries', 'push_devices', 'queue_tickets', 'sacramental_records', 'service_types',
-  'user_parish_memberships', 'users', 'venues',
+  'staff_credentials', 'staff_sessions', 'user_parish_memberships', 'users', 'venues',
 ];
 const actualTables = database.prepare(`SELECT name FROM sqlite_schema
   WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`).all().map((row) => String(row.name));
@@ -54,6 +54,7 @@ for (const index of [
   'idx_push_deliveries_due',
   'idx_mobile_email_challenges_user_purpose',
   'idx_mobile_email_challenges_expiry',
+  'idx_staff_sessions_user_expiry',
 ]) {
   if (!indexNames.has(index)) throw new Error(`Required migration index is missing: ${index}`);
 }

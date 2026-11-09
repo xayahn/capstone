@@ -315,3 +315,22 @@ button:disabled { cursor: not-allowed; opacity: .52; }
   .schedule-search > button { width: 100%; }
   .assignment-actions { max-width: 100%; }
 }
+
+/* Internal portal sign-in and password screens */
+.signin-shell { display: grid; place-items: center; min-height: 100vh; padding: 32px 16px; }
+.signin-card { display: grid; gap: 14px; width: min(100%, 460px); padding: 34px 30px; text-align: center; background: var(--card); border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow); }
+.signin-card h1 { margin: 0; font-size: 34px; line-height: 1.1; }
+.signin-card p { margin: 0; color: var(--ink-soft); line-height: 1.55; }
+.signin-card small { color: var(--ink-soft); line-height: 1.5; }
+.brand-seal.large { width: 68px; height: 68px; margin: 0 auto; font-size: 22px; }
+.signin-form { text-align: left; }
+.signin-button { width: 100%; justify-content: center; }
+.signin-secondary-actions { display: flex; justify-content: center; gap: 18px; }
+.alert.error { border: 1px solid #d4a17e; color: var(--red); background: var(--red-soft); }
+.demo-accounts { padding: 12px 14px; text-align: left; border: 1px dashed var(--line); border-radius: 12px; font-size: 13px; }
+.demo-accounts summary { cursor: pointer; font-weight: 800; color: var(--leather); }
+.demo-accounts ul { display: grid; gap: 6px; margin: 10px 0 0; padding-left: 18px; }
+.demo-accounts code { padding: 2px 6px; border-radius: 6px; background: var(--gold-soft); }
+button.text-link, button.signout-link { cursor: pointer; background: none; border: 0; padding: 0; font: inherit; }
+button.signout-link { min-height: 44px; padding: 0 13px; border: 1px solid var(--line); border-radius: 12px; background: rgb(251 246 231 / 80%); font-size: 13px; font-weight: 800; color: var(--leather); }
+.access-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }

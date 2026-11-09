@@ -18,7 +18,6 @@ ParishLink/
 │       │   ├── api/                    Thin URL-to-backend route adapters
 │       │   ├── page.tsx                Admin page entrypoint
 │       │   ├── layout.tsx              Web document and metadata entrypoint
-│       │   └── chatgpt-auth.ts         Platform authentication adapter
 │       ├── frontend/
 │       │   ├── components/             Admin UI and sign-in presentation
 │       │   └── styles/                 Admin design system and global styles

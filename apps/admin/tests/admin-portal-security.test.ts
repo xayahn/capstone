@@ -65,7 +65,8 @@ describe('admin private-screen session boundaries', () => {
     expect(view()).toContain('We could not open the portal');
     expect(view()).not.toContain('PRIVATE ACTOR');
     expect(renderer!.root.findAllByType('nav')).toHaveLength(0);
-    expect(renderer!.root.findByProps({ href: '/signout' }).children).toContain('Sign in again');
+    // After access is lost the only way forward is a fresh sign-in (POST sign-out, then the sign-in page).
+    expect(renderer!.root.findAllByType('button').some(node => node.children.includes('Sign in again'))).toBe(true);
     respond = healthy;
     await click('Try again');
     await click('Announcements');

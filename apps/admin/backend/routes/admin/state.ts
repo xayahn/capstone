@@ -1,4 +1,4 @@
-import { getChatGPTUser } from '@/app/chatgpt-auth';
+import { getStaffUser } from '@/backend/auth/staff-session';
 import { AdminServiceError, loadDashboardState, performAdminMutation, resolveActor } from '@/backend/services/admin-service';
 import { recordServerFailure } from '@/backend/observability/server-log';
 import { validIdempotencyKey } from '@/backend/security/idempotency';
@@ -147,15 +147,15 @@ function parseMutation(value: unknown): AdminMutation {
 }
 
 async function actorForRequest() {
-  const identity = await getChatGPTUser();
+  const identity = await getStaffUser();
   if (!identity) throw new AdminServiceError('Sign in to continue.', 401);
   return { identity, actor: await resolveActor(identity) };
 }
 
 export async function GET(): Promise<Response> {
   try {
-    const { identity, actor } = await actorForRequest();
-    return json(await loadDashboardState(actor, identity.email));
+    const { actor } = await actorForRequest();
+    return json(await loadDashboardState(actor));
   } catch (error) {
     if (error instanceof AdminServiceError) return json({ error: error.message }, error.status);
     const requestId = recordServerFailure('admin-state-read', error);
