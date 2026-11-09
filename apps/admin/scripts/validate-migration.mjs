@@ -24,8 +24,8 @@ const expectedTables = [
   'announcements', 'appointment_events', 'appointment_participants', 'appointments',
   'audit_logs', 'availability_blocks', 'chatbot_messages', 'clergy_assignments',
   'clergy_profiles', 'document_requirements', 'document_submissions', 'evaluation_responses',
-  'idempotency_keys', 'mobile_credentials', 'mobile_rate_limits', 'mobile_sessions',
-  'notifications', 'parishes', 'queue_tickets', 'sacramental_records', 'service_types',
+  'idempotency_keys', 'mobile_credentials', 'mobile_email_challenges', 'mobile_rate_limits', 'mobile_sessions',
+  'notifications', 'parishes', 'push_deliveries', 'push_devices', 'queue_tickets', 'sacramental_records', 'service_types',
   'user_parish_memberships', 'users', 'venues',
 ];
 const actualTables = database.prepare(`SELECT name FROM sqlite_schema
@@ -46,9 +46,26 @@ for (const index of [
   'idx_queue_parish_status_priority',
   'idx_idempotency_actor_scope_key',
   'idx_idempotency_expiry',
+  'idx_sacramental_records_parish_date_id',
+  'idx_assignments_parish_page',
+  'idx_assignments_clergy_page',
+  'idx_assignments_all_page',
+  'idx_push_devices_user',
+  'idx_push_deliveries_due',
+  'idx_mobile_email_challenges_user_purpose',
+  'idx_mobile_email_challenges_expiry',
 ]) {
   if (!indexNames.has(index)) throw new Error(`Required migration index is missing: ${index}`);
 }
+
+if (!database.prepare("SELECT name FROM sqlite_schema WHERE type='trigger' AND name='notifications_enqueue_push'").get()) {
+  throw new Error('The atomic notification push trigger is missing.');
+}
+for (const trigger of ['mobile_password_invalidate_challenges', 'mobile_identity_invalidate_challenges']) {
+  if (!database.prepare("SELECT name FROM sqlite_schema WHERE type='trigger' AND name=?").get(trigger)) throw new Error(`Required account safety trigger is missing: ${trigger}`);
+}
+const credentialColumns = new Set(database.prepare("PRAGMA table_info('mobile_credentials')").all().map(row => String(row.name)));
+if (!credentialColumns.has('auth_version') || !credentialColumns.has('email_verified_at')) throw new Error('Account lifecycle credential columns are missing.');
 
 database.close();
 process.stdout.write(`Migration chain valid: ${migrationFiles.length} files, ${actualTables.length} tables, ${indexNames.size} indexes\n`);

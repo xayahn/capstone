@@ -19,12 +19,30 @@ Screens can vary slightly by release. A feature that is disabled pending parish 
 ## 3. Sign in and profile
 
 1. Open ParishLink and choose the approved sign-in or registration method.
-2. Complete verification and review the privacy notice.
+2. Review the privacy notice and create/sign in to your parishioner account. A new account begins as **Not verified** until its email code is confirmed.
 3. Enter only the required profile/contact information.
 4. Choose notification preferences. In-app notifications remain available; push notifications require device permission and can be revoked.
 5. To sign out, open the account/profile area and choose **Sign out**. If a device is lost, use account recovery or contact the approved support channel to revoke access.
 
 Never share a one-time code with a person claiming to be support.
+
+To verify the signed-in email:
+
+1. Open **More > Profile & settings** and find **Email security**.
+2. Choose **Send verification code**. An accepted request does not prove inbox delivery; check the account inbox and spam folder.
+3. Enter the newest 12-character code and choose **Confirm email address**. The code expires after 15 minutes, is single-use, and stops working after five wrong attempts.
+4. Confirm that the server-backed badge changes to **Verified**. If the result was interrupted, refresh the profile before requesting another code.
+
+Legacy/local accounts can still show **Not verified**. The current implementation reports that state but does not yet block appointment booking on it. Do not treat that temporary behavior as a permanent parish policy.
+
+To recover a forgotten parishioner password:
+
+1. On the API-connected sign-in screen, choose **Forgot password?** and enter the sign-in email.
+2. ParishLink intentionally shows the same accepted response whether or not an eligible account exists. It never confirms account existence.
+3. If an email arrives, enter the newest code, a new 12–128 character password with uppercase and lowercase letters plus a number, and the matching confirmation.
+4. After **Reset confirmed**, return to sign-in and enter the new password manually. Every prior mobile session and push-device binding has been revoked, so re-enable push on trusted devices if/when native push is released.
+
+The current local environment cannot send these messages because `MAIL_ENABLED`, `MAIL_DELIVERY_VERIFIED`, `RESEND_API_KEY`, and `MAIL_FROM` are unavailable. A `503`/delivery-unavailable message is expected locally and is not evidence that an email was attempted or delivered. Internal parish staff, clergy, and system administrators use their separately governed SSO recovery path; they do not use the parishioner reset form. See [`ACCOUNT_RECOVERY.md`](ACCOUNT_RECOVERY.md).
 
 ## 4. Explore parishes and services
 
@@ -152,6 +170,8 @@ Do not type document numbers, credentials, private record details, or unnecessar
 | Push missing | Check in-app notifications, device permission, and connection; appointment screen is authoritative |
 | Queue estimate unavailable | Keep the ticket/status; ask parish staff rather than guessing |
 | Assistant unavailable/uncertain | Use approved FAQ/parish contact; other app functions should remain available |
+| Verification/reset code does not arrive | An accepted request is not delivery proof. Check the correct inbox/spam folder, wait for the configured service window, then request one new code; only the newest code works. If account email is reported unavailable, use the approved parish support path. |
+| Reset result is interrupted | Try one manual sign-in with the new password before requesting another code. Never allow the client or support staff to retry the password change automatically. |
 | Wrong data or suspicious access | Stop sharing, sign out/recover access, and contact privacy/security support promptly |
 
 When contacting support, provide app version, device/OS, approximate time, selected parish, safe reference/correlation ID, and steps. Never provide a password, one-time code, access token, or uploaded document through an unapproved support channel.

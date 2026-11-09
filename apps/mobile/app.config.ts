@@ -53,7 +53,7 @@ const releaseEnvironment = (): { environment: ReleaseEnvironment; demoMode: bool
         || hostname === '::'
         || hostname === '::1'
         || hostname.startsWith('::ffff:')
-        || /^(?:fc|fd|fe[89ab])/i.test(hostname)
+        || (hostname.includes(':') && /^(?:fc|fd|fe[89ab])/i.test(hostname))
         || ['.localhost', '.local', '.test', '.example', '.invalid'].some((suffix) => hostname.endsWith(suffix));
       if (parsed.protocol !== 'https:' || isPrivateIpv4 || isReserved) {
         throw new Error('Preview and production builds require a public HTTPS ParishLink API URL.');
@@ -65,6 +65,12 @@ const releaseEnvironment = (): { environment: ReleaseEnvironment; demoMode: bool
 
 export default ({ config }: ConfigContext): ExpoConfig => {
   const runtimeConfiguration = releaseEnvironment();
+  const projectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID?.trim()
+    || (typeof config.extra?.eas?.projectId === 'string' ? config.extra.eas.projectId : undefined);
+  if (projectId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(projectId)) {
+    throw new Error('EXPO_PUBLIC_EAS_PROJECT_ID must be the UUID of your Expo project.');
+  }
+  const googleServicesFile = process.env.ANDROID_GOOGLE_SERVICES_FILE?.trim();
   if (
     process.env.PARISHLINK_REQUIRE_PRODUCTION === 'true'
     && runtimeConfiguration.environment !== 'production'
@@ -76,11 +82,13 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ...config,
     name: config.name ?? 'ParishLink',
     slug: config.slug ?? 'parishlink-mobile',
+    ...(googleServicesFile ? { android: { ...config.android, googleServicesFile } } : {}),
     extra: {
       ...config.extra,
       appRole: 'parishioner',
       releaseEnvironment: runtimeConfiguration.environment,
       demoMode: runtimeConfiguration.demoMode,
+      ...(projectId ? { eas: { ...config.extra?.eas, projectId } } : {}),
     },
   };
 };

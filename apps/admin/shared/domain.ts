@@ -70,6 +70,7 @@ export type AppointmentDocument = {
   status: DocumentStatus;
   reviewNote: string | null;
   submittedAt: string | null;
+  sha256: string | null;
 };
 
 export type QueueTicket = {
@@ -106,6 +107,9 @@ export type ParishRecord = {
   status: 'working_copy' | 'verified_against_archive';
 };
 
+export type ParishRecordCursor = { eventDate: string; id: string };
+export type ParishRecordPage = { records: ParishRecord[]; nextCursor: ParishRecordCursor | null };
+
 export type ClergyAssignment = {
   id: string;
   clergy: string;
@@ -116,7 +120,22 @@ export type ClergyAssignment = {
   endsAt: string;
 };
 
+export type AssignmentCursor = { startsAt: string; id: string };
+export type AssignmentPage = { assignments: ClergyAssignment[]; nextCursor: AssignmentCursor | null };
+
+export type DashboardMetrics = {
+  appointmentStatuses: Partial<Record<AppointmentStatus, number>>;
+  awaitingDocumentReview: number | null;
+  verifiedDocuments: number | null;
+  verifiedRecords: number | null;
+  confirmedAssignments: number;
+  publishedAnnouncements: number;
+  waitingQueue: number | null;
+  servingQueue: number | null;
+};
+
 export type DashboardState = {
+  metrics: DashboardMetrics;
   actor: Actor;
   parishes: { id: string; name: string }[];
   clergyOptions: { id: string; name: string; parishId: string | null }[];
@@ -134,7 +153,7 @@ export type DashboardState = {
 
 export type AdminMutation =
   | { action: 'appointment.transition'; appointmentId: string; status: AppointmentStatus; expectedVersion: number; reason?: string }
-  | { action: 'document.review'; documentId: string; status: 'verified' | 'needs_replacement'; note?: string }
+  | { action: 'document.review'; documentId: string; expectedSha256: string; status: 'verified' | 'needs_replacement'; note?: string }
   | { action: 'queue.call_next'; counter: string; parishId: string }
   | { action: 'queue.complete'; ticketId: string }
   | { action: 'queue.issue'; parishId: string; parishionerName: string; service: string }

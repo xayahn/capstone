@@ -7,7 +7,11 @@ const steps = [
   ['TypeScript', 'node_modules/typescript/bin/tsc', ['--noEmit']],
   ['lint', 'node_modules/eslint/bin/eslint.js', ['.']],
   ['unit tests', 'node_modules/vitest/vitest.mjs', ['run', '--config', 'vitest.config.ts', '--configLoader', 'runner']],
+  ['security regressions', 'scripts/security-regression.mjs', []],
   ['database migrations', 'scripts/validate-migration.mjs', []],
+  ['provider Worker runtime', 'scripts/check-provider-worker.mjs', []],
+  ['account Worker source routes', 'scripts/check-account-worker.mjs', []],
+  ['account HTTP runner safeguards', 'scripts/tests/check-account-local.test.mjs', []],
   ['production build', 'node_modules/vinext/dist/cli.js', ['build']],
 ];
 

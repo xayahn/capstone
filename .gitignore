@@ -10,15 +10,22 @@
 **/dist/
 **/dist-*/
 **/coverage/
+**/.validation-tmp/
 **/web-build/
 **/*.tsbuildinfo
 
 # Local configuration and secrets
+/.local-secrets/
 **/.env
 **/.env.*
 !**/.env.example
 **/.dev.vars
 !**/.dev.vars.example
+**/google-services.json
+**/GoogleService-Info.plist
+**/*firebase-adminsdk*.json
+**/*service-account*.json
+**/credentials.json
 *.pem
 *.key
 *.p8
@@ -43,3 +50,7 @@ apps/admin/.site-git-backup/
 
 # Local EAS state
 **/.eas/
+
+# Coordinator-controlled pilot records and synthetic rehearsal output
+/research/pilot/data/
+/research/pilot/rehearsal/

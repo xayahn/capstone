@@ -1,7 +1,11 @@
-import { env } from 'cloudflare:workers';
+import { validCalendarDate, validPhoneNumber, utcTimestamp } from '@/shared/validation';
+import { occupiedStart, occupiedEnd } from '@/shared/scheduling';
 import { ensurePublicRuntimeDatabase, getRawDb } from '@/db/runtime';
 import { MobileServiceError, type MobileActor, type MobileProfile } from '@/backend/auth/mobile-auth';
 import { sha256Hex } from '@/backend/security/idempotency';
+import { env } from 'cloudflare:workers';
+import { generatePublicAssistantReply, publicGeminiEligibility, type AssistantFallbackReason, type PublicKnowledgeSource } from '@/backend/ai/gemini-assistant';
+import { recordServerFailure } from '@/backend/observability/server-log';
 
 const SERVICE_TO_MOBILE: Record<string, string> = {
   baptism: 'baptism',
@@ -33,7 +37,7 @@ export async function loadMobileCatalog() {
       WHEN 'sto-nino' THEN 5 WHEN 'san-isidro-labrador' THEN 6
       WHEN 'st-joseph' THEN 7 WHEN 'our-lady-of-lourdes' THEN 8 ELSE 99 END`).all<{ id: string; name: string }>(),
     db.prepare(`SELECT id, display_title AS name, home_parish_id AS parishId
-      FROM clergy_profiles WHERE is_active = 1 ORDER BY display_title`).all<{ id: string; name: string; parishId: string | null }>(),
+      FROM clergy_profiles WHERE is_active = 1 AND EXISTS (SELECT 1 FROM users u WHERE u.id = clergy_profiles.user_id AND u.is_active = 1) ORDER BY display_title`).all<{ id: string; name: string; parishId: string | null }>(),
     db.prepare(`SELECT id, parish_id AS parishId FROM venues WHERE is_active = 1 ORDER BY name`).all<{ id: string; parishId: string }>(),
     db.prepare(`SELECT id, name, description, duration_minutes AS durationMinutes
       FROM service_types WHERE is_active = 1 ORDER BY CASE id
@@ -41,8 +45,8 @@ export async function loadMobileCatalog() {
         WHEN 'first-communion' THEN 4 WHEN 'funeral-mass' THEN 5 ELSE 99 END`).all<{
           id: string; name: string; description: string | null; durationMinutes: number;
         }>(),
-    db.prepare(`SELECT service_type_id AS serviceTypeId, name FROM document_requirements
-      WHERE is_active = 1 ORDER BY service_type_id, sort_order`).all<{ serviceTypeId: string; name: string }>(),
+    db.prepare(`SELECT id, service_type_id AS serviceTypeId, name, instructions, is_required AS isRequired FROM document_requirements
+      WHERE is_active = 1 ORDER BY service_type_id, sort_order`).all<{ id: string; serviceTypeId: string; name: string; instructions: string | null; isRequired: number }>(),
   ]);
   const icon: Record<string, string> = {
     baptism: 'droplet', wedding: 'heart', confirmation: 'cross',
@@ -60,6 +64,9 @@ export async function loadMobileCatalog() {
       shortDescription: service.description ?? `Prepare and request ${service.name.toLowerCase()} services with your parish.`,
       durationMinutes: Number(service.durationMinutes),
       requirements: requirements.results.filter((item) => item.serviceTypeId === service.id).map((item) => item.name),
+      requirementDetails: requirements.results.filter(item => item.serviceTypeId === service.id).map(item => ({
+        id: item.id, name: item.name, required: Boolean(item.isRequired), instructions: item.instructions,
+      })),
       icon: icon[service.id] ?? 'cross',
     })),
     queueServices: Array.from(QUEUE_SERVICES),
@@ -183,8 +190,8 @@ function appointmentDto(row: AppointmentRow, documents: DocumentRow[], participa
       ...(document.note ? { note: document.note } : {}),
       updatedAt: document.updatedAt,
     })),
-    submittedAt: row.submittedAt,
-    updatedAt: row.updatedAt,
+    submittedAt: utcTimestamp(row.submittedAt),
+    updatedAt: utcTimestamp(row.updatedAt),
   };
 }
 
@@ -238,7 +245,7 @@ async function loadNotifications(userId: string) {
     id: row.id,
     title: row.title,
     body: row.body,
-    createdAt: row.createdAt,
+    createdAt: utcTimestamp(row.createdAt),
     ...(row.readAt ? { readAt: row.readAt } : {}),
     target: row.entityType === 'appointment' && row.entityId
       ? { kind: 'appointment', appointmentId: row.entityId }
@@ -287,8 +294,8 @@ async function activeQueueTicket(userId: string) {
     status: row.status,
     ahead: peopleAhead,
     estimatedWaitMinutes: estimate,
-    issuedAt: row.issuedAt,
-    lastUpdatedAt: row.lastUpdatedAt,
+    issuedAt: utcTimestamp(row.issuedAt),
+    lastUpdatedAt: utcTimestamp(row.lastUpdatedAt),
   };
 }
 
@@ -322,7 +329,8 @@ function textField(value: unknown, name: string, max: number): string {
 }
 
 function startsAtFromInput(date: string, time: string): Date {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new MobileServiceError('Choose a valid appointment date.');
+  if (!validCalendarDate(date)) throw new MobileServiceError('Choose a valid appointment date.');
+  if (!(MOBILE_TIME_SLOTS as readonly string[]).includes(time.trim())) throw new MobileServiceError('Choose one of the offered appointment times.');
   const match = /^(1[0-2]|0?[1-9]):([0-5]\d)\s*(AM|PM)$/i.exec(time.trim());
   if (!match) throw new MobileServiceError('Choose a valid appointment time.');
   let hour = Number(match[1]) % 12;
@@ -347,13 +355,13 @@ export async function searchMobileAvailability(input: Record<string, unknown>) {
   const clergyId = textField(input.clergyId, 'Clergy', 100);
   const venueId = textField(input.venueId, 'Venue', 100);
   const date = textField(input.date, 'Date', 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new MobileServiceError('Choose a valid appointment date.');
+  if (!validCalendarDate(date)) throw new MobileServiceError('Choose a valid appointment date.');
 
   const db = getRawDb();
   const resource = await db.prepare(`SELECT s.duration_minutes AS durationMinutes,
       s.buffer_before_minutes AS bufferBeforeMinutes, s.buffer_after_minutes AS bufferAfterMinutes
     FROM service_types s
-    JOIN clergy_profiles cp ON cp.id = ? AND cp.is_active = 1
+    JOIN clergy_profiles cp ON cp.id = ? AND cp.is_active = 1 AND EXISTS (SELECT 1 FROM users u WHERE u.id = cp.user_id AND u.is_active = 1)
       AND (cp.home_parish_id = ? OR cp.home_parish_id IS NULL)
     JOIN venues v ON v.id = ? AND v.parish_id = ? AND v.is_active = 1
     JOIN parishes p ON p.id = ? AND p.is_active = 1
@@ -375,11 +383,11 @@ export async function searchMobileAvailability(input: Record<string, unknown>) {
     const conflict = await db.prepare(`SELECT (
         EXISTS (SELECT 1 FROM appointments a
           WHERE a.status NOT IN ('rejected','completed','cancelled','no_show')
-            AND datetime(a.starts_at) < datetime(?) AND datetime(a.ends_at) > datetime(?)
+            AND ${occupiedStart('a')} < datetime(?) AND ${occupiedEnd('a')} > datetime(?)
             AND (a.clergy_id = ? OR a.venue_id = ?))
         OR EXISTS (SELECT 1 FROM availability_blocks ab
           WHERE datetime(ab.starts_at) < datetime(?) AND datetime(ab.ends_at) > datetime(?)
-            AND (ab.clergy_id = ? OR ab.venue_id = ?))
+            AND (ab.clergy_id = ? OR ab.venue_id = ? OR (ab.clergy_id IS NULL AND ab.venue_id IS NULL AND ab.parish_id = ?)))
         OR EXISTS (SELECT 1 FROM clergy_assignments ca
           WHERE ca.status = 'confirmed'
             AND datetime(ca.starts_at) < datetime(?) AND datetime(ca.ends_at) > datetime(?)
@@ -387,7 +395,7 @@ export async function searchMobileAvailability(input: Record<string, unknown>) {
       ) AS blocked`)
       .bind(
         blockedEnd, blockedStart, clergyId, venueId,
-        blockedEnd, blockedStart, clergyId, venueId,
+        blockedEnd, blockedStart, clergyId, venueId, parishId,
         blockedEnd, blockedStart, clergyId, venueId,
       ).first<{ blocked: number }>();
     return { time, available: !Boolean(conflict?.blocked) };
@@ -427,6 +435,7 @@ function appointmentParticipants(value: unknown, actor: MobileActor): Appointmen
     if (fullName.length < 2) throw new MobileServiceError(`Participant ${index + 1} name is invalid.`);
     const dateOfBirth = optionalTextField(participant.dateOfBirth, `Participant ${index + 1} birth date`, 10);
     if (dateOfBirth) {
+      if (!validCalendarDate(dateOfBirth)) throw new MobileServiceError(`Participant ${index + 1} birth date is invalid.`);
       const parsed = /^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth) ? new Date(`${dateOfBirth}T12:00:00Z`) : null;
       if (!parsed || Number.isNaN(parsed.getTime()) || parsed.getTime() > Date.now() || parsed.getUTCFullYear() < 1900) {
         throw new MobileServiceError(`Participant ${index + 1} birth date is invalid.`);
@@ -499,7 +508,7 @@ export async function createMobileAppointment(
       s.buffer_before_minutes AS bufferBeforeMinutes, s.buffer_after_minutes AS bufferAfterMinutes,
       cp.display_title AS clergyName, v.name AS venueName
     FROM service_types s
-    JOIN clergy_profiles cp ON cp.id = ? AND cp.is_active = 1
+    JOIN clergy_profiles cp ON cp.id = ? AND cp.is_active = 1 AND EXISTS (SELECT 1 FROM users u WHERE u.id = cp.user_id AND u.is_active = 1)
       AND (cp.home_parish_id = ? OR cp.home_parish_id IS NULL)
     JOIN venues v ON v.id = ? AND v.parish_id = ? AND v.is_active = 1
     JOIN parishes p ON p.id = ? AND p.is_active = 1
@@ -528,12 +537,12 @@ export async function createMobileAppointment(
     WHERE NOT EXISTS (
       SELECT 1 FROM appointments a
       WHERE a.status NOT IN ('rejected','completed','cancelled','no_show')
-        AND datetime(a.starts_at) < datetime(?) AND datetime(a.ends_at) > datetime(?)
+        AND ${occupiedStart('a')} < datetime(?) AND ${occupiedEnd('a')} > datetime(?)
         AND (a.clergy_id = ? OR a.venue_id = ?)
     ) AND NOT EXISTS (
       SELECT 1 FROM availability_blocks ab
       WHERE datetime(ab.starts_at) < datetime(?) AND datetime(ab.ends_at) > datetime(?)
-        AND (ab.clergy_id = ? OR ab.venue_id = ?)
+        AND (ab.clergy_id = ? OR ab.venue_id = ? OR (ab.clergy_id IS NULL AND ab.venue_id IS NULL AND ab.parish_id = ?))
     ) AND NOT EXISTS (
       SELECT 1 FROM clergy_assignments ca
       WHERE ca.status = 'confirmed' AND datetime(ca.starts_at) < datetime(?) AND datetime(ca.ends_at) > datetime(?)
@@ -543,7 +552,7 @@ export async function createMobileAppointment(
       appointmentId, reference, actor.id, actor.displayName, serviceTypeId, checklistVersionId, parishId,
       clergyId, resource.clergyName, venueId, resource.venueName, startsAt, endsAt,
       blockedEnd, blockedStart, clergyId, venueId,
-      blockedEnd, blockedStart, clergyId, venueId,
+      blockedEnd, blockedStart, clergyId, venueId, parishId,
       blockedEnd, blockedStart, clergyId, venueId,
     ),
     ...participants.map((participant) => db.prepare(`INSERT INTO appointment_participants
@@ -706,7 +715,7 @@ export async function updateMobileProfile(actor: MobileActor, input: Record<stri
   const mobileNumber = textField(input.mobileNumber, 'Mobile number', 20);
   const homeParishId = textField(input.homeParishId, 'Home parish', 100);
   if (displayName.length < 3) throw new MobileServiceError('Enter your complete name.');
-  if (!/^\+?[0-9 ()-]{10,20}$/.test(mobileNumber)) throw new MobileServiceError('Enter a valid mobile number.');
+  if (!validPhoneNumber(mobileNumber)) throw new MobileServiceError('Enter a valid mobile number.');
   if (input.email !== actor.email || input.id !== actor.id) throw new MobileServiceError('Account identity fields cannot be changed here.', 409);
   if (typeof input.notificationsEnabled !== 'boolean') throw new MobileServiceError('Notification preference is invalid.');
   const db = getRawDb();
@@ -718,7 +727,7 @@ export async function updateMobileProfile(actor: MobileActor, input: Record<stri
     db.prepare(`UPDATE mobile_credentials SET notifications_enabled = ?,
       updated_at = datetime('now') WHERE user_id = ?`).bind(input.notificationsEnabled ? 1 : 0, actor.id),
   ]);
-  return { id: actor.id, displayName, email: actor.email, mobileNumber, homeParishId, notificationsEnabled: input.notificationsEnabled };
+  return { id: actor.id, displayName, email: actor.email, mobileNumber, homeParishId, notificationsEnabled: input.notificationsEnabled, emailVerified: Boolean(actor.emailVerified) };
 }
 
 function redactAssistantText(value: string): string {
@@ -814,11 +823,13 @@ const ASSISTANT_SERVICES: AssistantService[] = [
 
 const DOCUMENT_QUESTION =
   /\b(?:document|documents|requirement|requirements|checklist|certificate|certificates|paperwork|papers|upload)\b|\bwhat\s+(?:do|will|would)\s+i\s+need\b/i;
+const EXACT_CHECKLIST_QUESTION =
+  /\b(?:what|which)\s+(?:are\s+the\s+)?(?:documents?|requirements?|certificates?|paperwork|papers)\b|\b(?:checklist|requirements)\b|\bwhat\s+(?:do|will|would)\s+i\s+need\b/i;
 const APPOINTMENT_QUESTION =
   /\b(?:my|our)\b.{0,40}\b(?:appointment|request|application|status|documents?)\b|\b(?:appointment|request|application)\s+status\b|\b(?:track|check)\s+(?:my|our)\b/i;
 const QUEUE_QUESTION = /\b(?:queue|walk[ -]?in|ticket|people ahead|waiting time)\b/i;
 const HUMAN_SUPPORT_QUESTION =
-  /\b(?:abuse|danger|emergency|suicid\w*|self[ -]?harm|legal advice|financial advice|medical advice|canon law|annulment|dispensation|eligible|eligibility)\b/i;
+  /\b(?:abuse|danger|emergency|suicid\w*|self[ -]?harm|legal advice|financial advice|medical advice|canon law|annulment|dispensation|eligible|eligibility)\b|\b(?:can|could|will|would)\s+you\s+(?:please\s+)?(?:approve|reject|verify|book|cancel|change|submit)\b/i;
 
 function detectAssistantService(prompt: string): AssistantService | undefined {
   return ASSISTANT_SERVICES.find((service) => service.aliases.test(prompt));
@@ -1238,50 +1249,34 @@ function generalFallbackGuidance(): AssistantReply {
   };
 }
 
-const ASSISTANT_SYSTEM_INSTRUCTION = `You phrase a brief answer to an ambiguous, redacted general question about using ParishLink in the Archdiocese of San Fernando, Pampanga. Do not invent service requirements, appointment details, queue information, contacts, or parish policies. Do not ask for or repeat personal data. Never make or imply a final parish decision, and never provide canonical, pastoral, legal, financial, medical, or emergency advice. State that authorized parish personnel verify documents and make final decisions when relevant. If the question is outside ParishLink or requires facts you were not given, say what ParishLink can explain and suggest contacting the parish office. Return plain text under 90 words.`;
-
-type GeminiResponse = {
-  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-};
-
-async function geminiGuidance(prompt: string): Promise<string | null> {
-  const apiKey = env.GEMINI_API_KEY?.trim();
-  if (!apiKey) return null;
-  const model = env.GEMINI_MODEL?.trim() || 'gemini-3.7-flash';
-  if (!/^[a-zA-Z0-9._-]{1,80}$/.test(model)) return null;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8_000);
-  try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: ASSISTANT_SYSTEM_INSTRUCTION }] },
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 220 },
-        }),
-        signal: controller.signal,
-      },
-    );
-    if (!response.ok) return null;
-    const data = await response.json() as GeminiResponse;
-    const text = data.candidates?.[0]?.content?.parts
-      ?.map((part) => part.text ?? '')
-      .join(' ')
-      .trim();
-    if (!text) return null;
-    const sanitized = redactAssistantText(text).replace(/https?:\/\/\S+/gi, '[link removed]');
-    if (/\b(?:i|parishlink) (?:approve|verify|certify|grant)\b|\b(?:your|the) .{0,40} (?:is|has been) approved\b|\byou (?:are|are not) eligible\b/i.test(sanitized)) {
-      return null;
-    }
-    return sanitized;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timeout);
-  }
+async function publicAssistantKnowledge(): Promise<PublicKnowledgeSource[]> {
+  // Select public fields explicitly. Never reuse snapshot/profile/record queries.
+  const db = getRawDb();
+  const [services, parishes] = await Promise.all([
+    db.prepare('SELECT name, description FROM service_types WHERE is_active = 1 ORDER BY name LIMIT 10')
+      .all<{ name: string; description: string | null }>(),
+    db.prepare('SELECT name, address, office_hours AS officeHours FROM parishes WHERE is_active = 1 ORDER BY name LIMIT 12')
+      .all<{ name: string; address: string | null; officeHours: string | null }>(),
+  ]);
+  return [
+    {
+      id: 'services',
+      content: JSON.stringify(services.results.map(service => ({
+        name: service.name.slice(0, 100), description: service.description?.slice(0, 700) ?? 'No description published.',
+      }))),
+    },
+    {
+      id: 'directory',
+      content: JSON.stringify(parishes.results.map(parish => ({
+        name: parish.name.slice(0, 150), address: parish.address?.slice(0, 200) ?? 'Not published.',
+        officeHours: parish.officeHours?.slice(0, 200) ?? 'Not published.',
+      }))),
+    },
+    {
+      id: 'navigation',
+      content: 'Parishioners use the mobile application. Services shows the current service information and exact document checklist. Start a request from Services, select available parish/clergy/venue/date/time, and submit for parish review. Submission does not mean approval. My Appointments shows the signed-in user their own request status and documents. Document upload is followed by authorized parish staff review; a replacement may be requested. Final approval and sacramental decisions belong to authorized parish staff/clergy. Walk-in Queue supports one active ticket; staff call and serve visitors; any wait estimate may change. Notifications contains in-app updates to requests and queue activity; external push availability depends on device permission and provider configuration. Profile manages account preferences. Staff and clergy use the separate internal portal with assigned parish/role access. The system supports administration and does not replace official Church archives or pastoral decisions. No payments, donations, live streaming or official eligibility judgments are available in the assistant. No fee schedule or guaranteed response time is published in this guidance.',
+    },
+  ];
 }
 
 export async function askMobileAssistant(actor: MobileActor, input: Record<string, unknown>) {
@@ -1290,7 +1285,6 @@ export async function askMobileAssistant(actor: MobileActor, input: Record<strin
   const service = detectAssistantService(redactedPrompt);
   const requestedAppointmentId = typeof input.appointmentId === 'string' ? input.appointmentId.trim() : undefined;
   let reply: AssistantReply;
-  let ambiguousGeneral = false;
 
   if (HUMAN_SUPPORT_QUESTION.test(redactedPrompt)) {
     reply = humanSupportGuidance();
@@ -1300,38 +1294,78 @@ export async function askMobileAssistant(actor: MobileActor, input: Record<strin
     reply = await queueGuidance(actor);
   } else if (service) {
     reply = await serviceGuidance(service, DOCUMENT_QUESTION.test(redactedPrompt));
-  } else if (DOCUMENT_QUESTION.test(redactedPrompt)) {
+  } else if (EXACT_CHECKLIST_QUESTION.test(redactedPrompt)) {
     reply = documentClarification();
   } else if (/\b(?:parish office|office hours|contact|address|location)\b/i.test(redactedPrompt)) {
     reply = await parishOfficeGuidance(actor);
   } else {
     reply = knownGeneralGuidance(redactedPrompt) ?? generalFallbackGuidance();
-    ambiguousGeneral = reply.category === 'general';
   }
 
-  // Gemini only phrases ambiguous general product guidance. Database-backed answers above
-  // remain deterministic, and prompts containing redacted identifiers never leave the server.
-  const generatedText = ambiguousGeneral && !redactedPrompt.includes(' removed]')
-    ? await geminiGuidance(redactedPrompt)
-    : null;
-  if (generatedText) reply = { ...reply, text: generatedText };
+  let provider: 'parishlink' | 'gemini' = 'parishlink';
+  let fallbackReason: AssistantFallbackReason | undefined;
+  const configuration = {
+    enabled: env.GEMINI_ENABLED, apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL,
+  };
+  // Live data, exact checklists and official decisions are never model inputs.
+  // Check the ORIGINAL question before any redaction so redaction cannot conceal
+  // an identifier and accidentally make a private question provider-eligible.
+  const liveQueueQuestion = reply.category === 'queue'
+    && (/\b(?:my|our|check|show|track|current|now|ahead)\b|\bhow\s+(?:long|many)\b/i.test(prompt));
+  const localOnly = ['appointment-status', 'human-support', 'parish-office', 'document-clarification'].includes(reply.category)
+    || liveQueueQuestion
+    || (Boolean(service) && EXACT_CHECKLIST_QUESTION.test(redactedPrompt));
+  const eligibility = publicGeminiEligibility(prompt, input.allowExternalAI, configuration);
+  fallbackReason = localOnly ? 'private_or_sensitive' : eligibility ?? undefined;
+  if (!localOnly && !eligibility) {
+    let generated: Awaited<ReturnType<typeof generatePublicAssistantReply>>;
+    try {
+      generated = await generatePublicAssistantReply(
+        prompt, input.allowExternalAI, await publicAssistantKnowledge(), configuration, fetch,
+        diagnostic => {
+          const failure = new Error();
+          failure.name = diagnostic.stage === 'http' ? `GeminiHttp${diagnostic.status}`
+            : diagnostic.stage === 'network' ? 'GeminiNetworkFailure' : 'GeminiInvalidResponse';
+          recordServerFailure(`assistant-provider-${diagnostic.stage}`, failure);
+        },
+      );
+    } catch (error) {
+      // A failed optional public-context lookup must not discard local guidance.
+      recordServerFailure('assistant-public-context', error);
+      generated = { provider: 'parishlink', fallbackReason: 'unavailable' };
+    }
+    if (generated.provider === 'gemini') {
+      provider = 'gemini';
+      const sourceLabels = {
+        services: { label: 'ParishLink public service catalogue', kind: 'service_requirements' as const },
+        directory: { label: 'ParishLink public parish directory', kind: 'parish_directory' as const },
+        navigation: { label: 'ParishLink service and navigation guide', kind: 'service_requirements' as const },
+      };
+      reply = {
+        title: 'Gemini-assisted guidance',
+        text: generated.text + '\n\nConfirm final requirements and decisions with the parish office.',
+        category: 'public-guidance', escalation: generated.needsHuman,
+        sources: generated.sourceIds.map(id => sourceLabels[id]),
+        actions: generated.needsHuman
+          ? [{ id: 'contact-parish', label: 'Contact parish office', kind: 'contact_parish' }]
+          : service ? serviceActions(service)
+            : [{ id: 'view-services', label: 'Browse services', kind: 'service' }],
+        followUpPrompts: ['How do I start a request?', 'How does document verification work?'],
+      };
+    } else {
+      fallbackReason = generated.fallbackReason;
+    }
+  }
+
+  // Single-turn questions are processed in memory, with no transcript storage.
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
-  const db = getRawDb();
-  await db.batch([
-    db.prepare(`INSERT INTO chatbot_messages
-      (id, user_id, session_id, direction, category, redacted_content, escalated)
-      VALUES (?, ?, ?, 'user', ?, ?, ?)`)
-      .bind(crypto.randomUUID(), actor.id, actor.sessionId, reply.category, redactedPrompt, reply.escalation ? 1 : 0),
-    db.prepare(`INSERT INTO chatbot_messages
-      (id, user_id, session_id, direction, category, redacted_content, escalated)
-      VALUES (?, ?, ?, 'assistant', ?, ?, ?)`)
-      .bind(id, actor.id, actor.sessionId, reply.category, reply.text, reply.escalation ? 1 : 0),
-  ]);
   return {
     id,
     from: 'assistant' as const,
     text: reply.text,
+    provider,
+    ...(fallbackReason ? { fallbackReason } : {}),
     createdAt: now,
     ...(reply.title ? { title: reply.title } : {}),
     ...(reply.bullets?.length ? { bullets: reply.bullets } : {}),

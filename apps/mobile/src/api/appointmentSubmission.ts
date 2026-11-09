@@ -6,6 +6,7 @@ import type {
 
 type SubmissionDependencies = {
   randomUUID: () => string;
+  idempotencyKey?: string;
   create: (metadata: CreateAppointmentInput, idempotencyKey: string) => Promise<Appointment>;
   upload: (
     appointment: Appointment,
@@ -57,7 +58,7 @@ export async function submitAppointmentWithDocuments(
     ...input,
     documents: input.documents.map(({ fileUri: _fileUri, ...document }) => document),
   };
-  const idempotencyKey = createAppointmentIdempotencyKey(dependencies.randomUUID);
+  const idempotencyKey = dependencies.idempotencyKey ?? createAppointmentIdempotencyKey(dependencies.randomUUID);
   let appointment = await dependencies.create(metadata, idempotencyKey);
   const failedDocumentLabels: string[] = [];
 

@@ -1,10 +1,27 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import configureApp from '../app.config';
 import {
   normalizeApiBaseUrl,
   resolveRuntimeConfiguration,
 } from '../src/config/environment';
 
+afterEach(() => vi.unstubAllEnvs());
+
 describe('mobile runtime configuration', () => {
+  it.each(['https://feature.parishlink.ph/api', 'https://fd-api.parishlink.ph/api', 'https://fc-api.parishlink.ph/api'])('does not confuse public DNS names with private IPv6 prefixes: %s', apiBaseUrl => {
+    vi.stubEnv('EXPO_PUBLIC_APP_ENV', 'production');
+    vi.stubEnv('EXPO_PUBLIC_DEMO_MODE', 'false');
+    vi.stubEnv('EXPO_PUBLIC_API_BASE_URL', apiBaseUrl);
+    expect(resolveRuntimeConfiguration({ appEnvironment: 'production', demoMode: 'false', apiBaseUrl }).apiBaseUrl).toBe(apiBaseUrl);
+    expect(() => configureApp({ config: { name: 'ParishLink', slug: 'parishlink' } } as Parameters<typeof configureApp>[0])).not.toThrow();
+  });
+  it.each(['https://[fc00::1]/api', 'https://[fd00::1]/api', 'https://[fe80::1]/api'])('still rejects a private IPv6 API in both configuration layers: %s', apiBaseUrl => {
+    vi.stubEnv('EXPO_PUBLIC_APP_ENV', 'production');
+    vi.stubEnv('EXPO_PUBLIC_DEMO_MODE', 'false');
+    vi.stubEnv('EXPO_PUBLIC_API_BASE_URL', apiBaseUrl);
+    expect(() => resolveRuntimeConfiguration({ appEnvironment: 'production', demoMode: 'false', apiBaseUrl })).toThrow();
+    expect(() => configureApp({ config: { name: 'ParishLink', slug: 'parishlink' } } as Parameters<typeof configureApp>[0])).toThrow();
+  });
   it('defaults a configuration-free development session to isolated demo mode', () => {
     expect(resolveRuntimeConfiguration({})).toEqual({
       environment: 'development',

@@ -6,10 +6,10 @@ import {
 } from '../shared/workflow';
 
 describe('appointment workflow authorization', () => {
-  it('keeps final approval with clergy or a system administrator', () => {
+  it('keeps final approval with clergy, not technical administrators', () => {
     expect(allowedAppointmentTransitions('ready_to_approve', 'parish_staff')).not.toContain('approved');
     expect(allowedAppointmentTransitions('ready_to_approve', 'clergy')).toContain('approved');
-    expect(allowedAppointmentTransitions('ready_to_approve', 'system_admin')).toContain('approved');
+    expect(allowedAppointmentTransitions('ready_to_approve', 'system_admin')).not.toContain('approved');
   });
 
   it('does not allow transitions from terminal states', () => {

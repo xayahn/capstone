@@ -1,6 +1,25 @@
 # Copy to .dev.vars for local provider testing. Never commit a real key.
+GEMINI_ENABLED=false
 GEMINI_API_KEY=
-GEMINI_MODEL=gemini-3.7-flash
+GEMINI_MODEL=gemini-3.5-flash
+
+# Server-only account recovery / verification. Leave disabled until the owner
+# has verified the sending domain and recorded controlled inbox acceptance.
+# MAIL_DELIVERY_VERIFIED is an operator attestation, not an automated inbox test.
+MAIL_ENABLED=false
+MAIL_DELIVERY_VERIFIED=false
+RESEND_API_KEY=
+MAIL_FROM=
+
+# Expo Push Service. Use the same project UUID in the mobile build.
+# FCM/APNs credentials are managed separately in the Expo account.
+PUSH_NOTIFICATIONS_ENABLED=false
+EXPO_PROJECT_ID=
+EXPO_ACCESS_TOKEN=
+
+# Use a separate random secret of at least 32 characters for the scheduled job.
+# Never use a Gemini key, Expo token or mobile session token here.
+PUSH_DISPATCH_SECRET=
 
 # Exact comma-separated browser origins. Native iOS/Android requests do not
 # send Origin. Local development already permits http://localhost:8081.

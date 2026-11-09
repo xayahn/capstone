@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import type {
   AdminMutation,
   Appointment,
@@ -8,6 +8,11 @@ import type {
   AppointmentStatus,
   DashboardState,
 } from '@/shared/domain';
+import { AssignmentBrowser } from '@/frontend/components/assignment-browser';
+import { RecordBrowser } from '@/frontend/components/record-browser';
+import { adminRequest, adminMutationKey, AdminAccessError } from '@/frontend/lib/admin-request';
+import { RequestEpoch } from '@/frontend/lib/request-epoch';
+import { utcTimestamp } from '@/shared/validation';
 import { humanizeStatus } from '@/shared/domain';
 import { allowedAppointmentTransitions } from '@/shared/workflow';
 
@@ -48,13 +53,7 @@ const QUEUE_PURPOSES = [
 function formatDateTime(value: string): string {
   return new Intl.DateTimeFormat('en-PH', {
     timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
-  }).format(new Date(value));
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat('en-PH', {
-    timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric',
-  }).format(new Date(`${value}T12:00:00+08:00`));
+  }).format(new Date(utcTimestamp(value)));
 }
 
 function tone(status: string): string {
@@ -72,13 +71,14 @@ function initials(name: string): string {
   return name.split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
 }
 
-function ErrorPanel({ message, onRetry }: { message: string; onRetry: () => void }) {
+function ErrorPanel({ message, onRetry, signOutPath }: { message: string; onRetry: () => void; signOutPath: string }) {
   return (
     <section className="state-panel" role="alert">
       <span className="state-icon">!</span>
       <h1>We could not open the portal</h1>
       <p>{message}</p>
       <button className="primary-button" onClick={onRetry}>Try again</button>
+      <a className="text-link" href={signOutPath}>Sign in again</a>
     </section>
   );
 }
@@ -92,6 +92,9 @@ export function AdminPortal({ signedInName, signOutPath }: { signedInName: strin
   const [data, setData] = useState<DashboardState | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const readEpoch = useRef(new RequestEpoch());
+  const actorScope = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
@@ -127,13 +130,38 @@ export function AdminPortal({ signedInName, signOutPath }: { signedInName: strin
   const [newVenueCapacity, setNewVenueCapacity] = useState('');
   const [newVenueParishId, setNewVenueParishId] = useState('');
 
+  const resetPrivateDrafts = useCallback(() => {
+    setSelectedAppointmentId(null); setAppointmentSearch(''); setAppointmentReason('');
+    setDocumentSearch(''); setDocumentNotes({}); setQueueVisitorName('');
+    setAnnouncementTitle(''); setAnnouncementBody(''); setRecordSubject(''); setRecordReference(''); setRecordEventDate('');
+    setAssignmentService(''); setAssignmentStartsAt(''); setAssignmentEndsAt('');
+    setNewUserName(''); setNewUserEmail(''); setNewVenueName(''); setNewVenueCapacity('');
+    setQueueParishId(''); setAnnouncementParishId(''); setRecordParishId(''); setAssignmentParishId('');
+    setAssignmentClergyId(''); setAssignmentVenueId(''); setNewUserParishId(''); setNewVenueParishId('');
+    setNotice(null);
+  }, []);
+
+  const clearPrivateState = useCallback(() => {
+    readEpoch.current.invalidate(); actorScope.current = null;
+    setData(null); setLoading(false); resetPrivateDrafts();
+  }, [resetPrivateDrafts]);
+
+  const handleAccessLost = useCallback((caught: AdminAccessError) => {
+    clearPrivateState();
+    setError(caught.message);
+  }, [clearPrivateState]);
+
   const loadState = useCallback(async (showSpinner = true) => {
+    const ticket = readEpoch.current.begin();
     if (showSpinner) setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/admin/state', { cache: 'no-store', headers: { Accept: 'application/json' } });
-      const payload = await response.json() as DashboardState | { error?: string };
+      const { response, payload } = await adminRequest<DashboardState | { error?: string }>('/api/admin/state', { cache: 'no-store', headers: { Accept: 'application/json' } });
+      if (!readEpoch.current.isCurrent(ticket)) return false;
       if (!response.ok || !('actor' in payload)) throw new Error('error' in payload ? payload.error : 'The portal did not return valid data.');
+      const scope = JSON.stringify([payload.actor.id, payload.actor.role, payload.actor.parishId, payload.actor.clergyProfileId]);
+      if (actorScope.current !== null && actorScope.current !== scope) resetPrivateDrafts();
+      actorScope.current = scope;
       setData(payload);
       setSelectedAppointmentId((current) => current && payload.appointments.some((item) => item.id === current) ? current : payload.appointments[0]?.id ?? null);
       setQueueParishId((current) => current || payload.actor.parishId || payload.parishes[0]?.id || '');
@@ -142,42 +170,59 @@ export function AdminPortal({ signedInName, signOutPath }: { signedInName: strin
       setAssignmentParishId((current) => current || payload.actor.parishId || payload.parishes[0]?.id || '');
       setNewUserParishId((current) => current || payload.parishes[0]?.id || '');
       setNewVenueParishId((current) => current || payload.actor.parishId || payload.parishes[0]?.id || '');
+      return true;
     } catch (caught) {
+      if (caught instanceof AdminAccessError) clearPrivateState();
+      else if (!readEpoch.current.isCurrent(ticket)) return false;
       setError(caught instanceof Error ? caught.message : 'The portal could not load.');
+      return false;
     } finally {
-      setLoading(false);
+      if (readEpoch.current.isCurrent(ticket)) setLoading(false);
     }
-  }, []);
+  }, [clearPrivateState, resetPrivateDrafts]);
 
   useEffect(() => {
     const initialLoad = window.setTimeout(() => { void loadState(); }, 0);
-    return () => window.clearTimeout(initialLoad);
+    const refreshTimer = window.setInterval(() => { if (!busyRef.current && document.visibilityState === 'visible') void loadState(false); }, 30_000);
+    const epoch = readEpoch.current;
+    return () => { window.clearTimeout(initialLoad); window.clearInterval(refreshTimer); epoch.invalidate(); };
   }, [loadState]);
 
   const runMutation = useCallback(async (mutation: AdminMutation, successMessage: string) => {
+    if (busyRef.current || !data) return false;
+    readEpoch.current.invalidate();
+    busyRef.current = true;
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      const response = await fetch('/api/admin/state', {
+      const body = JSON.stringify(mutation);
+      const retry = await adminMutationKey(data.actor.id, body);
+      const { response, payload } = await adminRequest<{ error?: string }>('/api/admin/state', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
-          'Idempotency-Key': crypto.randomUUID(),
+          'Idempotency-Key': retry.key,
         },
-        body: JSON.stringify(mutation),
+        body,
       });
-      const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error ?? 'The action could not be completed.');
+      // The write succeeded even if the follow-up read is unavailable.
+      try { sessionStorage.removeItem(retry.storageKey); } catch { /* Keeping the key is safer than losing a confirmed result. */ }
       setNotice(successMessage);
-      await loadState(false);
+      const refreshed = await loadState(false);
+      if (!refreshed) setError(successMessage + ' The latest view could not load. Refresh instead of submitting again.');
+      return true;
     } catch (caught) {
+      if (caught instanceof AdminAccessError) clearPrivateState();
       setError(caught instanceof Error ? caught.message : 'The action could not be completed.');
+      return false;
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
-  }, [loadState]);
+  }, [loadState, data, clearPrivateState]);
 
   const selectedAppointment = data?.appointments.find((item) => item.id === selectedAppointmentId) ?? null;
   const filteredAppointments = useMemo(() => {
@@ -199,7 +244,9 @@ export function AdminPortal({ signedInName, signOutPath }: { signedInName: strin
   async function uploadDocument(document: AppointmentDocument, event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = '';
-    if (!file) return;
+    if (!file || busyRef.current) return;
+    readEpoch.current.invalidate();
+    busyRef.current = true;
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -208,14 +255,15 @@ export function AdminPortal({ signedInName, signOutPath }: { signedInName: strin
       form.set('file', file);
       form.set('appointmentId', document.appointmentId);
       form.set('requirementId', document.requirementId);
-      const response = await fetch('/api/admin/documents/upload', { method: 'POST', body: form });
-      const payload = await response.json() as { error?: string; message?: string };
+      const { response, payload } = await adminRequest<{ error?: string; message?: string }>('/api/admin/documents/upload', { method: 'POST', body: form }, 60_000);
       if (!response.ok) throw new Error(payload.error ?? 'The file could not be uploaded.');
       setNotice(payload.message ?? 'The document was submitted for review.');
       await loadState(false);
     } catch (caught) {
+      if (caught instanceof AdminAccessError) clearPrivateState();
       setError(caught instanceof Error ? caught.message : 'The file could not be uploaded.');
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
@@ -229,12 +277,13 @@ export function AdminPortal({ signedInName, signOutPath }: { signedInName: strin
   if (loading) {
     return <main className="loading-shell"><div className="loading-mark" aria-hidden="true">PL</div><p>Preparing your parish workspace…</p></main>;
   }
-  if (error && !data) return <ErrorPanel message={error} onRetry={() => void loadState()} />;
+  if (error && !data) return <ErrorPanel message={error} onRetry={() => void loadState()} signOutPath={signOutPath} />;
   if (!data) return null;
 
   const pendingAppointments = data.appointments.filter((item) => !['approved', 'completed', 'cancelled', 'rejected', 'no_show'].includes(item.status));
-  const reviewDocuments = data.documents.filter((item) => ['submitted', 'under_review'].includes(item.status));
-  const conflicts = data.appointments.filter((item) => item.conflict && !['cancelled', 'rejected', 'completed'].includes(item.status));
+  const appointmentTotal = Object.values(data.metrics.appointmentStatuses).reduce((sum, count) => sum + (count ?? 0), 0);
+  const pendingTotal = Object.entries(data.metrics.appointmentStatuses).reduce((sum, [status, count]) => sum + (['approved', 'completed', 'cancelled', 'rejected', 'no_show'].includes(status) ? 0 : count ?? 0), 0);
+  const conflicts = data.appointments.filter((item) => item.conflict && !['cancelled', 'rejected', 'completed', 'no_show'].includes(item.status));
   const waitingQueue = data.queue.filter((item) => item.status === 'waiting');
   const servingQueue = data.queue.filter((item) => item.status === 'serving');
   const permittedTransitions = selectedAppointment ? allowedAppointmentTransitions(selectedAppointment.status, data.actor.role) : [];
@@ -274,10 +323,10 @@ export function AdminPortal({ signedInName, signOutPath }: { signedInName: strin
         <button className="primary-button" onClick={() => openModule('appointments')}>Review pending requests <span aria-hidden="true">→</span></button>
       </section>
       <section className="kpi-grid" aria-label="Current operational metrics">
-        <article className="kpi-card"><span>Open appointment requests</span><strong>{pendingAppointments.length}</strong><small>{data.appointments.length} visible in your scope</small></article>
-        <article className="kpi-card"><span>Documents to verify</span><strong>{reviewDocuments.length}</strong><small>Human review required</small></article>
+        <article className="kpi-card"><span>Open appointment requests</span><strong>{pendingTotal}</strong><small>{appointmentTotal} total in your scope</small></article>
+        <article className="kpi-card"><span>Documents to verify</span><strong>{data.metrics.awaitingDocumentReview ?? '—'}</strong><small>{data.metrics.awaitingDocumentReview === null ? 'Parish staff access required' : 'Human review required'}</small></article>
         <article className="kpi-card"><span>Schedule conflicts</span><strong className={conflicts.length ? 'warning-value' : undefined}>{conflicts.length}</strong><small>{conflicts.length ? 'Approval is blocked' : 'No current overlaps'}</small></article>
-        <article className="kpi-card"><span>Walk-ins waiting</span><strong>{waitingQueue.length}</strong><small>{servingQueue.length} currently serving</small></article>
+        <article className="kpi-card"><span>Walk-ins waiting</span><strong>{data.metrics.waitingQueue ?? '—'}</strong><small>{data.metrics.servingQueue === null ? 'Front-desk access required' : `${data.metrics.servingQueue} currently serving`}</small></article>
       </section>
       <section className="content-grid">
         <article className="panel appointments-panel"><div className="panel-heading"><div><span className="eyebrow">Action required</span><h2>Upcoming appointments</h2></div><button className="text-button" onClick={() => openModule('appointments')}>View all <span aria-hidden="true">→</span></button></div>{appointmentTable(pendingAppointments.slice(0, 5), true)}</article>
@@ -303,14 +352,14 @@ export function AdminPortal({ signedInName, signOutPath }: { signedInName: strin
     </section>;
   } else if (activeModule === 'documents') {
     moduleContent = <section className="panel">
-      <div className="panel-heading"><div><span className="eyebrow">Human verification</span><h2>Document review</h2></div><span className="result-count">{reviewDocuments.length} awaiting review</span></div>
+      <div className="panel-heading"><div><span className="eyebrow">Human verification</span><h2>Document review</h2></div><span className="result-count">{data.metrics.awaitingDocumentReview === null ? 'Parish staff access required' : `${data.metrics.awaitingDocumentReview} awaiting review`}</span></div>
       <div className="filter-bar single"><label><span>Search requirements</span><input value={documentSearch} onChange={(event) => setDocumentSearch(event.target.value)} placeholder="Reference, parishioner, service, requirement…" /></label></div>
-      <div className="document-grid">{filteredDocuments.map((document) => <article className="document-card" key={`${document.appointmentId}-${document.requirementId}`}><div className="document-top"><div><span className="eyebrow">{document.reference} · {document.service}</span><h3>{document.requirement}</h3><p>{document.parishioner}</p></div><StatusPill value={document.status} /></div><div className="file-row"><span>{document.fileName ?? 'No file submitted'}</span>{document.fileName && !document.id.startsWith('missing:') && <a className="text-link" href={`/api/admin/documents/${encodeURIComponent(document.id)}`}>Download</a>}</div><label className="upload-button"><span>Upload {document.fileName ? 'replacement' : 'file'}</span><input className="sr-only" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" onChange={(event) => void uploadDocument(document, event)} disabled={busy} /></label>{document.fileName && !document.id.startsWith('missing:') && <><label className="note-input"><span>Reviewer note</span><input value={documentNotes[document.id] ?? ''} onChange={(event) => setDocumentNotes((notes) => ({ ...notes, [document.id]: event.target.value }))} placeholder="Reason required when requesting replacement" /></label><div className="document-actions"><button className="approve-button" disabled={busy} onClick={() => void runMutation({ action: 'document.review', documentId: document.id, status: 'verified', note: documentNotes[document.id] }, 'Document marked human-verified.')}>Verify document</button><button className="danger-button" disabled={busy || (documentNotes[document.id]?.trim().length ?? 0) < 4} onClick={() => void runMutation({ action: 'document.review', documentId: document.id, status: 'needs_replacement', note: documentNotes[document.id] }, 'Replacement requested from the parishioner.')}>Request replacement</button></div></>}</article>)}</div>
+      <div className="document-grid">{filteredDocuments.map((document) => <article className="document-card" key={`${document.appointmentId}-${document.requirementId}`}><div className="document-top"><div><span className="eyebrow">{document.reference} · {document.service}</span><h3>{document.requirement}</h3><p>{document.parishioner}</p></div><StatusPill value={document.status} /></div><div className="file-row"><span>{document.fileName ?? 'No file submitted'}</span>{document.fileName && document.sha256 && !document.id.startsWith('missing:') && <a className="text-link" href={`/api/admin/documents/${encodeURIComponent(document.id)}`}>Download</a>}</div><label className="upload-button"><span>Upload {document.fileName ? 'replacement' : 'file'}</span><input className="sr-only" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" onChange={(event) => void uploadDocument(document, event)} disabled={busy} /></label>{document.fileName && document.sha256 && !document.id.startsWith('missing:') && <><label className="note-input"><span>Reviewer note</span><input value={documentNotes[document.id] ?? ''} onChange={(event) => setDocumentNotes((notes) => ({ ...notes, [document.id]: event.target.value }))} placeholder="Reason required when requesting replacement" /></label><div className="document-actions"><button className="approve-button" disabled={busy} onClick={() => void runMutation({ action: 'document.review', documentId: document.id, expectedSha256: document.sha256 ?? '', status: 'verified', note: documentNotes[document.id] }, 'Document marked human-verified.')}>Verify document</button><button className="danger-button" disabled={busy || (documentNotes[document.id]?.trim().length ?? 0) < 4} onClick={() => void runMutation({ action: 'document.review', documentId: document.id, expectedSha256: document.sha256 ?? '', status: 'needs_replacement', note: documentNotes[document.id] }, 'Replacement requested from the parishioner.')}>Request replacement</button></div></>}</article>)}</div>
     </section>;
   } else if (activeModule === 'clergy') {
-    moduleContent = <section className="module-layout"><article className="panel module-primary"><div className="panel-heading"><div><span className="eyebrow">Conflict-aware calendar</span><h2>Clergy schedule</h2></div><span className="result-count">{data.clergyAssignments.length} assignments</span></div><div className="timeline">{data.clergyAssignments.length ? data.clergyAssignments.map((assignment) => <article key={assignment.id}><time>{formatDateTime(assignment.startsAt)}</time><div><h3>{assignment.service}</h3><p>{assignment.clergy} · {assignment.venue}</p><small>{assignment.parish} · ends {formatDateTime(assignment.endsAt)}</small></div>{data.actor.role !== 'clergy' && <button className="danger-button" disabled={busy} onClick={() => void runMutation({ action: 'clergy.assignment.cancel', assignmentId: assignment.id }, 'Clergy assignment cancelled.')}>Cancel</button>}</article>) : <div className="empty-state"><strong>No assignments in this scope</strong><span>Confirmed clergy assignments will appear here.</span></div>}</div><div className="alert info"><strong>Scheduling safeguard</strong><span>New assignments are rejected when any part of the priest, venue, appointment, or blocked-time interval overlaps.</span></div></article><aside className="panel detail-panel"><span className="eyebrow">New assignment</span><h2>Reserve clergy and venue</h2>{data.actor.role === 'clergy' ? <div className="alert info"><strong>Read-only access</strong><span>Schedule changes are assigned to parish staff and system administrators.</span></div> : <form className="stack-form" onSubmit={(event: FormEvent) => { event.preventDefault(); void runMutation({ action: 'clergy.assignment.create', parishId: assignmentParishId, clergyId: effectiveClergyId, venueId: effectiveVenueId, service: assignmentService, startsAt: new Date(assignmentStartsAt).toISOString(), endsAt: new Date(assignmentEndsAt).toISOString() }, 'Clergy assignment created.'); }}><label><span>Parish</span><select value={assignmentParishId} onChange={(event) => { setAssignmentParishId(event.target.value); setAssignmentClergyId(''); setAssignmentVenueId(''); }}>{data.parishes.map((parish) => <option value={parish.id} key={parish.id}>{parish.name}</option>)}</select></label><label><span>Priest</span><select value={effectiveClergyId} onChange={(event) => setAssignmentClergyId(event.target.value)}>{assignmentClergyOptions.map((clergy) => <option value={clergy.id} key={clergy.id}>{clergy.name}</option>)}</select></label><label><span>Venue</span><select value={effectiveVenueId} onChange={(event) => setAssignmentVenueId(event.target.value)}>{assignmentVenueOptions.map((venue) => <option value={venue.id} key={venue.id}>{venue.name}</option>)}</select></label><label><span>Service or duty</span><input value={assignmentService} maxLength={100} onChange={(event) => setAssignmentService(event.target.value)} placeholder="e.g. Daily Mass" /></label><label><span>Starts</span><input type="datetime-local" value={assignmentStartsAt} onChange={(event) => setAssignmentStartsAt(event.target.value)} /></label><label><span>Ends</span><input type="datetime-local" value={assignmentEndsAt} onChange={(event) => setAssignmentEndsAt(event.target.value)} /></label><button className="primary-button" disabled={busy || !effectiveClergyId || !effectiveVenueId || assignmentService.trim().length < 3 || !assignmentStartsAt || !assignmentEndsAt}>Create assignment</button><small>The server performs a second conflict check before saving.</small></form>}</aside></section>;
+    moduleContent = <section className="module-layout"><AssignmentBrowser key={`${data.actor.id}:${data.actor.role}:${data.actor.parishId}:${data.actor.clergyProfileId}`} actor={data.actor} refreshKey={data.generatedAt} busy={busy} total={data.metrics.confirmedAssignments} onAccessLost={handleAccessLost} onCancel={id => runMutation({ action: 'clergy.assignment.cancel', assignmentId: id }, 'Clergy assignment cancelled.')} /><aside className="panel detail-panel"><span className="eyebrow">New assignment</span><h2>Reserve clergy and venue</h2>{data.actor.role === 'clergy' ? <div className="alert info"><strong>Read-only access</strong><span>Schedule changes are assigned to parish staff and system administrators.</span></div> : <form className="stack-form" onSubmit={(event: FormEvent) => { event.preventDefault(); void runMutation({ action: 'clergy.assignment.create', parishId: assignmentParishId, clergyId: effectiveClergyId, venueId: effectiveVenueId, service: assignmentService, startsAt: new Date(assignmentStartsAt).toISOString(), endsAt: new Date(assignmentEndsAt).toISOString() }, 'Clergy assignment created.'); }}><label><span>Parish</span><select value={assignmentParishId} onChange={(event) => { setAssignmentParishId(event.target.value); setAssignmentClergyId(''); setAssignmentVenueId(''); }}>{data.parishes.map((parish) => <option value={parish.id} key={parish.id}>{parish.name}</option>)}</select></label><label><span>Priest</span><select value={effectiveClergyId} onChange={(event) => setAssignmentClergyId(event.target.value)}>{assignmentClergyOptions.map((clergy) => <option value={clergy.id} key={clergy.id}>{clergy.name}</option>)}</select></label><label><span>Venue</span><select value={effectiveVenueId} onChange={(event) => setAssignmentVenueId(event.target.value)}>{assignmentVenueOptions.map((venue) => <option value={venue.id} key={venue.id}>{venue.name}</option>)}</select></label><label><span>Service or duty</span><input value={assignmentService} maxLength={100} onChange={(event) => setAssignmentService(event.target.value)} placeholder="e.g. Daily Mass" /></label><label><span>Starts</span><input type="datetime-local" value={assignmentStartsAt} onChange={(event) => setAssignmentStartsAt(event.target.value)} /></label><label><span>Ends</span><input type="datetime-local" value={assignmentEndsAt} onChange={(event) => setAssignmentEndsAt(event.target.value)} /></label><button className="primary-button" disabled={busy || !effectiveClergyId || !effectiveVenueId || assignmentService.trim().length < 3 || !assignmentStartsAt || !assignmentEndsAt}>Create assignment</button><small>The server performs a second conflict check before saving.</small></form>}</aside></section>;
   } else if (activeModule === 'records') {
-    moduleContent = <section className="module-layout"><article className="panel module-primary"><div className="panel-heading"><div><span className="eyebrow">Indexed working records</span><h2>Parish records</h2></div><span className="result-count">{data.records.length} records</span></div><div className="alert info"><strong>Archive boundary</strong><span>ParishLink stores indexed working records. Verification means an authorized person checked the entry against the parish archive; it does not replace that archive or canonical authority.</span></div><div className="record-grid">{data.records.length ? data.records.map((record) => <article key={record.id}><div className="record-seal" aria-hidden="true">✦</div><div><span className="eyebrow">{record.type}</span><h3>{record.subject}</h3><p>{record.parish}</p><small>{formatDate(record.eventDate)} · {record.reference}</small></div><div className="record-actions"><StatusPill value={record.status} />{record.status === 'working_copy' && data.actor.role !== 'clergy' && <button className="approve-button" disabled={busy} onClick={() => void runMutation({ action: 'record.verify', recordId: record.id }, 'Record verified against the authorized archive.')}>Verify</button>}</div></article>) : <div className="empty-state"><strong>No records in this scope</strong><span>Create an indexed working record to begin.</span></div>}</div></article><aside className="panel detail-panel"><span className="eyebrow">New working record</span><h2>Index an archive entry</h2>{data.actor.role === 'clergy' ? <div className="alert info"><strong>Read-only access</strong><span>Record changes are assigned to parish staff and system administrators.</span></div> : <form className="stack-form" onSubmit={(event: FormEvent) => { event.preventDefault(); void runMutation({ action: 'record.create', parishId: recordParishId, recordType, subjectName: recordSubject, eventDate: recordEventDate, reference: recordReference }, 'Working record created.'); setRecordSubject(''); setRecordEventDate(''); setRecordReference(''); }}><label><span>Parish</span><select value={recordParishId} onChange={(event) => setRecordParishId(event.target.value)}>{data.parishes.map((parish) => <option value={parish.id} key={parish.id}>{parish.name}</option>)}</select></label><label><span>Record type</span><select value={recordType} onChange={(event) => setRecordType(event.target.value)}><option>Baptismal</option><option>Marriage</option><option>Confirmation</option><option>First Communion</option><option>Funeral Mass</option></select></label><label><span>Subject name</span><input value={recordSubject} maxLength={160} onChange={(event) => setRecordSubject(event.target.value)} /></label><label><span>Event date</span><input type="date" value={recordEventDate} onChange={(event) => setRecordEventDate(event.target.value)} /></label><label><span>Archive reference</span><input value={recordReference} maxLength={50} onChange={(event) => setRecordReference(event.target.value.toUpperCase())} placeholder="BAP-SGP-2026-0001" /></label><button className="primary-button" disabled={busy || recordSubject.trim().length < 3 || !recordEventDate || recordReference.trim().length < 6}>Create working record</button><small>Creation and later archive verification are recorded separately in the audit trail.</small></form>}</aside></section>;
+    moduleContent = <section className="module-layout"><RecordBrowser key={JSON.stringify([data.actor.id, data.actor.role, data.actor.parishId])} actor={data.actor} refreshKey={data.generatedAt} busy={busy} onAccessLost={handleAccessLost} onVerify={id => runMutation({ action: 'record.verify', recordId: id }, 'Record verified against the authorized archive.')} /><aside className="panel detail-panel"><span className="eyebrow">New working record</span><h2>Index an archive entry</h2>{data.actor.role !== 'parish_staff' ? <div className="alert info"><strong>Read-only access</strong><span>Restricted archive records require assigned parish staff access.</span></div> : <form className="stack-form" onSubmit={(event: FormEvent) => { event.preventDefault(); void runMutation({ action: 'record.create', parishId: recordParishId, recordType, subjectName: recordSubject, eventDate: recordEventDate, reference: recordReference }, 'Working record created.').then(saved => { if (saved) { setRecordSubject(''); setRecordEventDate(''); setRecordReference(''); } }); }}><label><span>Parish</span><select value={recordParishId} onChange={(event) => setRecordParishId(event.target.value)}>{data.parishes.map((parish) => <option value={parish.id} key={parish.id}>{parish.name}</option>)}</select></label><label><span>Record type</span><select value={recordType} onChange={(event) => setRecordType(event.target.value)}><option>Baptismal</option><option>Marriage</option><option>Confirmation</option><option>First Communion</option><option>Funeral Mass</option></select></label><label><span>Subject name</span><input value={recordSubject} maxLength={160} onChange={(event) => setRecordSubject(event.target.value)} /></label><label><span>Event date</span><input type="date" value={recordEventDate} onChange={(event) => setRecordEventDate(event.target.value)} /></label><label><span>Archive reference</span><input value={recordReference} maxLength={50} onChange={(event) => setRecordReference(event.target.value.toUpperCase())} placeholder="BAP-SGP-2026-0001" /></label><button className="primary-button" disabled={busy || recordSubject.trim().length < 3 || !recordEventDate || recordReference.trim().length < 6}>Create working record</button><small>Creation and later archive verification are recorded separately in the audit trail.</small></form>}</aside></section>;
   } else if (activeModule === 'queue') {
     const parishQueue = data.queue.filter((ticket) => ticket.parishId === queueParishId);
     const active = parishQueue.find((ticket) => ticket.status === 'serving');
@@ -327,8 +376,7 @@ export function AdminPortal({ signedInName, signOutPath }: { signedInName: strin
         <p className="body-copy">Mobile self-ticketing is a convenience, never an access requirement. Staff can issue the same queue ticket at the parish office.</p>
         {data.actor.role === 'clergy' ? <div className="alert info"><strong>Read-only access</strong><span>Ticket issuance is assigned to parish staff and system administrators.</span></div> : <form className="stack-form" onSubmit={(event: FormEvent) => {
           event.preventDefault();
-          void runMutation({ action: 'queue.issue', parishId: queueParishId, parishionerName: queueVisitorName, service: queueService }, 'Front-desk ticket issued.');
-          setQueueVisitorName('');
+          void runMutation({ action: 'queue.issue', parishId: queueParishId, parishionerName: queueVisitorName, service: queueService }, 'Front-desk ticket issued.').then(saved => { if (saved) setQueueVisitorName(''); });
         }}>
           <label><span>Visitor name</span><input value={queueVisitorName} maxLength={120} onChange={(event) => setQueueVisitorName(event.target.value)} autoComplete="off" /></label>
           <label><span>Purpose</span><select value={queueService} onChange={(event) => setQueueService(event.target.value as (typeof QUEUE_PURPOSES)[number])}>{QUEUE_PURPOSES.map((purpose) => <option value={purpose} key={purpose}>{purpose}</option>)}</select></label>
@@ -338,10 +386,10 @@ export function AdminPortal({ signedInName, signOutPath }: { signedInName: strin
       </aside>
     </section>;
   } else if (activeModule === 'announcements') {
-    moduleContent = <section className="module-layout"><article className="panel module-primary"><div className="panel-heading"><div><span className="eyebrow">Plain-text publishing</span><h2>Announcements</h2></div><span className="result-count">{data.announcements.length} published</span></div><div className="announcement-list">{data.announcements.map((announcement) => <article key={announcement.id}><div><span className="eyebrow">{announcement.parish}</span><h3>{announcement.title}</h3><p>{announcement.body}</p><small>Published {formatDateTime(announcement.publishedAt)} by {announcement.author}</small></div></article>)}</div></article><aside className="panel detail-panel"><span className="eyebrow">New notice</span><h2>Publish an announcement</h2>{data.actor.role === 'clergy' ? <div className="alert info"><strong>Read-only access</strong><span>Publishing is assigned to parish staff and system administrators.</span></div> : <form className="stack-form" onSubmit={(event: FormEvent) => { event.preventDefault(); void runMutation({ action: 'announcement.publish', title: announcementTitle, body: announcementBody, audience: announcementAudience, parishId: announcementParishId }, 'Announcement published.'); setAnnouncementTitle(''); setAnnouncementBody(''); }}><label><span>Audience</span><select value={announcementAudience} onChange={(event) => setAnnouncementAudience(event.target.value as 'all' | 'parish')}><option value="parish">One parish</option>{data.actor.role === 'system_admin' && <option value="all">All eight parishes</option>}</select></label>{announcementAudience === 'parish' && <label><span>Parish</span><select value={announcementParishId} onChange={(event) => setAnnouncementParishId(event.target.value)}>{data.parishes.map((parish) => <option value={parish.id} key={parish.id}>{parish.name}</option>)}</select></label>}<label><span>Title</span><input value={announcementTitle} maxLength={120} onChange={(event) => setAnnouncementTitle(event.target.value)} /></label><label><span>Message</span><textarea value={announcementBody} maxLength={2000} onChange={(event) => setAnnouncementBody(event.target.value)} /></label><button className="primary-button" disabled={busy || announcementTitle.trim().length < 4 || announcementBody.trim().length < 10}>Publish notice</button><small>Content is stored and rendered as plain text to protect readers from injected markup.</small></form>}</aside></section>;
+    moduleContent = <section className="module-layout"><article className="panel module-primary"><div className="panel-heading"><div><span className="eyebrow">Plain-text publishing</span><h2>Announcements</h2></div><span className="result-count">{data.announcements.length} recent · {data.metrics.publishedAnnouncements} total</span></div><div className="announcement-list">{data.announcements.map((announcement) => <article key={announcement.id}><div><span className="eyebrow">{announcement.parish}</span><h3>{announcement.title}</h3><p>{announcement.body}</p><small>Published {formatDateTime(announcement.publishedAt)} by {announcement.author}</small></div></article>)}</div></article><aside className="panel detail-panel"><span className="eyebrow">New notice</span><h2>Publish an announcement</h2>{data.actor.role === 'clergy' ? <div className="alert info"><strong>Read-only access</strong><span>Publishing is assigned to parish staff and system administrators.</span></div> : <form className="stack-form" onSubmit={(event: FormEvent) => { event.preventDefault(); void runMutation({ action: 'announcement.publish', title: announcementTitle, body: announcementBody, audience: announcementAudience, parishId: announcementParishId }, 'Announcement published.').then(saved => { if (saved) { setAnnouncementTitle(''); setAnnouncementBody(''); } }); }}><label><span>Audience</span><select value={announcementAudience} onChange={(event) => setAnnouncementAudience(event.target.value as 'all' | 'parish')}><option value="parish">One parish</option>{data.actor.role === 'system_admin' && <option value="all">All eight parishes</option>}</select></label>{announcementAudience === 'parish' && <label><span>Parish</span><select value={announcementParishId} onChange={(event) => setAnnouncementParishId(event.target.value)}>{data.parishes.map((parish) => <option value={parish.id} key={parish.id}>{parish.name}</option>)}</select></label>}<label><span>Title</span><input value={announcementTitle} maxLength={120} onChange={(event) => setAnnouncementTitle(event.target.value)} /></label><label><span>Message</span><textarea value={announcementBody} maxLength={2000} onChange={(event) => setAnnouncementBody(event.target.value)} /></label><button className="primary-button" disabled={busy || announcementTitle.trim().length < 4 || announcementBody.trim().length < 10}>Publish notice</button><small>Content is stored and rendered as plain text to protect readers from injected markup.</small></form>}</aside></section>;
   } else {
-    const statusCounts = data.appointments.reduce<Record<string, number>>((counts, appointment) => ({ ...counts, [appointment.status]: (counts[appointment.status] ?? 0) + 1 }), {});
-    moduleContent = <><section className="report-grid"><article className="panel"><span className="eyebrow">Operational snapshot</span><h2>Appointment status distribution</h2><div className="metric-list">{Object.entries(statusCounts).map(([status, count]) => <div key={status}><span>{humanizeStatus(status)}</span><strong>{count}</strong></div>)}</div></article><article className="panel"><span className="eyebrow">ISO/IEC 25010</span><h2>Evaluation evidence</h2><div className="empty-state aligned"><strong>No validated evaluation results displayed</strong><span>Scores will appear only after the approved questionnaire, respondent plan, consent process, and completed responses are available. The prototype’s illustrative values are intentionally excluded.</span></div></article><article className="panel wide"><span className="eyebrow">Data quality</span><h2>Current release indicators</h2><div className="quality-grid"><div><strong>{data.records.filter((record) => record.status === 'verified_against_archive').length}</strong><span>records checked against archive</span></div><div><strong>{data.documents.filter((document) => document.status === 'verified').length}</strong><span>human-verified submissions</span></div><div><strong>{conflicts.length}</strong><span>unresolved schedule conflicts</span></div><div><strong>{data.announcements.length}</strong><span>published notices in scope</span></div></div></article></section><section className="configuration-grid"><article className="panel"><span className="eyebrow">Scheduling resources</span><h2>Add a parish venue</h2>{data.actor.role === 'clergy' ? <div className="alert info"><strong>Read-only access</strong><span>Venue setup is assigned to parish staff and system administrators.</span></div> : <form className="stack-form" onSubmit={(event: FormEvent) => { event.preventDefault(); void runMutation({ action: 'venue.create', parishId: newVenueParishId, name: newVenueName, ...(newVenueCapacity ? { capacity: Number(newVenueCapacity) } : {}) }, 'Parish venue created.'); setNewVenueName(''); setNewVenueCapacity(''); }}><label><span>Parish</span><select value={newVenueParishId} onChange={(event) => setNewVenueParishId(event.target.value)}>{data.parishes.map((parish) => <option value={parish.id} key={parish.id}>{parish.name}</option>)}</select></label><label><span>Venue name</span><input value={newVenueName} maxLength={100} onChange={(event) => setNewVenueName(event.target.value)} placeholder="e.g. Main church" /></label><label><span>Capacity (optional)</span><input type="number" min="1" max="10000" value={newVenueCapacity} onChange={(event) => setNewVenueCapacity(event.target.value)} /></label><button className="primary-button" disabled={busy || newVenueName.trim().length < 3}>Add venue</button></form>}</article>{data.actor.role === 'system_admin' && <article className="panel"><span className="eyebrow">Role-based access</span><h2>Provision internal access</h2><form className="stack-form" onSubmit={(event: FormEvent) => { event.preventDefault(); void runMutation({ action: 'user.provision', fullName: newUserName, email: newUserEmail, role: newUserRole, parishId: newUserParishId }, 'Internal access provisioned.'); setNewUserName(''); setNewUserEmail(''); }}><label><span>Complete name</span><input value={newUserName} maxLength={120} onChange={(event) => setNewUserName(event.target.value)} /></label><label><span>Email address</span><input type="email" value={newUserEmail} maxLength={254} onChange={(event) => setNewUserEmail(event.target.value)} /></label><label><span>Role</span><select value={newUserRole} onChange={(event) => setNewUserRole(event.target.value as 'parish_staff' | 'clergy')}><option value="parish_staff">Parish staff</option><option value="clergy">Clergy / priest</option></select></label><label><span>Parish</span><select value={newUserParishId} onChange={(event) => setNewUserParishId(event.target.value)}>{data.parishes.map((parish) => <option value={parish.id} key={parish.id}>{parish.name}</option>)}</select></label><button className="primary-button" disabled={busy || newUserName.trim().length < 3 || !newUserEmail.includes('@')}>Provision access</button><small>The person signs in through the protected admin identity provider using this exact email. No staff password is stored by ParishLink.</small></form></article>}{data.actor.role === 'system_admin' && <article className="panel configuration-wide"><div className="panel-heading"><div><span className="eyebrow">Authorized personnel</span><h2>Internal access register</h2></div><span className="result-count">{data.accessUsers.length} accounts</span></div><div className="access-list">{data.accessUsers.map((user) => <div key={user.id}><div><strong>{user.name}</strong><span>{user.email} · {humanizeStatus(user.role)} · {user.parish}</span></div><button className={user.isActive ? 'danger-button' : 'approve-button'} disabled={busy || user.id === data.actor.id} onClick={() => void runMutation({ action: 'user.set_active', userId: user.id, isActive: !user.isActive }, `${user.name} access ${user.isActive ? 'deactivated' : 'activated'}.`)}>{user.isActive ? 'Deactivate' : 'Activate'}</button></div>)}</div></article>}</section></>;
+    const statusCounts = data.metrics.appointmentStatuses;
+    moduleContent = <><section className="report-grid"><article className="panel"><span className="eyebrow">Operational snapshot</span><h2>Appointment status distribution</h2><div className="metric-list">{Object.entries(statusCounts).map(([status, count]) => <div key={status}><span>{humanizeStatus(status)}</span><strong>{count}</strong></div>)}</div></article><article className="panel"><span className="eyebrow">ISO/IEC 25010</span><h2>Evaluation evidence</h2><div className="empty-state aligned"><strong>No validated evaluation results displayed</strong><span>Scores will appear only after the approved questionnaire, respondent plan, consent process, and completed responses are available. The prototype’s illustrative values are intentionally excluded.</span></div></article><article className="panel wide"><span className="eyebrow">Data quality</span><h2>Current release indicators</h2><div className="quality-grid"><div><strong>{data.metrics.verifiedRecords ?? '—'}</strong><span>{data.metrics.verifiedRecords === null ? 'archive count restricted to parish staff' : 'records checked against archive'}</span></div><div><strong>{data.metrics.verifiedDocuments ?? '—'}</strong><span>{data.metrics.verifiedDocuments === null ? 'document count restricted to parish staff' : 'human-verified submissions'}</span></div><div><strong>{conflicts.length}</strong><span>unresolved schedule conflicts</span></div><div><strong>{data.metrics.publishedAnnouncements}</strong><span>published notices in scope</span></div></div></article></section><section className="configuration-grid"><article className="panel"><span className="eyebrow">Scheduling resources</span><h2>Add a parish venue</h2>{data.actor.role === 'clergy' ? <div className="alert info"><strong>Read-only access</strong><span>Venue setup is assigned to parish staff and system administrators.</span></div> : <form className="stack-form" onSubmit={(event: FormEvent) => { event.preventDefault(); void runMutation({ action: 'venue.create', parishId: newVenueParishId, name: newVenueName, ...(newVenueCapacity ? { capacity: Number(newVenueCapacity) } : {}) }, 'Parish venue created.').then(saved => { if (saved) { setNewVenueName(''); setNewVenueCapacity(''); } }); }}><label><span>Parish</span><select value={newVenueParishId} onChange={(event) => setNewVenueParishId(event.target.value)}>{data.parishes.map((parish) => <option value={parish.id} key={parish.id}>{parish.name}</option>)}</select></label><label><span>Venue name</span><input value={newVenueName} maxLength={100} onChange={(event) => setNewVenueName(event.target.value)} placeholder="e.g. Main church" /></label><label><span>Capacity (optional)</span><input type="number" min="1" max="10000" value={newVenueCapacity} onChange={(event) => setNewVenueCapacity(event.target.value)} /></label><button className="primary-button" disabled={busy || newVenueName.trim().length < 3}>Add venue</button></form>}</article>{data.actor.role === 'system_admin' && <article className="panel"><span className="eyebrow">Role-based access</span><h2>Provision internal access</h2><form className="stack-form" onSubmit={(event: FormEvent) => { event.preventDefault(); void runMutation({ action: 'user.provision', fullName: newUserName, email: newUserEmail, role: newUserRole, parishId: newUserParishId }, 'Internal access provisioned.').then(saved => { if (saved) { setNewUserName(''); setNewUserEmail(''); } }); }}><label><span>Complete name</span><input value={newUserName} maxLength={120} onChange={(event) => setNewUserName(event.target.value)} /></label><label><span>Email address</span><input type="email" value={newUserEmail} maxLength={254} onChange={(event) => setNewUserEmail(event.target.value)} /></label><label><span>Role</span><select value={newUserRole} onChange={(event) => setNewUserRole(event.target.value as 'parish_staff' | 'clergy')}><option value="parish_staff">Parish staff</option><option value="clergy">Clergy / priest</option></select></label><label><span>Parish</span><select value={newUserParishId} onChange={(event) => setNewUserParishId(event.target.value)}>{data.parishes.map((parish) => <option value={parish.id} key={parish.id}>{parish.name}</option>)}</select></label><button className="primary-button" disabled={busy || newUserName.trim().length < 3 || !newUserEmail.includes('@')}>Provision access</button><small>The person signs in through the protected admin identity provider using this exact email. No staff password is stored by ParishLink.</small></form></article>}{data.actor.role === 'system_admin' && <article className="panel configuration-wide"><div className="panel-heading"><div><span className="eyebrow">Authorized personnel</span><h2>Internal access register</h2></div><span className="result-count">{data.accessUsers.length} accounts</span></div><div className="access-list">{data.accessUsers.map((user) => <div key={user.id}><div><strong>{user.name}</strong><span>{user.email} · {humanizeStatus(user.role)} · {user.parish}</span></div><button className={user.isActive ? 'danger-button' : 'approve-button'} disabled={busy || user.id === data.actor.id} onClick={() => void runMutation({ action: 'user.set_active', userId: user.id, isActive: !user.isActive }, `${user.name} access ${user.isActive ? 'deactivated' : 'activated'}.`)}>{user.isActive ? 'Deactivate' : 'Activate'}</button></div>)}</div></article>}</section></>;
   }
 
   return (

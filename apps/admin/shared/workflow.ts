@@ -24,6 +24,8 @@ export function allowedAppointmentTransitions(
   status: AppointmentStatus,
   role: InternalUserRole,
 ): AppointmentStatus[] {
+  // Technical administration does not confer sacramental decision authority.
+  if (role === 'system_admin') return [];
   const allowed = [...TRANSITIONS[status]];
   if (role === 'clergy') {
     return allowed.filter((next) => ['ready_to_approve', 'approved', 'rejected', 'completed', 'no_show'].includes(next));

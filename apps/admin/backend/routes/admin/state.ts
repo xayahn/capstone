@@ -2,6 +2,8 @@ import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { AdminServiceError, loadDashboardState, performAdminMutation, resolveActor } from '@/backend/services/admin-service';
 import { recordServerFailure } from '@/backend/observability/server-log';
 import { validIdempotencyKey } from '@/backend/security/idempotency';
+import { readSmallJson, RequestBodyError } from '@/backend/http/small-json';
+import { schedulePushDispatch } from '@/backend/notifications/background-dispatch';
 import {
   APPOINTMENT_STATUSES,
   type AdminMutation,
@@ -55,11 +57,13 @@ function parseMutation(value: unknown): AdminMutation {
       };
     }
     case 'document.review': {
+      if (typeof value.expectedSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(value.expectedSha256)) throw new AdminServiceError('Refresh and open the current document before reviewing.');
       const status = stringField(value.status, 'Status', 40);
       if (status !== 'verified' && status !== 'needs_replacement') throw new AdminServiceError('Unknown document decision.');
       return {
         action,
         documentId: stringField(value.documentId, 'Document', 160) as string,
+        expectedSha256: value.expectedSha256,
         status,
         note: stringField(value.note, 'Review note', 500, false),
       };
@@ -175,16 +179,13 @@ export async function POST(request: Request): Promise<Response> {
     if (!idempotencyKey) {
       throw new AdminServiceError('A valid Idempotency-Key header is required for administrative actions.');
     }
-    const body = await request.text();
-    if (new TextEncoder().encode(body).byteLength > 12_000) {
-      throw new AdminServiceError('The request is too large.', 413);
-    }
-    const mutation = parseMutation(JSON.parse(body));
+    const mutation = parseMutation(await readSmallJson(request, 12_000));
     await performAdminMutation(actor, mutation, idempotencyKey);
+    schedulePushDispatch();
     return json({ ok: true });
   } catch (error) {
     if (error instanceof AdminServiceError) return json({ error: error.message }, error.status);
-    if (error instanceof SyntaxError) return json({ error: 'The request body is not valid JSON.' }, 400);
+    if (error instanceof RequestBodyError) return json({ error: error.message }, error.status);
     const requestId = recordServerFailure('admin-state-write', error);
     return json({ error: 'The action could not be completed. Please try again.', requestId }, 500);
   }

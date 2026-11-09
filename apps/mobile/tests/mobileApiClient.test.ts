@@ -16,6 +16,49 @@ afterEach(() => {
 });
 
 describe('MobileApiClient', () => {
+  it('never sends an already-cancelled request', async () => {
+    const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock);
+    const caller = new AbortController(); caller.abort();
+    await expect(new MobileApiClient('https://example.test/api', () => 'token').request('/mobile/snapshot', { signal: caller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it.each([0, -1, NaN, Infinity])('rejects an invalid per-request deadline: %s', async timeout => {
+    const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock);
+    await expect(new MobileApiClient('https://example.test/api', () => '').request('/mobile/snapshot', {}, timeout)).rejects.toBeInstanceOf(RangeError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('recognizes a browser opaque login redirect without reading its body', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ status: 0, type: 'opaqueredirect', body: null })));
+    await expect(new MobileApiClient('https://example.test/api', () => 'token').request('/mobile/snapshot')).rejects.toMatchObject({ status: 401 });
+  });
+  it('retains a 401 denial even when its response body never arrives', async () => {
+    vi.useFakeTimers();
+    const cancel = vi.fn();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream({ cancel }), { status: 401 })));
+    const client = new MobileApiClient('https://example.test/api', () => 'token', 50);
+    const rejected = expect(client.request('/mobile/snapshot')).rejects.toMatchObject({ name: 'MobileApiError', status: 401 });
+    await vi.advanceTimersByTimeAsync(51);
+    await rejected;
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+  it('does not let callers enable redirects for private form submissions', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(null, { status: 307, headers: { Location: 'https://unexpected.example/' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const client = new MobileApiClient('https://example.test/api', () => 'token');
+    await expect(client.request('/mobile/auth/sign-in', { method: 'POST', body: 'private form', redirect: 'follow' })).rejects.toThrow('redirect');
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ redirect: 'manual', credentials: 'omit' });
+  });
+  it('honors cancellation even when the transport ignores abort', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
+    const caller = new AbortController();
+    const client = new MobileApiClient('https://example.test/api', () => '', 50);
+    const rejected = expect(client.request('/mobile/snapshot', { signal: caller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+    caller.abort();
+    await vi.advanceTimersByTimeAsync(51);
+    await rejected;
+  });
   it('reads the current token for every request and owns the authorization header', async () => {
     let token = ' first-token ';
     const fetchMock = vi.fn()

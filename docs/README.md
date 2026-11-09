@@ -3,10 +3,20 @@
 **Project:** ParishLink: A Digital Platform for Sacramental Services Coordination and Parish Information Management  
 **Capstone basis:** Chapters I-III of `ParishLink Research (4).docx` (July 2026)  
 **Interaction basis:** `ParishLink_Prototype_2 (1).html`  
-**Documentation baseline:** 2026-08-28  
+**Documentation baseline:** 2026-11-09\
 **Status:** Production-oriented local implementation; no deployment has been performed. Release is permitted only after the gates in `PREDEPLOYMENT_READINESS.md`, `TEST_PLAN.md`, and `DEPLOYMENT_RUNBOOK.md` pass.
 
 This documentation specifies the intended production behavior and handover controls. It does not by itself prove that every feature is implemented, deployed, evaluated, or approved. Implementation status must be supported by build/test/deployment evidence, and research findings must come from actual approved data collection.
+
+**Current release decision: HOLD.** See [the 2026-11-04 audit and remaining blockers](AUDIT_2026-11-04.md). Dependency advisories and required privacy, canonical, security, operational, and stakeholder clearance remain unresolved; older package-scan/test results are dated evidence, not current clearance. The preceding recovery/pilot increment recorded 257 admin tests, 164 mobile tests, 97 security regressions, six-migration/27-table/48-index validation and both TypeScript checks. The subsequent [step 1 local account acceptance](LOCAL_ACCOUNT_ACCEPTANCE_2026-11-09.md) passed nine provider Worker checks, 39 account Worker source-route checks, 36 actual Vinext HTTP checks and six HTTP-runner safeguard tests. Those new checks do not represent a new combined full-release run, real inbox delivery, native acceptance or stakeholder findings.
+
+[Provider setup and verification](GEMINI_PUSH_SETUP.md) retains the separately dated Gemini/Expo/Firebase foundation and verified temporary-login cleanup. The public Android Firebase client file is verified and linked from the preserved ignored mobile environment; the sender key is stored only in ignored `.local-secrets/` and assigned to the ParishLink Android app. Native push remains incomplete: push is disabled, Android signing/submission credentials and signed builds are absent, and scheduler, trusted-HTTPS device API and device-delivery evidence are missing. APNs remains unconfigured with no reported paid Apple Developer membership. No native/device build, app-store submission, production migration, provider/device push or deployment has been performed.
+
+The current code also implements parishioner password recovery and signed-in email verification with a fixed Resend transport, hashed 12-character single-use codes, a 15-minute lifetime, five-wrong-attempt ceiling, enumeration-safe reset acknowledgement, and full mobile session/push-binding revocation after reset. This is implementation evidence, not live mail evidence: `MAIL_ENABLED`, `MAIL_DELIVERY_VERIFIED`, `RESEND_API_KEY`, and `MAIL_FROM` are unavailable locally, and no recovery/verification email delivery has been accepted. Existing accounts remain unverified until a successful code flow, and booking does not yet enforce verified email. Internal staff recovery is separate and belongs to managed SSO/identity operations. See [account recovery setup and acceptance](ACCOUNT_RECOVERY.md).
+
+Current account/native/pilot implementation and remaining gates are recorded in [the 8 November follow-up](CRITICAL_GAPS_ACCEPTANCE_2026-11-08.md). Beneficiary approval is pending; no stakeholder pilot has been run. The group can use the prepared [beneficiary review brief](../research/pilot/BENEFICIARY_APPROVAL_BRIEF.md) and [draft feedback instrument](../research/pilot/DRAFT_FEEDBACK_INSTRUMENT.md) for review.
+
+The local connection blocker was not reproduced under the current permission grant, and recovery navigation/validation/unavailable-mail handling were observed in the browser. Read [local account acceptance, started 8 November and completed 9 November](LOCAL_ACCOUNT_ACCEPTANCE_2026-11-09.md) for the actual backend checks, isolation controls, pending observations and reproducible commands. No firewall or application security rule was relaxed.
 
 ## Product overview
 
@@ -103,6 +113,11 @@ Typography follows the prototype: **Cormorant Garamond** for display headings an
 - [`ASSUMPTIONS_GAPS.md`](ASSUMPTIONS_GAPS.md) - unresolved decisions and source limitations
 - [`PREDEPLOYMENT_READINESS.md`](PREDEPLOYMENT_READINESS.md) - current implementation evidence, remaining release gates, and the explicit no-deployment record
 - [`PRODUCTION_HANDOFF.md`](PRODUCTION_HANDOFF.md) - non-deploying release checks, environment contract, migration order, evidence, and external launch gates
+- [`GEMINI_PUSH_SETUP.md`](GEMINI_PUSH_SETUP.md) - bounded Gemini activation, Expo/Firebase setup state, remaining credentials, scheduler, and live-device acceptance steps
+- [`ACCOUNT_RECOVERY.md`](ACCOUNT_RECOVERY.md) - parishioner recovery/verification behavior, Resend configuration, security boundaries, and acceptance gates
+- [`PILOT_PROTOCOL.md`](PILOT_PROTOCOL.md) - approval-gated matched manual/app pilot protocol and measurement definitions
+- [`NATIVE_ACCEPTANCE.md`](NATIVE_ACCEPTANCE.md) - real Android/iOS foreground, background, closed-state, recovery, accessibility, and network acceptance matrix
+- [`../research/pilot/README.md`](../research/pilot/README.md) - blank pilot templates, gated recorder, validator, and synthetic rehearsal separation
 
 ## Repository handover map
 
@@ -111,7 +126,8 @@ ParishLink/
 ├── apps/
 │   ├── mobile/       Parishioner-facing mobile application
 │   └── admin/        Internal web/API project with separate frontend, backend, shared, and database folders
-└── docs/             Product, architecture, test, security, deployment, operations, and user documentation
+├── docs/             Product, architecture, test, security, deployment, operations, and user documentation
+└── research/pilot/   Approval-gated pilot templates, local recorder, validator, and tests
 ```
 
 The shared API/data contract is documented centrally even when route code is colocated with a client framework. No mobile or browser bundle may contain database, object-storage, notification-provider, or Gemini secrets.
@@ -138,6 +154,7 @@ ParishLink is releasable only when all of the following are evidenced:
 - Walk-in tickets and online requests are visible in the same operational system without falsely requiring a walk-in user to own a device.
 - The Gemini feature provides general guidance only, does not receive sensitive record contents, and fails safely when unavailable.
 - The admin web portal enforces permissions on the server, not just in navigation.
+- Parishioner recovery email is configured and acceptance-tested without revealing whether an account exists; a successful reset revokes all prior mobile sessions and push bindings. The separately governed internal SSO recovery path is also accepted.
 - Backup restoration, rollback, notification failure, and external-service outage procedures have been rehearsed in staging.
 - Required automated tests pass, critical/high security findings are closed, and UAT evidence is retained.
 - ISO/IEC 25010 results shown in the system come only from completed, approved evaluation data. No prototype or fabricated scores may appear as actual findings.

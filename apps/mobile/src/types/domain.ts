@@ -52,6 +52,7 @@ export interface SacramentService {
   shortDescription: string;
   durationMinutes: number;
   requirements: string[];
+  requirementDetails?: { id: string; name: string; required: boolean; instructions: string | null }[];
   icon: 'droplet' | 'heart' | 'cross' | 'sun' | 'flame';
 }
 
@@ -140,6 +141,7 @@ export interface ParishionerProfile {
   mobileNumber: string;
   homeParishId: ParishId;
   notificationsEnabled: boolean;
+  emailVerified?: boolean;
 }
 
 export interface AuthSession {
@@ -179,6 +181,8 @@ export interface AssistantMessage {
   followUpPrompts?: string[];
   clarification?: AssistantClarification;
   escalation?: boolean;
+  provider?: 'gemini' | 'parishlink';
+  fallbackReason?: 'disabled' | 'consent_required' | 'private_or_sensitive' | 'unavailable' | 'invalid_response' | 'out_of_scope';
 }
 
 export interface AssistantSource {
@@ -255,6 +259,13 @@ export interface SignUpInput extends SignInInput {
 
 export interface ChangePasswordInput {
   currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
+export interface PasswordResetInput {
+  email: string;
+  code: string;
   newPassword: string;
   confirmPassword: string;
 }

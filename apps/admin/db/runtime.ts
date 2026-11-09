@@ -1,5 +1,7 @@
 import { env } from 'cloudflare:workers';
 import type { ChatGPTUser } from '@/app/chatgpt-auth';
+import { PUSH_SCHEMA_STATEMENTS } from '@/db/push-schema';
+import { ACCOUNT_SCHEMA_STATEMENTS } from '@/db/account-schema';
 
 export function getRawDb(): D1Database {
   if (!env.DB) throw new Error('The ParishLink D1 database binding is unavailable.');
@@ -7,6 +9,7 @@ export function getRawDb(): D1Database {
 }
 
 const schemaStatements = [
+  // Push tables and their enqueue trigger are appended after the base tables.
   `CREATE TABLE IF NOT EXISTS parishes (
     id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
     timezone TEXT NOT NULL DEFAULT 'Asia/Manila', address TEXT, office_hours TEXT,
@@ -31,6 +34,7 @@ const schemaStatements = [
     failed_attempts INTEGER NOT NULL DEFAULT 0, locked_until TEXT,
     notifications_enabled INTEGER NOT NULL DEFAULT 1,
     password_changed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    auth_version INTEGER NOT NULL DEFAULT 0, email_verified_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`,
@@ -180,12 +184,18 @@ const schemaStatements = [
   `CREATE INDEX IF NOT EXISTS idx_records_parish_type_subject ON sacramental_records(parish_id, record_type, subject_name)`,
   `CREATE INDEX IF NOT EXISTS idx_clergy_assignments_clergy_window ON clergy_assignments(clergy_id, starts_at, ends_at)`,
   `CREATE INDEX IF NOT EXISTS idx_clergy_assignments_parish_window ON clergy_assignments(parish_id, starts_at, ends_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_assignments_parish_page ON clergy_assignments(parish_id, status, julianday(starts_at), id)`,
+  `CREATE INDEX IF NOT EXISTS idx_assignments_clergy_page ON clergy_assignments(clergy_id, status, julianday(starts_at), id)`,
+  `CREATE INDEX IF NOT EXISTS idx_assignments_all_page ON clergy_assignments(status, julianday(starts_at), id)`,
   `CREATE INDEX IF NOT EXISTS idx_chatbot_messages_session ON chatbot_messages(session_id, created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_evaluation_characteristic ON evaluation_responses(quality_characteristic, submitted_at)`,
   `CREATE INDEX IF NOT EXISTS idx_mobile_rate_limits_created ON mobile_rate_limits(created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_idempotency_expiry ON idempotency_keys(expires_at)`,
   `CREATE INDEX IF NOT EXISTS idx_appointment_events_appointment ON appointment_events(appointment_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_sacramental_records_parish_date_id ON sacramental_records(parish_id, event_date, id)`,
   `CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_logs(entity_type, entity_id, created_at)`,
+  ...PUSH_SCHEMA_STATEMENTS,
+  ...ACCOUNT_SCHEMA_STATEMENTS,
 ];
 
 const parishes = [
@@ -247,10 +257,13 @@ const EXPECTED_PRODUCTION_TABLES = [
   'evaluation_responses',
   'idempotency_keys',
   'mobile_credentials',
+  'mobile_email_challenges',
   'mobile_rate_limits',
   'mobile_sessions',
   'notifications',
   'parishes',
+  'push_devices',
+  'push_deliveries',
   'queue_tickets',
   'sacramental_records',
   'service_types',
@@ -260,11 +273,11 @@ const EXPECTED_PRODUCTION_TABLES = [
 ] as const;
 
 async function ensureSchema(db: D1Database): Promise<void> {
-  schemaReady ??= db.batch(schemaStatements.map((statement) => db.prepare(statement))).then(() => undefined);
+  schemaReady ??= db.batch(schemaStatements.map((statement) => db.prepare(statement))).then(() => undefined).catch(error => { schemaReady = null; throw error; });
   await schemaReady;
 }
 
-async function tableColumns(db: D1Database, table: 'appointments' | 'document_submissions') {
+async function tableColumns(db: D1Database, table: 'appointments' | 'document_submissions' | 'mobile_credentials' | 'mobile_email_challenges') {
   const rows = await db.prepare(`PRAGMA table_info('${table}')`).all<{ name: string }>();
   return new Set(rows.results.map((row) => row.name));
 }
@@ -273,7 +286,10 @@ async function ensureDevelopmentReleaseSchema(db: D1Database): Promise<void> {
   developmentReleaseSchemaReady ??= (async () => {
     const appointmentColumns = await tableColumns(db, 'appointments');
     const documentColumns = await tableColumns(db, 'document_submissions');
+    const credentialColumns = await tableColumns(db, 'mobile_credentials');
     const statements: D1PreparedStatement[] = [];
+    if (!credentialColumns.has('auth_version')) statements.push(db.prepare('ALTER TABLE mobile_credentials ADD auth_version INTEGER NOT NULL DEFAULT 0'));
+    if (!credentialColumns.has('email_verified_at')) statements.push(db.prepare('ALTER TABLE mobile_credentials ADD email_verified_at TEXT'));
     if (!appointmentColumns.has('checklist_version_id')) {
       statements.push(db.prepare("ALTER TABLE appointments ADD checklist_version_id TEXT NOT NULL DEFAULT 'legacy'"));
     }
@@ -294,7 +310,7 @@ async function ensureDevelopmentReleaseSchema(db: D1Database): Promise<void> {
       is_required = COALESCE((
         SELECT is_required FROM document_requirements WHERE id = document_submissions.requirement_id
       ), is_required, 1)`).run();
-  })();
+  })().catch(error => { developmentReleaseSchemaReady = null; throw error; });
   await developmentReleaseSchemaReady;
 }
 
@@ -308,18 +324,34 @@ async function assertProductionSchema(db: D1Database): Promise<void> {
       throw new Error('The ParishLink production database migration is incomplete.');
     }
 
-    const [appointmentColumns, documentColumns, indexes] = await Promise.all([
+    const [appointmentColumns, documentColumns, credentialColumns, challengeColumns, indexes, triggers] = await Promise.all([
       tableColumns(db, 'appointments'),
       tableColumns(db, 'document_submissions'),
+      tableColumns(db, 'mobile_credentials'),
+      tableColumns(db, 'mobile_email_challenges'),
       db.prepare("SELECT name FROM sqlite_schema WHERE type = 'index'").all<{ name: string }>(),
+      db.prepare("SELECT name FROM sqlite_schema WHERE type = 'trigger'").all<{ name: string }>(),
     ]);
     const requiredAppointmentColumns = ['checklist_version_id'];
     const requiredDocumentColumns = ['requirement_instructions', 'is_required', 'checklist_version_id'];
     const availableIndexes = new Set(indexes.results.map((row) => row.name));
     if (requiredAppointmentColumns.some((name) => !appointmentColumns.has(name))
       || requiredDocumentColumns.some((name) => !documentColumns.has(name))
+      || !credentialColumns.has('auth_version') || !credentialColumns.has('email_verified_at')
+      || ['id','user_id','purpose','session_id','email','code_hash','credential_version','attempts','delivery_status','expires_at','consumed_by','created_at'].some(name => !challengeColumns.has(name))
       || !availableIndexes.has('idx_idempotency_actor_scope_key')
-      || !availableIndexes.has('idx_idempotency_expiry')) {
+      || !availableIndexes.has('idx_idempotency_expiry')
+      || !availableIndexes.has('idx_sacramental_records_parish_date_id')
+      || !availableIndexes.has('idx_assignments_parish_page')
+      || !availableIndexes.has('idx_assignments_clergy_page')
+      || !availableIndexes.has('idx_assignments_all_page')
+      || !availableIndexes.has('idx_push_devices_user')
+      || !availableIndexes.has('idx_push_deliveries_due')
+      || !availableIndexes.has('idx_mobile_email_challenges_user_purpose')
+      || !availableIndexes.has('idx_mobile_email_challenges_expiry')
+      || !triggers.results.some((row) => row.name === 'mobile_password_invalidate_challenges')
+      || !triggers.results.some((row) => row.name === 'mobile_identity_invalidate_challenges')
+      || !triggers.results.some((row) => row.name === 'notifications_enqueue_push')) {
       throw new Error('The ParishLink production database release migration is incomplete.');
     }
 
@@ -327,7 +359,7 @@ async function assertProductionSchema(db: D1Database): Promise<void> {
     if (foreignKeyIssues.results.length > 0) {
       throw new Error('The ParishLink production database failed its foreign-key integrity check.');
     }
-  })();
+  })().catch(error => { productionSchemaReady = null; throw error; });
   await productionSchemaReady;
 }
 
@@ -462,6 +494,6 @@ export async function ensurePublicRuntimeDatabase(): Promise<void> {
       fullName: 'Local ParishLink Administrator',
     });
     await db.prepare('PRAGMA optimize').run();
-  })();
+  })().catch(error => { publicReady = null; throw error; });
   await publicReady;
 }

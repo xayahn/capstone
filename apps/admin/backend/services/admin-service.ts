@@ -17,6 +17,10 @@ import {
   type QueueTicket,
 } from '@/shared/domain';
 import { allowedAppointmentTransitions } from '@/shared/workflow';
+import { occupiedStart, occupiedEnd } from '@/shared/scheduling';
+import { validCalendarDate } from '@/shared/validation';
+import { scoped } from '@/backend/services/admin-scope';
+import { loadDashboardMetrics } from '@/backend/services/dashboard-metrics';
 
 export class AdminServiceError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -67,7 +71,7 @@ export async function resolveActor(identity: ChatGPTUser): Promise<Actor> {
     FROM users u
     LEFT JOIN parishes p ON p.id = u.home_parish_id
     LEFT JOIN clergy_profiles cp ON cp.user_id = u.id AND cp.is_active = 1
-    WHERE u.external_auth_id = ? OR lower(u.email) = lower(?)
+    WHERE u.external_auth_id = ? OR (u.external_auth_id IS NULL AND lower(u.email) = lower(?))
     ORDER BY CASE WHEN u.external_auth_id = ? THEN 0 ELSE 1 END
     LIMIT 1`)
     .bind(identity.userId, identity.email, identity.userId)
@@ -85,8 +89,10 @@ export async function resolveActor(identity: ChatGPTUser): Promise<Actor> {
     throw new AdminServiceError('The signed-in identity does not match the provisioned account.', 403);
   }
 
-  await db.prepare(`UPDATE users SET external_auth_id = ?, last_login_at = datetime('now'),
-    updated_at = datetime('now') WHERE id = ?`).bind(identity.userId, row.id).run();
+  const bound = await db.prepare(`UPDATE users SET external_auth_id = ?, last_login_at = datetime('now'),
+    updated_at = datetime('now') WHERE id = ? AND (external_auth_id IS NULL OR external_auth_id = ?)`)
+    .bind(identity.userId, row.id, identity.userId).run();
+  if (Number(bound.meta.changes) !== 1) throw new AdminServiceError('The account is bound to a different identity.', 403);
 
   return {
     id: row.id,
@@ -99,21 +105,12 @@ export async function resolveActor(identity: ChatGPTUser): Promise<Actor> {
   };
 }
 
-function scoped(alias: string, actor: Actor, clergyOnly = false): { sql: string; values: string[] } {
-  if (actor.role === 'system_admin') return { sql: '1 = 1', values: [] };
-  if (actor.role === 'clergy' && clergyOnly) {
-    if (!actor.clergyProfileId) return { sql: '0 = 1', values: [] };
-    return { sql: `${alias}.clergy_id = ?`, values: [actor.clergyProfileId] };
-  }
-  if (!actor.parishId) return { sql: '0 = 1', values: [] };
-  return { sql: `${alias}.parish_id = ?`, values: [actor.parishId] };
-}
-
 export async function loadDashboardState(actor: Actor, sourceEmail: string): Promise<DashboardState> {
   const db = getRawDb();
   const appointmentScope = scoped('a', actor, true);
   const parishScope = scoped('q', actor);
-  const recordScope = scoped('r', actor);
+  // No purpose-grant model exists yet: restricted records default to parish staff only.
+  const recordScope = actor.role === 'parish_staff' ? scoped('r', actor) : { sql: '0 = 1', values: [] };
   const assignmentScope = actor.role === 'clergy' ? scoped('ca', actor, true) : scoped('ca', actor);
 
   const appointmentQuery = db.prepare(`SELECT
@@ -133,12 +130,12 @@ export async function loadDashboardState(actor: Actor, sourceEmail: string): Pro
         SELECT 1 FROM appointments other
         WHERE other.id <> a.id
           AND other.status NOT IN ('rejected','completed','cancelled','no_show')
-          AND datetime(other.starts_at) < datetime(a.ends_at) AND datetime(other.ends_at) > datetime(a.starts_at)
+          AND ${occupiedStart('other')} < ${occupiedEnd('a')} AND ${occupiedEnd('other')} > ${occupiedStart('a')}
           AND ((a.clergy_id IS NOT NULL AND other.clergy_id = a.clergy_id)
             OR (a.venue_id IS NOT NULL AND other.venue_id = a.venue_id))
       ) OR EXISTS (
         SELECT 1 FROM clergy_assignments block
-        WHERE block.status = 'confirmed' AND datetime(block.starts_at) < datetime(a.ends_at) AND datetime(block.ends_at) > datetime(a.starts_at)
+        WHERE block.status = 'confirmed' AND datetime(block.starts_at) < ${occupiedEnd('a')} AND datetime(block.ends_at) > ${occupiedStart('a')}
           AND ((a.clergy_id IS NOT NULL AND block.clergy_id = a.clergy_id)
             OR (a.venue_id IS NOT NULL AND block.venue_id = a.venue_id))
           AND NOT (block.starts_at = a.starts_at AND block.ends_at = a.ends_at
@@ -155,12 +152,12 @@ export async function loadDashboardState(actor: Actor, sourceEmail: string): Pro
       a.id AS appointmentId, a.reference AS reference, a.parishioner_name AS parishioner,
       s.name AS service, ds.requirement_name AS requirement, ds.original_file_name AS fileName,
       ds.status AS status, ds.review_note AS reviewNote,
-      ds.submitted_at AS submittedAt
+      ds.submitted_at AS submittedAt, ds.sha256 AS sha256
     FROM appointments a
     JOIN service_types s ON s.id = a.service_type_id
-    JOIN document_submissions ds ON ds.appointment_id = a.id AND ds.is_required = 1
-    WHERE ${appointmentScope.sql}
-    ORDER BY a.starts_at ASC, ds.created_at ASC`).bind(...appointmentScope.values);
+    JOIN document_submissions ds ON ds.appointment_id = a.id
+    WHERE ${actor.role === 'parish_staff' ? appointmentScope.sql : '0 = 1'}
+    ORDER BY a.starts_at ASC, ds.created_at ASC`).bind(...(actor.role === 'parish_staff' ? appointmentScope.values : []));
 
   const queueQuery = db.prepare(`SELECT q.id AS id, q.ticket_number AS number, q.parish_id AS parishId,
       p.name AS parish, q.service AS service, q.parishioner_name AS parishioner,
@@ -208,9 +205,9 @@ export async function loadDashboardState(actor: Actor, sourceEmail: string): Pro
 
   const clergyOptionQuery = actor.role === 'system_admin'
     ? db.prepare(`SELECT id, display_title AS name, home_parish_id AS parishId
-        FROM clergy_profiles WHERE is_active = 1 ORDER BY display_title`)
+        FROM clergy_profiles WHERE is_active = 1 AND EXISTS (SELECT 1 FROM users u WHERE u.id = clergy_profiles.user_id AND u.is_active = 1) ORDER BY display_title`)
     : db.prepare(`SELECT id, display_title AS name, home_parish_id AS parishId
-        FROM clergy_profiles WHERE is_active = 1 AND home_parish_id = ? ORDER BY display_title`).bind(actor.parishId);
+        FROM clergy_profiles WHERE is_active = 1 AND EXISTS (SELECT 1 FROM users u WHERE u.id = clergy_profiles.user_id AND u.is_active = 1) AND home_parish_id = ? ORDER BY display_title`).bind(actor.parishId);
   const venueOptionQuery = actor.role === 'system_admin'
     ? db.prepare(`SELECT id, name, parish_id AS parishId FROM venues WHERE is_active = 1 ORDER BY name`)
     : db.prepare(`SELECT id, name, parish_id AS parishId FROM venues
@@ -224,7 +221,7 @@ export async function loadDashboardState(actor: Actor, sourceEmail: string): Pro
         COALESCE(p.name, 'Vicariate-wide') AS parish, u.is_active AS isActive
       FROM users u LEFT JOIN parishes p ON p.id = u.home_parish_id WHERE 0 = 1`);
 
-  const [appointmentsResult, documentsResult, queueResult, announcementsResult, recordsResult, assignmentsResult, parishesResult, clergyOptionsResult, venueOptionsResult, accessUsersResult] = await Promise.all([
+  const [appointmentsResult, documentsResult, queueResult, announcementsResult, recordsResult, assignmentsResult, parishesResult, clergyOptionsResult, venueOptionsResult, accessUsersResult, metrics] = await Promise.all([
     appointmentQuery.all<AppointmentRow>(),
     documentQuery.all<AppointmentDocument>(),
     queueQuery.all<QueueTicket>(),
@@ -235,10 +232,12 @@ export async function loadDashboardState(actor: Actor, sourceEmail: string): Pro
     clergyOptionQuery.all<{ id: string; name: string; parishId: string | null }>(),
     venueOptionQuery.all<{ id: string; name: string; parishId: string }>(),
     accessUserQuery.all<{ id: string; name: string; email: string; role: InternalUserRole; parish: string; isActive: number }>(),
+    loadDashboardMetrics(actor),
   ]);
 
   const appointments: Appointment[] = appointmentsResult.results.map((row) => ({
     ...row,
+    ...(actor.role === 'system_admin' ? { parishioner: 'Restricted parishioner', participants: 'Restricted', reviewNote: null } : {}),
     verifiedDocuments: Number(row.verifiedDocuments),
     requiredDocuments: Number(row.requiredDocuments),
     conflict: Boolean(row.conflict),
@@ -257,6 +256,7 @@ export async function loadDashboardState(actor: Actor, sourceEmail: string): Pro
     announcements: announcementsResult.results,
     records: recordsResult.results,
     clergyAssignments: assignmentsResult.results,
+    metrics,
     generatedAt: new Date().toISOString(),
     source: sourceEmail.endsWith('@sites.test') ? 'demo' : 'd1',
   };
@@ -375,7 +375,21 @@ async function transitionAppointment(
   }
 
   const gateRequired = mutation.status === 'ready_to_approve' || mutation.status === 'approved';
-  const gateSql = gateRequired ? `AND NOT EXISTS (
+  const gateSql = gateRequired ? `AND EXISTS (
+        SELECT 1 FROM parishes p WHERE p.id = appointments.parish_id AND p.is_active = 1
+      ) AND EXISTS (
+        SELECT 1 FROM service_types s WHERE s.id = appointments.service_type_id AND s.is_active = 1
+      ) AND EXISTS (
+        SELECT 1 FROM clergy_profiles cp JOIN users u ON u.id = cp.user_id
+        WHERE cp.id = appointments.clergy_id AND cp.is_active = 1 AND u.is_active = 1
+      ) AND EXISTS (
+        SELECT 1 FROM venues v WHERE v.id = appointments.venue_id AND v.is_active = 1
+      ) AND NOT EXISTS (
+        SELECT 1 FROM availability_blocks ab
+        WHERE datetime(ab.starts_at) < ${occupiedEnd('appointments')} AND datetime(ab.ends_at) > ${occupiedStart('appointments')}
+          AND (ab.clergy_id = appointments.clergy_id OR ab.venue_id = appointments.venue_id
+            OR (ab.clergy_id IS NULL AND ab.venue_id IS NULL AND ab.parish_id = appointments.parish_id))
+      ) AND NOT EXISTS (
         SELECT 1 FROM document_submissions ds
         WHERE ds.appointment_id = appointments.id AND ds.is_required = 1 AND ds.status <> 'verified'
       )
@@ -383,14 +397,14 @@ async function transitionAppointment(
         SELECT 1 FROM appointments other
         WHERE other.id <> appointments.id
           AND other.status NOT IN ('rejected','completed','cancelled','no_show')
-          AND datetime(other.starts_at) < datetime(appointments.ends_at) AND datetime(other.ends_at) > datetime(appointments.starts_at)
+          AND ${occupiedStart('other')} < ${occupiedEnd('appointments')} AND ${occupiedEnd('other')} > ${occupiedStart('appointments')}
           AND ((appointments.clergy_id IS NOT NULL AND other.clergy_id = appointments.clergy_id)
             OR (appointments.venue_id IS NOT NULL AND other.venue_id = appointments.venue_id))
       )
       AND NOT EXISTS (
         SELECT 1 FROM clergy_assignments block
         WHERE block.status = 'confirmed'
-          AND datetime(block.starts_at) < datetime(appointments.ends_at) AND datetime(block.ends_at) > datetime(appointments.starts_at)
+          AND datetime(block.starts_at) < ${occupiedEnd('appointments')} AND datetime(block.ends_at) > ${occupiedStart('appointments')}
           AND ((appointments.clergy_id IS NOT NULL AND block.clergy_id = appointments.clergy_id)
             OR (appointments.venue_id IS NOT NULL AND block.venue_id = appointments.venue_id))
           AND NOT (block.starts_at = appointments.starts_at AND block.ends_at = appointments.ends_at
@@ -449,6 +463,7 @@ async function reviewDocument(
   mutation: Extract<AdminMutation, { action: 'document.review' }>,
   idempotency: AdminIdempotencyContext,
 ): Promise<void> {
+  if (actor.role !== 'parish_staff') throw new AdminServiceError('Document verification requires assigned parish staff access.', 403);
   if (mutation.documentId.startsWith('missing:')) throw new AdminServiceError('No file has been submitted for this requirement.', 409);
   const row = await getRawDb().prepare(`SELECT ds.id, ds.storage_key AS storageKey,
       ds.original_file_name AS fileName, ds.status, ds.appointment_id AS appointmentId,
@@ -472,8 +487,10 @@ async function reviewDocument(
   const results = await db.batch([
     db.prepare(`UPDATE document_submissions SET status = ?, reviewer_id = ?,
       review_note = ?, reviewed_at = datetime('now'), updated_at = datetime('now')
-      WHERE id = ? AND status = ?`)
-      .bind(mutation.status, actor.id, note || null, mutation.documentId, row.status),
+      WHERE id = ? AND status = ? AND sha256 = ? AND storage_key IS NOT NULL
+        AND EXISTS (SELECT 1 FROM appointments a WHERE a.id = document_submissions.appointment_id
+          AND a.status IN ('submitted','documents_pending','under_review','needs_changes'))`)
+      .bind(mutation.status, actor.id, note || null, mutation.documentId, row.status, mutation.expectedSha256),
     db.prepare(`INSERT INTO appointment_events
       (id, appointment_id, actor_id, event_type, detail)
       SELECT ?, ?, ?, 'document_reviewed', ? WHERE changes() = 1`)
@@ -678,6 +695,7 @@ function requireStaffRole(actor: Actor, feature: string): void {
 }
 
 async function createRecord(actor: Actor, mutation: Extract<AdminMutation, { action: 'record.create' }>): Promise<void> {
+  if (actor.role !== 'parish_staff') throw new AdminServiceError('Records require assigned parish staff access.', 403);
   requireStaffRole(actor, 'Record management');
   if (!canAccessParish(actor, mutation.parishId)) throw new AdminServiceError('You cannot manage records for this parish.', 403);
   const recordType = mutation.recordType.trim();
@@ -685,7 +703,7 @@ async function createRecord(actor: Actor, mutation: Extract<AdminMutation, { act
   const reference = mutation.reference.trim().toUpperCase();
   if (recordType.length < 3 || recordType.length > 60) throw new AdminServiceError('Record type must be 3–60 characters.');
   if (subjectName.length < 3 || subjectName.length > 160) throw new AdminServiceError('Subject name must be 3–160 characters.');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(mutation.eventDate) || Number.isNaN(new Date(`${mutation.eventDate}T12:00:00+08:00`).getTime())) {
+  if (!validCalendarDate(mutation.eventDate)) {
     throw new AdminServiceError('Choose a valid event date.');
   }
   if (!/^[A-Z0-9][A-Z0-9/-]{5,49}$/.test(reference)) throw new AdminServiceError('Use a 6–50 character archive reference with letters, numbers, slashes, or hyphens.');
@@ -703,6 +721,7 @@ async function createRecord(actor: Actor, mutation: Extract<AdminMutation, { act
 }
 
 async function verifyRecord(actor: Actor, mutation: Extract<AdminMutation, { action: 'record.verify' }>): Promise<void> {
+  if (actor.role !== 'parish_staff') throw new AdminServiceError('Records require assigned parish staff access.', 403);
   requireStaffRole(actor, 'Record management');
   const row = await getRawDb().prepare(`SELECT id, parish_id AS parishId, status
     FROM sacramental_records WHERE id = ?`).bind(mutation.recordId).first<{ id: string; parishId: string; status: string }>();
@@ -730,7 +749,7 @@ async function createClergyAssignment(actor: Actor, mutation: Extract<AdminMutat
   const db = getRawDb();
   const resource = await db.prepare(`SELECT cp.display_title AS clergyName, v.name AS venueName
     FROM clergy_profiles cp JOIN venues v ON v.id = ? AND v.parish_id = ? AND v.is_active = 1
-    WHERE cp.id = ? AND cp.is_active = 1 AND (cp.home_parish_id = ? OR cp.home_parish_id IS NULL) LIMIT 1`)
+    WHERE cp.id = ? AND cp.is_active = 1 AND EXISTS (SELECT 1 FROM users u WHERE u.id = cp.user_id AND u.is_active = 1) AND (cp.home_parish_id = ? OR cp.home_parish_id IS NULL) LIMIT 1`)
     .bind(mutation.venueId, mutation.parishId, mutation.clergyId, mutation.parishId)
     .first<{ clergyName: string; venueName: string }>();
   if (!resource) throw new AdminServiceError('Choose an active priest and venue for that parish.');
@@ -743,18 +762,18 @@ async function createClergyAssignment(actor: Actor, mutation: Extract<AdminMutat
         AND (ca.clergy_id = ? OR ca.venue_id = ?)
     ) AND NOT EXISTS (
       SELECT 1 FROM appointments a WHERE a.status NOT IN ('rejected','completed','cancelled','no_show')
-        AND datetime(a.starts_at) < datetime(?) AND datetime(a.ends_at) > datetime(?)
+        AND ${occupiedStart('a')} < datetime(?) AND ${occupiedEnd('a')} > datetime(?)
         AND (a.clergy_id = ? OR a.venue_id = ?)
     ) AND NOT EXISTS (
       SELECT 1 FROM availability_blocks ab
         WHERE datetime(ab.starts_at) < datetime(?) AND datetime(ab.ends_at) > datetime(?)
-        AND (ab.clergy_id = ? OR ab.venue_id = ?)
+        AND (ab.clergy_id = ? OR ab.venue_id = ? OR (ab.clergy_id IS NULL AND ab.venue_id IS NULL AND ab.parish_id = ?))
     )`).bind(
       id, mutation.clergyId, resource.clergyName, mutation.parishId, mutation.venueId,
       resource.venueName, service, startsAt.toISOString(), endsAt.toISOString(), actor.id,
       endsAt.toISOString(), startsAt.toISOString(), mutation.clergyId, mutation.venueId,
       endsAt.toISOString(), startsAt.toISOString(), mutation.clergyId, mutation.venueId,
-      endsAt.toISOString(), startsAt.toISOString(), mutation.clergyId, mutation.venueId,
+      endsAt.toISOString(), startsAt.toISOString(), mutation.clergyId, mutation.venueId, mutation.parishId,
     ).run();
   if (Number(result.meta.changes ?? 0) !== 1) throw new AdminServiceError('That priest or venue already has an overlapping appointment or assignment.', 409);
   await writeAudit(actor, 'clergy.assignment.create', 'clergy_assignment', id, mutation.parishId, 'success', `${service}; ${startsAt.toISOString()}`);

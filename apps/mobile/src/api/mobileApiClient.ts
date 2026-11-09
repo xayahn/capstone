@@ -1,4 +1,5 @@
 import { normalizeApiBaseUrl } from '../config/environment';
+import { apiFetch } from './apiFetch';
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 const MAX_SERVER_MESSAGE_LENGTH = 500;
@@ -68,7 +69,9 @@ export class MobileApiClient {
     this.baseUrl = normalizeApiBaseUrl(baseUrl);
   }
 
-  async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  async request<T>(path: string, init: RequestInit = {}, timeoutMs = this.timeoutMs): Promise<T> {
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new RangeError('Mobile API timeout must be a positive number.');
+    if (init.signal?.aborted) throw new DOMException('The request was cancelled.', 'AbortError');
     const routePath = path.split(/[?#]/, 1)[0] ?? '';
     let decodedRoutePath: string;
     try {
@@ -96,9 +99,13 @@ export class MobileApiClient {
 
     const controller = new AbortController();
     const callerSignal = init.signal;
-    const abortFromCaller = () => controller.abort();
-    if (callerSignal?.aborted) abortFromCaller();
-    else callerSignal?.addEventListener('abort', abortFromCaller, { once: true });
+    let rejectCancellation!: (error: Error) => void;
+    const cancellation = new Promise<never>((_, reject) => { rejectCancellation = reject; });
+    const abortFromCaller = () => {
+      controller.abort();
+      rejectCancellation(new DOMException('The request was cancelled.', 'AbortError'));
+    };
+    callerSignal?.addEventListener('abort', abortFromCaller, { once: true });
 
     let timedOut = false;
     let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -107,15 +114,29 @@ export class MobileApiClient {
         timedOut = true;
         controller.abort();
         reject(new MobileApiTimeoutError());
-      }, this.timeoutMs);
+      }, timeoutMs);
     });
 
     const operation = async (): Promise<T> => {
-      const response = await fetch(`${this.baseUrl}${path}`, {
+      const response = await apiFetch(`${this.baseUrl}${path}`, {
         ...init,
+        redirect: 'manual',
+        credentials: 'omit',
         headers,
         signal: controller.signal,
       });
+      if (response.redirected || response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
+        void response.body?.cancel().catch(() => undefined);
+        throw new MobileApiError('The ParishLink API returned an unexpected redirect. Sign in again or contact support.', 401);
+      }
+      // An HTML, interrupted or stalled denial body must not hide the auth status.
+      if (response.status === 401 || response.status === 403) {
+        void response.body?.cancel().catch(() => undefined);
+        const message = response.status === 403 ? 'You do not have permission to perform this action.'
+          : routePath === '/mobile/auth/sign-in' ? 'The email or password is incorrect, or this account is temporarily locked.'
+          : 'Sign in to continue.';
+        throw new MobileApiError(message, response.status);
+      }
       if (!response.ok) {
         const message = await errorMessageFrom(response);
         throw new MobileApiError(message ?? `ParishLink API returned ${response.status}.`, response.status);
@@ -134,7 +155,7 @@ export class MobileApiClient {
     };
 
     try {
-      return await Promise.race([operation(), timeoutPromise]);
+      return await Promise.race([operation(), timeoutPromise, cancellation]);
     } catch (error) {
       // Some React Native fetch implementations surface a generic network error
       // after abort. The flag keeps timeout reporting deterministic while leaving

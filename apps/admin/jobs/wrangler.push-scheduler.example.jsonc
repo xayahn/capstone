@@ -1,0 +1,14 @@
+// Example ONLY. This adapter is never registered or deployed by ParishLink builds.
+// Owner: replace the URL and configure secrets before an explicitly chosen deployment.
+{
+  "name": "parishlink-push-scheduler",
+  "main": "./push-scheduler.ts",
+  "compatibility_date": "2026-11-05",
+  "triggers": { "crons": ["* * * * *"] },
+  "vars": {
+    "PUSH_DISPATCH_URL": "https://YOUR_APPROVED_API_HOST/api/internal/notifications/dispatch"
+  }
+  // Runtime secrets, never checked in:
+  // PUSH_DISPATCH_SECRET (same strong secret as API)
+  // SITES_SERVICE_ACCESS_TOKEN (only if private Sites service access requires it)
+}

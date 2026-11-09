@@ -7,6 +7,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -54,16 +55,24 @@ export const AssistantScreen = ({
   setMessages,
   onAsk,
   onAction,
+  allowExternalAI,
+  onToggleExternalAI,
+  canUseGemini,
 }: {
   messages: AssistantMessage[];
   setMessages: Dispatch<SetStateAction<AssistantMessage[]>>;
-  onAsk: (prompt: string) => Promise<AssistantMessage>;
+  onAsk: (prompt: string, allowExternalAI?: boolean) => Promise<AssistantMessage>;
   onAction: (action: AssistantAction) => void;
+  allowExternalAI: boolean;
+  onToggleExternalAI: (enabled: boolean) => void;
+  canUseGemini: boolean;
 }) => {
   const [prompt, setPrompt] = useState('');
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const hasMounted = useRef(false);
+  const active = useRef(true);
+  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const latestAssistant = [...messages].reverse().find((message) => message.from === 'assistant');
@@ -88,9 +97,11 @@ export const AssistantScreen = ({
     setMessages((current) => [...current, newAssistantMessage('user', clean)]);
     setSending(true);
     try {
-      const reply = await onAsk(clean);
+      const reply = await onAsk(clean, canUseGemini && allowExternalAI);
+      if (!active.current) return;
       setMessages((current) => [...current, reply]);
     } catch {
+      if (!active.current) return;
       setMessages((current) => [
         ...current,
         {
@@ -104,7 +115,7 @@ export const AssistantScreen = ({
         },
       ]);
     } finally {
-      setSending(false);
+      if (active.current) setSending(false);
     }
   };
 
@@ -130,6 +141,18 @@ export const AssistantScreen = ({
         </View>
 
         <Notice title="Information, not approval" body={ASSISTANT_DISCLAIMER} tone="warning" icon="shield-checkmark-outline" />
+        <View style={styles.introCard}>
+          <View style={styles.flex}>
+            <Text style={styles.introTitle}>Use Gemini for general questions</Text>
+            <Text style={styles.introBody}>{canUseGemini
+              ? 'When enabled, general questions may be sent to Google Gemini. Do not include names, contact details, IDs or private records. Official decisions remain with parish staff. Your private request and queue details stay within ParishLink.'
+              : 'This demonstration uses ParishLink guidance only. Gemini is available through the connected app after you choose to enable it.'}</Text>
+          </View>
+          <Switch accessibilityLabel="Allow general questions to be sent to Google Gemini"
+            value={canUseGemini && allowExternalAI} disabled={!canUseGemini || sending}
+            onValueChange={onToggleExternalAI} trackColor={{ false: colors.line, true: colors.greenSoft }}
+            thumbColor={allowExternalAI ? colors.green : colors.inkSoft} />
+        </View>
 
         <View style={styles.promptSection}>
           <Text style={styles.promptLabel}>Suggested questions</Text>
@@ -160,7 +183,9 @@ export const AssistantScreen = ({
                   accessibilityLiveRegion={user ? 'none' : 'polite'}
                   style={[styles.message, user ? styles.userMessage : styles.assistantMessage]}
                 >
-                  <Text style={[styles.messageAuthor, user && styles.userMessageAuthor]}>{user ? 'You' : 'ParishLink'}</Text>
+                  <Text style={[styles.messageAuthor, user && styles.userMessageAuthor]}>{user ? 'You' : message.provider === 'gemini' ? 'Gemini · general guidance' : 'ParishLink guidance'}</Text>
+                  {!user && message.fallbackReason && ['disabled', 'unavailable', 'invalid_response'].includes(message.fallbackReason)
+                    ? <Text style={styles.messageText}>Gemini is unavailable for this reply. Showing ParishLink guidance.</Text> : null}
                   {message.title ? <Text style={[styles.messageTitle, user && styles.userMessageText]}>{message.title}</Text> : null}
                   <Text style={[styles.messageText, user && styles.userMessageText]}>{message.text}</Text>
 

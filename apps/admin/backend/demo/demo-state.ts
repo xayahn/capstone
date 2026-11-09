@@ -1,6 +1,11 @@
 import type { DashboardState } from '@/shared/domain';
 
 export const DEMO_STATE: DashboardState = {
+  metrics: {
+    appointmentStatuses: { submitted: 1, documents_pending: 1, under_review: 1, ready_to_approve: 1 },
+    awaitingDocumentReview: null, verifiedDocuments: null, verifiedRecords: null,
+    confirmedAssignments: 3, publishedAnnouncements: 2, waitingQueue: 3, servingQueue: 1,
+  },
   actor: {
     id: 'user-admin-demo',
     name: 'Ana Fernandez',
@@ -62,10 +67,10 @@ export const DEMO_STATE: DashboardState = {
     },
   ],
   documents: [
-    { id: 'doc-1', requirementId: 'wedding-license', appointmentId: 'appt-1001', reference: 'PL-2026-1001', parishioner: 'Liza Gomez', service: 'Wedding', requirement: 'Marriage License', fileName: 'marriage-license.pdf', status: 'submitted', reviewNote: null, submittedAt: '2026-08-25T10:15:00+08:00' },
-    { id: 'doc-2', requirementId: 'wedding-banns', appointmentId: 'appt-1001', reference: 'PL-2026-1001', parishioner: 'Liza Gomez', service: 'Wedding', requirement: 'Marriage Banns', fileName: null, status: 'not_submitted', reviewNote: null, submittedAt: null },
-    { id: 'doc-3', requirementId: 'baptism-godparent', appointmentId: 'appt-1002', reference: 'PL-2026-1002', parishioner: 'Ronald Dizon', service: 'Baptism', requirement: 'Godparent qualification form', fileName: 'godparent-form.jpg', status: 'under_review', reviewNote: null, submittedAt: '2026-08-26T09:40:00+08:00' },
-    { id: 'doc-4', requirementId: 'confirmation-baptismal', appointmentId: 'appt-1003', reference: 'PL-2026-1003', parishioner: 'Angela Reyes', service: 'Confirmation', requirement: 'Baptismal Certificate', fileName: 'baptismal-certificate.pdf', status: 'verified', reviewNote: null, submittedAt: '2026-08-22T14:20:00+08:00' },
+    { id: 'doc-1', requirementId: 'wedding-license', appointmentId: 'appt-1001', reference: 'PL-2026-1001', parishioner: 'Liza Gomez', service: 'Wedding', requirement: 'Marriage License', fileName: 'marriage-license.pdf', status: 'submitted', reviewNote: null, sha256: null, submittedAt: '2026-08-25T10:15:00+08:00' },
+    { id: 'doc-2', requirementId: 'wedding-banns', appointmentId: 'appt-1001', reference: 'PL-2026-1001', parishioner: 'Liza Gomez', service: 'Wedding', requirement: 'Marriage Banns', fileName: null, status: 'not_submitted', reviewNote: null, sha256: null, submittedAt: null },
+    { id: 'doc-3', requirementId: 'baptism-godparent', appointmentId: 'appt-1002', reference: 'PL-2026-1002', parishioner: 'Ronald Dizon', service: 'Baptism', requirement: 'Godparent qualification form', fileName: 'godparent-form.jpg', status: 'under_review', reviewNote: null, sha256: null, submittedAt: '2026-08-26T09:40:00+08:00' },
+    { id: 'doc-4', requirementId: 'confirmation-baptismal', appointmentId: 'appt-1003', reference: 'PL-2026-1003', parishioner: 'Angela Reyes', service: 'Confirmation', requirement: 'Baptismal Certificate', fileName: 'baptismal-certificate.pdf', status: 'verified', reviewNote: null, sha256: null, submittedAt: '2026-08-22T14:20:00+08:00' },
   ],
   queue: [
     { id: 'queue-16', number: 'A-016', parishId: 'san-guillermo', parish: 'San Guillermo Parish', service: 'Wedding inquiry', parishioner: 'Marites Santos', status: 'serving', priority: 0, issuedAt: '2026-08-26T13:42:00+08:00', calledAt: '2026-08-26T14:04:00+08:00', counter: 'Window 2' },

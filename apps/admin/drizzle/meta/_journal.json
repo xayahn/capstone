@@ -15,6 +15,34 @@
       "when": 1787936400000,
       "tag": "0001_release_safety",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790121600000,
+      "tag": "0002_record_pagination",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1790121600001,
+      "tag": "0003_schedule_pagination",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1793836800000,
+      "tag": "0004_push_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1794050271397,
+      "tag": "0005_account_recovery",
+      "breakpoints": true
     }
   ]
 }

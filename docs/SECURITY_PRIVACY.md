@@ -8,7 +8,11 @@ The intended Philippine operating context includes the Data Privacy Act of 2012 
 
 ### Current implementation status
 
-The local implementation now includes salted PBKDF2-SHA-256 parishioner passwords, login lockout, hashed/revocable bearer sessions, OS-protected mobile token storage, database-backed request throttling, server RBAC/parish scoping, same-origin admin writes, exact mobile browser-origin allowlisting, restrictive web security headers, production migration/readiness verification without request-time schema/bootstrap mutation, atomic scheduling and payload-bound retry controls, frozen checklist/participant snapshots, private file validation/checksums, event/notification/audit records, and a redacted/rate-limited/server-only Gemini gateway with deterministic fallback. Production identity/MFA and verified recovery, malware scanning, push delivery, provider-account testing, infrastructure abuse protection, retention jobs, monitoring, restore/rollback rehearsal, and formal privacy/canonical approvals remain release gates.
+The local implementation includes salted PBKDF2-SHA-256 parishioner passwords, login lockout, hashed/revocable bearer sessions, OS-protected mobile token storage, database-backed throttling, server RBAC/parish scoping, origin controls, restrictive headers, migration/readiness verification, scheduling/retry controls, private-file checks and audit records.
+
+On 2026-11-05, a consented public-question Gemini gateway and session-bound native push integration were added. On 6 November, the owner created the dedicated Google project/key and verified one live bounded public Gemini reply through the local API; unsupported/private questions remain local, the provider has no write authority, and chatbot transcript writes remain absent. On 7 November, the Expo project and Firebase Android/FCM v1 foundation were verified. The public Android client file is verified and linked from the preserved ignored mobile environment. A local RSA-2048/X.509 sender credential, valid through 7 November 2027, is confined to ignored `.local-secrets/`; its JWT exchange returned HTTP 200 without retaining a token or sending a push. Under explicit owner approval, a task-owned EAS settings path and organization-only Release Manager device flow were used without Windows-profile/SDK changes or personal-account authorization. After the standard menu stalled before mutation, official installed credential client functions assigned the existing key and a fresh Expo query verified the real project UUID, organization, package, sender email and key ID. Expo server logout returned 200 and the official session manager removed local auth; the earlier Firebase token revocation remains complete and no CLI authentication remains. Push remains disabled, the app has zero Android signing credentials and no submission credential, and no scheduler, signed build or device delivery exists. APNs is not configured because the paid Apple Developer membership is absent. Existing privileged-account and credential-access review remains a release gate. The current 7 November suites record 217 admin and 127 mobile tests with both TypeScript checks passing; the 93 security regressions and nine workerd assertions remain dated 6 November evidence rather than a same-run clearance, and no new test result is claimed for credential assignment. Production document uploads/readiness still fail closed without a `DOCUMENT_SCANNER` binding. Dependency advisories, live account-email configuration and recovery/verification acceptance, scanner and physical push-provider acceptance, infrastructure abuse protection, retention, monitoring, restore/rollback, and formal privacy/canonical/security approvals remain release gates. Local code, dated checks, credential assignment and provider connectivity are not proof of device delivery or production readiness. See [provider setup and evidence](GEMINI_PUSH_SETUP.md).
+
+Parishioner password recovery and signed-in email verification are now implemented locally. Twelve-character codes are stored only as SHA-256 hashes, expire after 15 minutes, are single-use and newest-only, and become ineligible after five wrong attempts. Reset requests use an account-enumeration-safe generic acknowledgement; provider acceptance only makes the challenge eligible and is not proof of inbox delivery. Successful reset changes the password, records email control, revokes every mobile session and push binding, and requires manual sign-in. Existing accounts remain unverified until a successful code flow, while booking verification enforcement remains unimplemented. Internal-account recovery remains a separate managed SSO control. The fixed Resend transport fails closed because `MAIL_ENABLED`, `MAIL_DELIVERY_VERIFIED`, `RESEND_API_KEY`, and `MAIL_FROM` are all unavailable locally; no live account-email evidence exists. See [`ACCOUNT_RECOVERY.md`](ACCOUNT_RECOVERY.md).
 
 ## 2. Data inventory and purpose limitation
 
@@ -34,7 +38,7 @@ Collect the minimum approved fields. Do not repurpose data for fundraising, dona
 4. Approve retention and secure disposal periods for every table/object/log/backup category; “keep forever” is not a default.
 5. Define access, correction, objection/withdrawal where applicable, export, deletion/restriction, identity verification, and response procedures.
 6. Review cross-border/provider region, contractual safeguards, breach terms, government/lawful request handling, and data return/deletion at contract end.
-7. Complete ethics approval, validated instrument, pilot reliability work, participant information, and informed consent before research data collection.
+7. Complete ethics approval or documented institutional exemption where applicable, validated instrument, pilot reliability work, participant information, and informed consent before research data collection. Follow the approval gates in [`PILOT_PROTOCOL.md`](PILOT_PROTOCOL.md); blank templates and synthetic rehearsal are not participant results.
 8. Validate parish/canonical authority for documentary rules, archival records, and any certificate output.
 
 DEC-001, DEC-004 through DEC-008, and DEC-014 in [`ASSUMPTIONS_GAPS.md`](ASSUMPTIONS_GAPS.md) block real-data release until resolved or formally risk-accepted.
@@ -47,6 +51,9 @@ DEC-001, DEC-004 through DEC-008, and DEC-014 in [`ASSUMPTIONS_GAPS.md`](ASSUMPT
 - Internal accounts use managed invitation, MFA, short idle sessions, reauthentication for sensitive actions, and prompt disablement on departure.
 - Rotate refresh/session tokens; store mobile secrets in OS-protected storage and browser sessions in secure, `HttpOnly`, appropriate `SameSite` cookies.
 - Rate-limit authentication/recovery and use generic responses that do not reveal account or appointment existence.
+- Parishioner email challenges must remain hashed, newest-only, single-use, session-bound where verification requires it, short-lived, attempt-limited, and unavailable until the configured provider accepts the send request. Never log or retry a plaintext code.
+- A parishioner password reset revokes all mobile sessions and push bindings. It never signs the client in automatically. Internal staff/clergy/system-administrator recovery remains in the managed SSO process and must not be routed through the public parishioner endpoint.
+- Email-verification state is returned by the server, but appointment enforcement is not yet implemented. Do not claim verified-email booking protection until the policy, legacy-account migration, support exception, and negative tests are approved.
 - No shared admin accounts and no biometric authentication feature. Device biometrics may only unlock OS-secured credentials if later approved; the app must not collect biometric templates.
 
 ### Authorization
@@ -89,11 +96,11 @@ DEC-001, DEC-004 through DEC-008, and DEC-014 in [`ASSUMPTIONS_GAPS.md`](ASSUMPT
 
 ## 5. Gemini safety and privacy boundary
 
-Gemini is called only through a server gateway. The model may receive approved public parish/service content and the minimum redacted user question. It must not receive uploaded files, document transcriptions, sacramental-record contents, credentials, private review notes, full identifiers, or unnecessary contact details.
+Gemini is called only through a server gateway after explicit feature activation and client consent. The implemented public-question vocabulary gate rejects unknown terms/identifiers and sensitive, private or authority-related inquiries before transmission. No actor profile, private lookup result, document, conversation history or transcript is included in provider context. Public catalogue/directory/navigation content is the only retrieval context. This conservative English-language gate limits coverage; unsupported questions retain local guidance and human handoff. It is not presented as a general-purpose anonymizer.
 
 The gateway must:
 
-- apply input redaction and warn users not to enter sensitive data;
+- warn users not to enter sensitive data, require opt-in, and reject unsupported/private input before any provider call;
 - restrict answers to general service information, approved requirements, procedures, office inquiries, and navigation;
 - refuse approval/verification, sacramental eligibility judgment, counseling, and legal or financial advice;
 - provide parish contact/handoff and identify uncertainty;
@@ -103,6 +110,12 @@ The gateway must:
 - fall back to deterministic approved content without blocking core service when Gemini is unavailable.
 
 Provider account, model, regional/data terms, use-for-training setting, subprocessors, and deletion behavior require approval before activation.
+
+### Native push boundary
+
+Device registration requires an authenticated mobile session and explicit OS permission. Dispatch requires the same active user/session/device binding and enabled preference. Server-confirmed revocation, expiry and newer account bindings exclude stale deliveries. Offline logout cannot guarantee remote revocation, and already accepted notifications cannot be recalled. Installation IDs and provider tokens are not public directory data.
+
+Notifications atomically enqueue bounded delivery work; provider outage does not roll back the business event. The lock-screen payload is generic and contains no private notification body, name, service details, file or reference. Tap handling trusts only a notification returned by a fresh authenticated snapshot. Expo receipts establish provider handoff, not device display or read confirmation. Protect the separate scheduled dispatcher with its own secret, keep provider/security credentials server-side, and apply approved delivery/token retention.
 
 ## 6. Threat treatment summary
 
@@ -146,5 +159,7 @@ Operational steps are in [`OPERATIONS_RUNBOOK.md`](OPERATIONS_RUNBOOK.md).
 - Client bundles and logs contain no secret or private fixture.
 - Critical/high findings closed; medium residual risks have owner/date/acceptance.
 - Backup restore, credential rotation, provider outage, and incident exercise completed in staging.
+- Account email sender/domain and Resend configuration accepted in staging; generic reset behavior, code expiry/attempt limits, session/push revocation, and no-delivery/provider-failure paths evidenced. Internal SSO recovery is tested separately.
+- Physical native acceptance follows [`NATIVE_ACCEPTANCE.md`](NATIVE_ACCEPTANCE.md); an unsigned export or provider credential assignment is not device evidence.
 - Access review and production administrator list approved.
 - Monitoring, alert routing, audit retention, and emergency contacts confirmed.

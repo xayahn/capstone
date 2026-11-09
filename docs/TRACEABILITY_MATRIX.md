@@ -80,3 +80,14 @@ For each release, add or link an evidence manifest containing:
 - defects/residual risks, decisions closed/open, and sign-offs.
 
 The matrix should be updated whenever a requirement, workflow state, endpoint, data entity, test, or stakeholder decision changes. A missing evidence link remains **not verified**, never “passed by assumption.”
+
+## 5. Account/native/pilot increment, 2026-11-08
+
+| Trace item | Implementation / plan | Executed evidence and limit |
+|---|---|---|
+| Parishioner identity/recovery; NFR-006 | Mobile account forms, repository/client, recovery/mailer backend and append-only 0005 | Real SQLite code/session/race tests and mobile behavior tests pass; real Worker/network and live mail/native acceptance remain unverified; [recovery guide](ACCOUNT_RECOVERY.md) |
+| NFR-003, NFR-004, NFR-008; FR-020 | Signed Android/iOS acceptance matrix and build prerequisites | No installed test build/device result; [native protocol](NATIVE_ACCEPTANCE.md) |
+| NFR-001, NFR-002, NFR-004, NFR-005; FR-030 | Approved matched manual/app protocol, recorder, error/rework/outcome definitions and item-level feedback | Synthetic recorder/validator checks only; beneficiary approval pending; no participant findings; [pilot protocol](PILOT_PROTOCOL.md) |
+| FR-029 instrument boundary | Neutral draft feedback instrument for review, distinct from the paper's missing appendix | Not a validated ISO questionnaire or score; adviser/institution must supply/approve the required instrument/version before use |
+
+Current pass/skip/blocked checks and explicit no-deployment record: [critical-gap acceptance](CRITICAL_GAPS_ACCEPTANCE_2026-11-08.md).

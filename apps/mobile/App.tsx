@@ -25,6 +25,9 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { PushSettings } from './src/components/PushSettings';
+import { EmailVerificationCard, PasswordRecoveryForm, type PasswordRecoveryActions } from './src/components/AccountEmailForms';
+import type { PushState } from './src/notifications/pushRegistration';
 import {
   AppButton,
   BrandMark,
@@ -111,6 +114,7 @@ const AppContent = () => {
   const [focusedServiceId, setFocusedServiceId] = useState<SacramentId>();
   const [selectedAppointmentId, setSelectedAppointmentId] = useState('');
   const [assistantMessages, setAssistantMessages] = useState<AssistantMessage[]>(initialAssistantMessages);
+  const [allowExternalAI, setAllowExternalAI] = useState(false);
 
   useEffect(() => {
     setRoute('home');
@@ -118,10 +122,31 @@ const AppContent = () => {
     setFocusedServiceId(undefined);
     setSelectedAppointmentId('');
     setAssistantMessages(initialAssistantMessages());
-  }, [parishLink.session?.profile.id]);
+    setAllowExternalAI(false);
+  }, [parishLink.session?.profile.id, parishLink.session?.accessToken]);
+
+  useEffect(() => {
+    const notification = parishLink.openedPushNotification;
+    if (!notification || !parishLink.session || !parishLink.snapshot) return;
+    setRouteHistory([]);
+    if (notification.target.kind === 'appointment') {
+      setSelectedAppointmentId(notification.target.appointmentId);
+      setRoute('appointment-detail');
+    } else if (notification.target.kind === 'queue') setRoute('queue');
+    else setRoute('notifications');
+    if (!notification.readAt) void parishLink.markNotificationRead(notification.id).catch(() => undefined);
+  }, [parishLink.openedPushNotification, parishLink.session?.profile.id]);
 
   if (parishLink.initializing) {
     return <LoadingScreen label="Restoring your secure ParishLink session…" />;
+  }
+
+  if (parishLink.initializationError && !parishLink.session) {
+    return <SafeAreaView style={styles.loadingScreen}><BrandMark />
+      <Text style={styles.itemTitle}>Connection interrupted</Text><Text style={styles.mutedCentered}>{parishLink.error}</Text>
+      <AppButton label="Try again" onPress={parishLink.retryInitialization} />
+      <AppButton label="Sign out on this device" variant="secondary" onPress={() => void parishLink.signOut()} />
+    </SafeAreaView>;
   }
 
   if (!parishLink.session) {
@@ -132,12 +157,19 @@ const AppContent = () => {
         mode={parishLink.repositoryMode}
         onSignIn={parishLink.signIn}
         onSignUp={parishLink.signUp}
+        recoveryActions={{ request: parishLink.requestPasswordReset, confirm: parishLink.confirmPasswordReset }}
+        onClearError={parishLink.clearError}
       />
     );
   }
 
   if (!parishLink.snapshot) {
-    return <LoadingScreen label="Preparing your parish dashboard…" />;
+    return <SafeAreaView style={styles.loadingScreen}><BrandMark />
+      <Text style={styles.itemTitle}>{parishLink.loading ? 'Loading your dashboard…' : 'Your dashboard could not load'}</Text>
+      <Text style={styles.mutedCentered}>{parishLink.error || 'Check your connection, then try again.'}</Text>
+      <AppButton label="Retry dashboard" loading={parishLink.loading} onPress={() => void parishLink.refresh().catch(() => undefined)} />
+      <AppButton label="Sign out on this device" variant="secondary" onPress={() => void parishLink.signOut()} />
+    </SafeAreaView>;
   }
 
   const snapshot = parishLink.snapshot;
@@ -308,10 +340,14 @@ const AppContent = () => {
         ) : null}
         {route === 'assistant' ? (
           <AssistantScreen
+            key={parishLink.session.profile.id}
             messages={assistantMessages}
             setMessages={setAssistantMessages}
             onAsk={parishLink.askAssistant}
             onAction={handleAssistantAction}
+            allowExternalAI={allowExternalAI}
+            onToggleExternalAI={setAllowExternalAI}
+            canUseGemini={parishLink.repositoryMode === 'api'}
           />
         ) : null}
         {route === 'profile' ? (
@@ -323,6 +359,12 @@ const AppContent = () => {
             onChangePassword={parishLink.changePassword}
             onSignOut={parishLink.signOut}
             onReset={parishLink.resetDemo}
+            pushState={parishLink.pushState}
+            onEnablePush={parishLink.enablePush}
+            onRetryPush={parishLink.retryPush}
+            onNotificationSettings={parishLink.openNotificationSettings}
+            onRequestEmailVerification={parishLink.requestEmailVerification}
+            onConfirmEmailVerification={parishLink.confirmEmailVerification}
           />
         ) : null}
       </View>
@@ -337,10 +379,14 @@ const WelcomeScreen = ({
   mode,
   onSignIn,
   onSignUp,
+  recoveryActions,
+  onClearError,
 }: {
   loading: boolean;
   error: string;
   mode: 'demo' | 'api';
+  recoveryActions: PasswordRecoveryActions;
+  onClearError: () => void;
   onSignIn: (input: { email: string; password: string }) => Promise<void>;
   onSignUp: (input: {
     displayName: string;
@@ -353,6 +399,8 @@ const WelcomeScreen = ({
   }) => Promise<void>;
 }) => {
   const [showAuth, setShowAuth] = useState(false);
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [recoveryConfirmed, setRecoveryConfirmed] = useState(false);
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState(mode === 'demo' ? 'maria.santos@example.test' : '');
   const [password, setPassword] = useState(mode === 'demo' ? 'parishlink-demo' : '');
@@ -364,10 +412,16 @@ const WelcomeScreen = ({
 
   const chooseMode = (next: 'signin' | 'signup') => {
     setAuthMode(next);
+    onClearError(); setRecoveryConfirmed(false);
     if (next === 'signup' && mode === 'demo' && email.endsWith('@example.test')) {
       setEmail('');
       setPassword('');
     }
+  };
+  const closeAuth = () => {
+    setShowAuth(false); setEmail(''); setPassword(''); setConfirmPassword('');
+    setDisplayName(''); setMobileNumber(''); setAcceptPrivacyNotice(false);
+    setRecoveryOpen(false); setRecoveryConfirmed(false); onClearError();
   };
 
   const submitDisabled = loading || !email.trim() || !password || (
@@ -380,7 +434,7 @@ const WelcomeScreen = ({
     <LinearGradient colors={[colors.leatherDark, colors.oxbloodDark, colors.leather]} style={styles.welcomeBackground}>
       <StatusBar style="light" />
       <SafeAreaView style={styles.welcomeSafe}>
-        <ScrollView contentContainerStyle={styles.welcomeScroll} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={styles.welcomeScroll} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
           <View style={styles.welcomeBrand}>
             <BrandMark />
             <Eyebrow light>Faith • Service • Community</Eyebrow>
@@ -389,10 +443,15 @@ const WelcomeScreen = ({
           </View>
 
           <Card style={styles.welcomeCard}>
-            {showAuth ? (
+            {showAuth ? recoveryOpen ? <PasswordRecoveryForm initialEmail={email} actions={recoveryActions}
+              onClose={confirmed => {
+                setRecoveryOpen(false); setRecoveryConfirmed(confirmed);
+                setAuthMode('signin'); setEmail(''); setPassword(''); setConfirmPassword(''); onClearError();
+              }} /> : (
               <>
                 <Eyebrow>{mode === 'demo' ? 'Local review workspace' : 'Secure parishioner access'}</Eyebrow>
                 <Text style={styles.cardHeadline}>{authMode === 'signin' ? 'Welcome back' : 'Create your account'}</Text>
+                {recoveryConfirmed ? <Notice title="Password updated" body="Sign in with your new password." tone="positive" icon="checkmark-circle-outline" /> : null}
                 <View style={styles.authModeSwitch} accessibilityRole="tablist">
                   <Pressable accessibilityRole="tab" accessibilityState={{ selected: authMode === 'signin' }} onPress={() => chooseMode('signin')} style={[styles.authModeButton, authMode === 'signin' && styles.authModeButtonActive]}>
                     <Text style={[styles.authModeText, authMode === 'signin' && styles.authModeTextActive]}>Sign in</Text>
@@ -439,9 +498,11 @@ const WelcomeScreen = ({
                   disabled={submitDisabled}
                   onPress={() => void (authMode === 'signin'
                     ? onSignIn({ email, password })
-                    : onSignUp({ displayName, email, mobileNumber, homeParishId, password, confirmPassword, acceptPrivacyNotice }))}
+                    : onSignUp({ displayName, email, mobileNumber, homeParishId, password, confirmPassword, acceptPrivacyNotice })).catch(() => undefined)}
                 />
-                <AppButton label="Back to introduction" variant="ghost" onPress={() => setShowAuth(false)} />
+                {authMode === 'signin' && mode === 'api' ? <AppButton label="Forgot password?" variant="secondary" disabled={loading}
+                  onPress={() => { setRecoveryOpen(true); setPassword(''); setConfirmPassword(''); onClearError(); }} /> : null}
+                <AppButton label="Back to introduction" variant="ghost" onPress={closeAuth} />
                 <Text style={styles.privacyNote}>Passwords are never included in uploaded documents or assistant messages. Production mode stores the session token in the device’s protected credential storage.</Text>
               </>
             ) : (
@@ -971,7 +1032,7 @@ const NotificationsScreen = ({ notifications, onOpen }: { notifications: AppNoti
   <Screen>
     <Text style={styles.lead}>Open a notice to mark it read and go to the related area.</Text>
     {notifications.length ? notifications.map((notification) => (
-      <Pressable key={notification.id} accessibilityRole="button" accessibilityLabel={`${notification.readAt ? 'Read' : 'Unread'} notification: ${notification.title}`} onPress={() => void onOpen(notification)} style={({ pressed }) => pressed && styles.cardPressed}>
+      <Pressable key={notification.id} accessibilityRole="button" accessibilityLabel={`${notification.readAt ? 'Read' : 'Unread'} notification: ${notification.title}`} onPress={() => void onOpen(notification).catch(() => undefined)} style={({ pressed }) => pressed && styles.cardPressed}>
         <Card style={[styles.notificationCard, !notification.readAt && styles.notificationUnread]}>
           <View style={[styles.notificationDot, notification.readAt && styles.notificationDotRead]} />
           <View style={styles.flex}>
@@ -1002,6 +1063,7 @@ const QueueScreen = ({
 }) => {
   const [parishId, setParishId] = useState<ParishId>(profile.homeParishId);
   const [service, setService] = useState<QueueService>('General inquiry');
+  const [confirmLeave, setConfirmLeave] = useState(false);
   return (
     <Screen>
       <Notice title="Walk-in support only" body="A queue ticket estimates your place for a parish office visit. It is not an appointment and does not guarantee a completion time." tone="warning" icon="people-outline" />
@@ -1017,7 +1079,11 @@ const QueueScreen = ({
             <QueueStat value={ticket.estimatedWaitMinutes === null ? '—' : `~${ticket.estimatedWaitMinutes}`} label={ticket.estimatedWaitMinutes === null ? 'estimate pending' : 'minutes'} />
           </View>
           <Text style={styles.mutedCentered}>For: {ticket.service}. Keep this screen available and follow parish staff instructions.</Text>
-          <AppButton label="Leave queue" variant="danger" loading={loading} onPress={() => Alert.alert('Leave this queue?', 'Your current ticket will be released.', [{ text: 'Keep ticket', style: 'cancel' }, { text: 'Leave queue', style: 'destructive', onPress: () => void onLeave() }])} />
+          <AppButton label="Leave queue" variant="danger" loading={loading} onPress={() => setConfirmLeave(true)} />
+          {confirmLeave ? <View accessibilityRole="alert"><Text style={styles.mutedCentered}>Leave this queue? Your ticket will be released.</Text>
+            <AppButton label="Keep my ticket" variant="secondary" onPress={() => setConfirmLeave(false)} />
+            <AppButton label="Confirm leave queue" variant="danger" loading={loading} onPress={() => { void onLeave().then(() => setConfirmLeave(false)).catch(() => undefined); }} />
+          </View> : null}
         </Card>
       ) : (
         <Card>
@@ -1027,7 +1093,7 @@ const QueueScreen = ({
           <View style={styles.chipWrap}>{PARISHES.map((parish) => <ChoiceChip key={parish.id} label={parish.name} selected={parish.id === parishId} onPress={() => setParishId(parish.id)} />)}</View>
           <Text style={styles.fieldLabel}>Purpose of visit</Text>
           <View style={styles.chipWrap}>{QUEUE_SERVICES.map((item) => <ChoiceChip key={item} label={item} selected={item === service} onPress={() => setService(item)} />)}</View>
-          <AppButton label="Join walk-in queue" icon="ticket-outline" loading={loading} onPress={() => void onJoin(parishId, service)} />
+          <AppButton label="Join walk-in queue" icon="ticket-outline" loading={loading} onPress={() => void onJoin(parishId, service).catch(() => undefined)} />
         </Card>
       )}
     </Screen>
@@ -1060,6 +1126,12 @@ const ProfileScreen = ({
   onChangePassword,
   onSignOut,
   onReset,
+  pushState,
+  onEnablePush,
+  onRetryPush,
+  onNotificationSettings,
+  onRequestEmailVerification,
+  onConfirmEmailVerification,
 }: {
   profile: ParishionerProfile;
   mode: 'demo' | 'api';
@@ -1068,6 +1140,12 @@ const ProfileScreen = ({
   onChangePassword: (input: { currentPassword: string; newPassword: string; confirmPassword: string }) => Promise<void>;
   onSignOut: () => void;
   onReset: () => Promise<void>;
+  pushState: PushState;
+  onEnablePush: () => Promise<void>;
+  onRetryPush: () => Promise<void>;
+  onNotificationSettings: () => Promise<void>;
+  onRequestEmailVerification: (signal?: AbortSignal) => Promise<void>;
+  onConfirmEmailVerification: (code: string, signal?: AbortSignal) => Promise<void>;
 }) => {
   const [draft, setDraft] = useState(profile);
   const [saved, setSaved] = useState(false);
@@ -1078,6 +1156,8 @@ const ProfileScreen = ({
   return (
     <Screen keyboard>
       {mode === 'demo' ? <Notice title="Local demonstration profile" body="Changes stay on this device and do not update any parish record." tone="warning" icon="flask-outline" /> : null}
+      <EmailVerificationCard key={profile.id} email={profile.email} emailVerified={profile.emailVerified === true}
+        mode={mode} request={onRequestEmailVerification} confirm={onConfirmEmailVerification} />
       <Card>
         <Eyebrow>Personal details</Eyebrow>
         <Text style={styles.cardHeadline}>Your contact profile</Text>
@@ -1090,13 +1170,14 @@ const ProfileScreen = ({
         <View style={styles.settingRow}>
           <View style={styles.flex}>
             <Text style={styles.itemTitle}>Notifications</Text>
-            <Text style={styles.mutedText}>Allow appointment and queue reminders when supported by the deployed app.</Text>
+            <Text style={styles.mutedText}>Allow push alerts for appointment, document and queue updates. Save this preference, then enable this device below.</Text>
           </View>
           <Switch accessibilityLabel="Enable notifications" value={draft.notificationsEnabled} onValueChange={(notificationsEnabled) => setDraft({ ...draft, notificationsEnabled })} trackColor={{ false: colors.line, true: colors.greenSoft }} thumbColor={draft.notificationsEnabled ? colors.green : colors.inkSoft} />
         </View>
         {saved ? <Text style={styles.savedText}>Profile changes saved.</Text> : null}
         <AppButton label="Save profile" icon="save-outline" loading={loading} disabled={loading || !draft.displayName.trim() || !draft.email.trim()} onPress={() => void onSave(draft).then(() => setSaved(true)).catch(() => undefined)} />
       </Card>
+      <PushSettings state={pushState} accountEnabled={profile.notificationsEnabled} onEnable={onEnablePush} onRetry={onRetryPush} onSettings={onNotificationSettings} />
       <Card>
         <Eyebrow>Account security</Eyebrow>
         <Text style={styles.cardHeadline}>Change password</Text>
@@ -1207,13 +1288,14 @@ const LoadingScreen = ({ label }: { label: string }) => (
 const makeChecklist = (serviceId: SacramentId): AppointmentDocument[] => {
   const service = getService(serviceId)!;
   return service.requirements.map((label, index) => {
-    const required = !/if available/i.test(label);
+    const configured = service.requirementDetails?.find(item => item.name === label);
+    const required = configured?.required ?? true;
     return {
-      id: `${serviceId}-requirement-${index + 1}`,
+      id: configured?.id ?? `${serviceId}-requirement-${index + 1}`,
       label,
       required,
       status: required ? 'missing' : 'not_required',
-      note: required ? 'Select a file before submitting.' : 'Optional if available.',
+      note: configured?.instructions ?? (required ? 'Select a file before submitting.' : 'Optional if available.'),
     };
   });
 };
@@ -1300,7 +1382,7 @@ const styles = StyleSheet.create({
   reference: { color: colors.oxblood, fontFamily: fonts.bodyBold, fontSize: 12, letterSpacing: 0.5 },
   mutedText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 14, lineHeight: 21 },
   mutedCentered: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 14, lineHeight: 21, textAlign: 'center' },
-  ticketNumber: { color: colors.oxblood, fontFamily: fonts.displayBold, fontSize: 34 },
+  ticketNumber: { color: colors.oxblood, fontFamily: fonts.displayBold, fontSize: 24, lineHeight: 32, flexShrink: 1, maxWidth: '100%' },
   infoRow: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.xs },
   infoText: { color: colors.inkSoft, flex: 1, fontFamily: fonts.body, fontSize: 14, lineHeight: 21 },
   inlineLink: { alignItems: 'center', alignSelf: 'flex-end', flexDirection: 'row', gap: spacing.xxs, marginTop: spacing.xs },
@@ -1344,7 +1426,7 @@ const styles = StyleSheet.create({
   notificationDotRead: { backgroundColor: colors.line },
   noticeTime: { color: colors.inkSoft, fontFamily: fonts.bodyMedium, fontSize: 12 },
   ticketCard: { alignItems: 'center', gap: spacing.md },
-  ticketNumberLarge: { color: colors.oxblood, fontFamily: fonts.displayBold, fontSize: 64, lineHeight: 68 },
+  ticketNumberLarge: { color: colors.oxblood, fontFamily: fonts.displayBold, fontSize: 24, lineHeight: 32, textAlign: 'center', flexShrink: 1, maxWidth: '100%' },
   ticketParish: { color: colors.ink, fontFamily: fonts.display, fontSize: 20, textAlign: 'center' },
   queueStats: { alignItems: 'center', backgroundColor: colors.paperLight, borderRadius: radii.md, flexDirection: 'row', padding: spacing.md, width: '100%' },
   queueStat: { alignItems: 'center', flex: 1 },

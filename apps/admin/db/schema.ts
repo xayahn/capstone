@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { check, index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import type { AppointmentStatus, DocumentStatus, UserRole } from '@/shared/domain';
 
 const createdAt = text('created_at').notNull().default(sql`(datetime('now'))`);
@@ -45,6 +45,8 @@ export const mobileCredentials = sqliteTable('mobile_credentials', {
   lockedUntil: text('locked_until'),
   notificationsEnabled: integer('notifications_enabled', { mode: 'boolean' }).notNull().default(true),
   passwordChangedAt: text('password_changed_at').notNull().default(sql`(datetime('now'))`),
+  authVersion: integer('auth_version').notNull().default(0),
+  emailVerifiedAt: text('email_verified_at'),
   createdAt,
   updatedAt,
 });
@@ -61,6 +63,25 @@ export const mobileSessions = sqliteTable('mobile_sessions', {
 }, (table) => [
   uniqueIndex('idx_mobile_sessions_token').on(table.tokenHash),
   index('idx_mobile_sessions_user_expiry').on(table.userId, table.expiresAt),
+]);
+
+export const mobileEmailChallenges = sqliteTable('mobile_email_challenges', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  purpose: text('purpose').notNull(),
+  sessionId: text('session_id').references(() => mobileSessions.id, { onDelete: 'cascade' }),
+  email: text('email').notNull(),
+  codeHash: text('code_hash').notNull(),
+  credentialVersion: integer('credential_version').notNull(),
+  attempts: integer('attempts').notNull().default(0),
+  deliveryStatus: text('delivery_status').notNull().default('pending'),
+  expiresAt: integer('expires_at').notNull(),
+  consumedBy: text('consumed_by'),
+  createdAt: integer('created_at').notNull().default(sql`(unixepoch())`),
+}, table => [
+  uniqueIndex('idx_mobile_email_challenges_user_purpose').on(table.userId, table.purpose),
+  index('idx_mobile_email_challenges_expiry').on(table.expiresAt),
+  check('email_challenge_purpose', sql`${table.purpose} IN ('password_reset','email_verification')`),
 ]);
 
 export const userParishMemberships = sqliteTable('user_parish_memberships', {
@@ -247,6 +268,43 @@ export const notifications = sqliteTable('notifications', {
   createdAt,
 }, (table) => [index('idx_notifications_recipient_read').on(table.recipientUserId, table.readAt, table.createdAt)]);
 
+export const pushDevices = sqliteTable('push_devices', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  sessionId: text('session_id').notNull().references(() => mobileSessions.id, { onDelete: 'cascade' }),
+  expoPushToken: text('expo_push_token').notNull().unique(),
+  projectId: text('project_id').notNull(),
+  platform: text('platform').notNull(),
+  enabled: integer('enabled').notNull().default(1),
+  createdAt: integer('created_at').notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at').notNull().default(sql`(unixepoch())`),
+}, (table) => [
+  index('idx_push_devices_user').on(table.userId, table.enabled),
+  check('push_device_platform', sql`${table.platform} IN ('ios', 'android')`),
+]);
+
+export const pushDeliveries = sqliteTable('push_deliveries', {
+  id: text('id').primaryKey(),
+  notificationId: text('notification_id').notNull().references(() => notifications.id, { onDelete: 'cascade' }),
+  deviceId: text('device_id').notNull().references(() => pushDevices.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  sessionId: text('session_id').notNull().references(() => mobileSessions.id, { onDelete: 'cascade' }),
+  status: text('status').notNull().default('pending'),
+  attempts: integer('attempts').notNull().default(0),
+  receiptChecks: integer('receipt_checks').notNull().default(0),
+  availableAt: integer('available_at').notNull().default(sql`(unixepoch())`),
+  leaseUntil: integer('lease_until'),
+  claimId: text('claim_id'),
+  ticketId: text('ticket_id'),
+  lastErrorCode: text('last_error_code'),
+  createdAt: integer('created_at').notNull().default(sql`(unixepoch())`),
+  completedAt: integer('completed_at'),
+}, (table) => [
+  uniqueIndex('idx_push_delivery_notification_device').on(table.notificationId, table.deviceId),
+  index('idx_push_deliveries_due').on(table.status, table.availableAt, table.leaseUntil),
+  check('push_delivery_status', sql`${table.status} IN ('pending','sending','ticketed','delivered','failed','cancelled')`),
+]);
+
 export const announcements = sqliteTable('announcements', {
   id: text('id').primaryKey(),
   authorId: text('author_id').notNull().references(() => users.id),
@@ -281,6 +339,7 @@ export const sacramentalRecords = sqliteTable('sacramental_records', {
   updatedAt,
 }, (table) => [
   uniqueIndex('idx_sacramental_records_reference').on(table.reference),
+  index('idx_sacramental_records_parish_date_id').on(table.parishId, table.eventDate, table.id),
   index('idx_sacramental_records_parish_type_subject').on(table.parishId, table.recordType, table.subjectName),
 ]);
 
@@ -301,6 +360,9 @@ export const clergyAssignments = sqliteTable('clergy_assignments', {
 }, (table) => [
   index('idx_clergy_assignments_clergy_window').on(table.clergyId, table.startsAt, table.endsAt),
   index('idx_clergy_assignments_parish_window').on(table.parishId, table.startsAt, table.endsAt),
+  index('idx_assignments_parish_page').on(table.parishId, table.status, sql`julianday(${table.startsAt})`, table.id),
+  index('idx_assignments_clergy_page').on(table.clergyId, table.status, sql`julianday(${table.startsAt})`, table.id),
+  index('idx_assignments_all_page').on(table.status, sql`julianday(${table.startsAt})`, table.id),
 ]);
 
 export const chatbotMessages = sqliteTable('chatbot_messages', {

@@ -1,5 +1,7 @@
 # ParishLink Pre-deployment Readiness
 
+Historical 29 August snapshot. For the current recovery/native/pilot increment and its unverified gates, see [8 November acceptance record](CRITICAL_GAPS_ACCEPTANCE_2026-11-08.md). Counts and provider status below are preserved as dated evidence, not current clearance.
+
 **Evidence date:** 2026-08-29  
 **Release state:** Local development only  
 **Deployment state:** Not deployed; no production source version, public URL, database, bucket, mobile binary, or store submission was created by this work.

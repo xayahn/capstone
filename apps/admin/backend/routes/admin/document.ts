@@ -36,9 +36,8 @@ export async function GET(
         mimeType: string | null; parishId: string; clergyId: string | null;
       }>();
     if (!row) throw new AdminServiceError('Document submission not found.', 404);
-    const authorized = actor.role === 'system_admin'
-      || (actor.role === 'parish_staff' && actor.parishId === row.parishId)
-      || (actor.role === 'clergy' && actor.clergyProfileId === row.clergyId);
+    // Purpose/assignment elevation is not implemented: default deny outside staff scope.
+    const authorized = actor.role === 'parish_staff' && actor.parishId === row.parishId;
     if (!authorized) throw new AdminServiceError('You cannot access this document.', 403);
     if (!row.storageKey) throw new AdminServiceError('This demonstration record has no stored file.', 404);
     const object = await env.FILES.get(row.storageKey);

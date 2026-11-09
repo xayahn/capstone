@@ -121,6 +121,23 @@ expect(queueReplay.status === 201 && queueReplay.payload?.id === queueOne.payloa
 const leaveOne = await request('/mobile/queue/tickets/active', { method: 'DELETE', token });
 const leaveReplay = await request('/mobile/queue/tickets/active', { method: 'DELETE', token });
 expect(leaveOne.status === 204 && leaveReplay.status === 204, 'queue leave was not idempotent');
+let assistantVerification;
+if (process.env.PARISHLINK_SMOKE_GEMINI === 'true') {
+  // Explicit opt-in only: one public provider question. No fixture profile,
+  // appointment or queue details are sent to the model by this path.
+  const publicAnswer = await request('/mobile/assistant', {
+    method: 'POST', token,
+    body: { prompt: 'How does document verification work?', allowExternalAI: true },
+  });
+  const privateAnswer = await request('/mobile/assistant', {
+    method: 'POST', token,
+    body: { prompt: 'What is my latest request status?', allowExternalAI: true },
+  });
+  assistantVerification = {
+    publicReplyFromGemini: publicAnswer.status === 200 && publicAnswer.payload?.provider === 'gemini',
+    privateReplyStayedLocal: privateAnswer.status === 200 && privateAnswer.payload?.provider === 'parishlink',
+  };
+}
 const signout = await request('/mobile/auth/sign-out', { method: 'POST', token });
 expect(signout.status === 204, 'sign-out failed');
 
@@ -134,5 +151,10 @@ process.stdout.write(`${JSON.stringify({
   queueReplaySameResource: true,
   repeatedQueueLeave: leaveReplay.status,
   signOut: signout.status,
+  ...(assistantVerification ? { assistantVerification } : {}),
 }, null, 2)}\n`);
+if (assistantVerification) {
+  expect(assistantVerification.publicReplyFromGemini, 'the public question did not return a live Gemini reply');
+  expect(assistantVerification.privateReplyStayedLocal, 'the private question did not remain on the local path');
+}
 process.stdout.write('ParishLink local synthetic smoke journey passed. No deployment was performed.\n');

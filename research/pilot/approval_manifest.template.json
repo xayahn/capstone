@@ -1,0 +1,18 @@
+{
+  "status": "Pending",
+  "approval_reference": "",
+  "parish_authorization_reference": "",
+  "institutional_ethics_or_exemption_reference": "",
+  "privacy_and_retention_reference": "",
+  "coordinator_code": "",
+  "approved_at": "",
+  "valid_until": "",
+  "parish_codes": [],
+  "task_ids": [],
+  "consent_version": "",
+  "instrument_version": "",
+  "synthetic_cases_only": true,
+  "pause_reason_codes": [],
+  "exclusion_reason_codes": [],
+  "native_acceptance_reference": ""
+}

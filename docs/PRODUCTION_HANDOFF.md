@@ -1,5 +1,7 @@
 # ParishLink Production Handoff
 
+Historical 29 August handoff baseline. Read [8 November acceptance record](CRITICAL_GAPS_ACCEPTANCE_2026-11-08.md) for current recovery/native/pilot evidence and remaining gates; earlier counts/provider statements below are not current acceptance.
+
 **Prepared:** 2026-08-29  
 **Current state:** Local release candidate; not approved for real personal data  
 **Deployment state:** Not deployed, signed, uploaded, submitted, or connected to production resources
@@ -65,9 +67,13 @@ pnpm release:check
 | `MOBILE_ALLOWED_ORIGINS` | Comma-separated exact HTTPS origins for approved browser-based mobile/web clients; no wildcard |
 | `RELEASE_VERSION` | Safe immutable release identifier, such as the approved commit/build label |
 | `GEMINI_API_KEY` | Optional server secret only after privacy/provider approval; omit to use deterministic fallback |
+| `GEMINI_ENABLED` / `GEMINI_MODEL` | Explicit assistant activation and reviewed model identifier; public-question consent remains required |
+| `PUSH_NOTIFICATIONS_ENABLED` / `EXPO_PROJECT_ID` | Explicit native push activation and the same Expo project UUID used by the mobile build |
+| `EXPO_ACCESS_TOKEN` | Server-only token when enhanced Expo push security is enabled |
+| `PUSH_DISPATCH_SECRET` | Independent random secret of at least 32 characters for the protected scheduled dispatcher |
 | Internal identity | Sponsor-controlled invitation, MFA, recovery, disablement, and access-review integration |
 
-Do not put secrets in source files, `.dev.vars`, client bundles, logs, or `EXPO_PUBLIC_*` variables.
+Do not commit secrets or place them in client bundles, logs, or `EXPO_PUBLIC_*` variables. Local provider testing uses ignored `apps/admin/.dev.vars`; production values belong in runtime secret management. See [Gemini/push setup](GEMINI_PUSH_SETUP.md).
 
 ### Mobile build
 

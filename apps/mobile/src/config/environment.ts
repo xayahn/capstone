@@ -48,7 +48,7 @@ const isPrivateOrReservedHostname = (value: string): boolean => {
   ) return true;
 
   if (hostname === '::' || hostname === '::1') return true;
-  if (/^(?:fc|fd|fe[89ab])/i.test(hostname)) return true;
+  if (hostname.includes(':') && /^(?:fc|fd|fe[89ab])/i.test(hostname)) return true;
   if (hostname.startsWith('::ffff:')) return true;
 
   const octets = hostname.split('.').map(Number);

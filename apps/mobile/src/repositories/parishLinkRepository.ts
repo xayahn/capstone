@@ -4,12 +4,16 @@ import { Platform } from 'react-native';
 import {
   submitAppointmentWithDocuments,
 } from '../api/appointmentSubmission';
-import { MobileApiClient } from '../api/mobileApiClient';
+import { LocalSignOutError } from '../api/sessionErrors';
+import { PendingSubmissionKeys } from '../api/pendingSubmissionKeys';
+import { MobileApiClient, MobileApiError } from '../api/mobileApiClient';
 import { clearMobileApiToken, getMobileApiToken, setMobileApiToken } from '../api/tokenStore';
 import { apiBaseUrl, demoMode } from '../config/environment';
+import type { PushDeviceRegistration } from '../notifications/pushRegistration';
 import { PARISHES, QUEUE_SERVICES, SACRAMENT_SERVICES, applyCatalog } from '../data/catalog';
 import { getDemoGuidance } from '../lib/assistant';
 import { assertAcceptablePassword, isEmailAddress, normalizeEmail } from '../lib/auth';
+import { accountCode, accountEmail, passwordResetInput } from '../lib/accountCodes';
 import { getBookableDates, getSlotAvailability, hasScheduleConflict } from '../lib/scheduling';
 import type {
   AppNotification,
@@ -23,6 +27,7 @@ import type {
   CreateAppointmentInput,
   ParishId,
   ParishionerProfile,
+  PasswordResetInput,
   QueueService,
   QueueTicket,
   RepositorySnapshot,
@@ -40,6 +45,10 @@ export interface ParishLinkRepository {
   signIn(input: SignInInput): Promise<AuthSession>;
   signUp(input: SignUpInput): Promise<AuthSession>;
   changePassword(input: ChangePasswordInput): Promise<void>;
+  requestPasswordReset?(email: string, signal?: AbortSignal): Promise<void>;
+  confirmPasswordReset?(input: PasswordResetInput, signal?: AbortSignal): Promise<void>;
+  requestEmailVerification?(signal?: AbortSignal): Promise<void>;
+  confirmEmailVerification?(code: string, signal?: AbortSignal): Promise<void>;
   signOut(): Promise<void>;
   loadSnapshot(): Promise<RepositorySnapshot>;
   searchAvailability(input: AvailabilitySearchInput): Promise<AvailabilitySlot[]>;
@@ -52,7 +61,8 @@ export interface ParishLinkRepository {
   markNotificationRead(id: string): Promise<void>;
   joinQueue(parishId: ParishId, service: QueueService): Promise<QueueTicket>;
   leaveQueue(): Promise<void>;
-  askAssistant(prompt: string): Promise<AssistantMessage>;
+  askAssistant(prompt: string, allowExternalAI?: boolean): Promise<AssistantMessage>;
+  registerPushDevice?(input: PushDeviceRegistration): Promise<void>;
   updateProfile(profile: ParishionerProfile): Promise<ParishionerProfile>;
   resetDemo?(): Promise<void>;
 }
@@ -458,12 +468,23 @@ class DemoParishLinkRepository implements ParishLinkRepository {
   }
 }
 
-class ApiParishLinkRepository implements ParishLinkRepository {
+export class ApiParishLinkRepository implements ParishLinkRepository {
+  private pushInstallationId = '';
+  private pushWrites: Promise<void> = Promise.resolve();
   readonly mode = 'api' as const;
   private accessToken = '';
+  private authGeneration = 0;
+  private currentUserId = '';
+  private credentialWrites: Promise<void> = Promise.resolve();
+  private readonly submissions = new PendingSubmissionKeys({
+    read: key => AsyncStorage.getItem(key),
+    write: (key, value) => AsyncStorage.setItem(key, value),
+    digest: value => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, value),
+    randomUUID: Crypto.randomUUID,
+  });
   private readonly client: MobileApiClient;
 
-  constructor(baseUrl: string) {
+  constructor(private readonly baseUrl: string) {
     this.client = new MobileApiClient(baseUrl, () => this.accessToken);
   }
 
@@ -477,49 +498,135 @@ class ApiParishLinkRepository implements ParishLinkRepository {
     return this.client.request<T>(path, init);
   }
 
+  private writeCredentials(work: () => Promise<void>): Promise<void> {
+    // Secure-store operations are asynchronous. Logout must run after any write
+    // already in flight, and a later login must run after that erasure.
+    const next = this.credentialWrites.catch(() => undefined).then(work);
+    this.credentialWrites = next;
+    return next;
+  }
+
+  private writePushRegistration(work: () => Promise<void>): Promise<void> {
+    const next = this.pushWrites.catch(() => undefined).then(work);
+    this.pushWrites = next;
+    return next;
+  }
+
+  private async acceptSession(session: AuthSession, generation: number): Promise<AuthSession> {
+    if (generation !== this.authGeneration) throw new Error('Sign-in was cancelled.');
+    const token = session.accessToken;
+    if (!token || !session.profile?.id) throw new Error('The server did not return a valid session.');
+    await this.writeCredentials(async () => {
+      if (generation !== this.authGeneration) throw new Error('Sign-in was cancelled.');
+      await setMobileApiToken(token);
+    });
+    if (generation !== this.authGeneration) throw new Error('Sign-in was cancelled.');
+    this.currentUserId = session.profile.id;
+    this.accessToken = token;
+    return session;
+  }
+
   async restoreSession(): Promise<AuthSession | null> {
-    this.accessToken = await getMobileApiToken() ?? '';
+    const generation = ++this.authGeneration;
+    await this.credentialWrites.catch(() => undefined);
+    const token = await getMobileApiToken() ?? '';
+    if (generation !== this.authGeneration) return null;
+    this.accessToken = token;
     if (!this.accessToken) return null;
     try {
-      return await this.request<AuthSession>('/mobile/auth/session');
-    } catch {
+      const restored = await this.request<AuthSession>('/mobile/auth/session');
+      if (generation !== this.authGeneration) return null;
+      this.currentUserId = restored.profile.id;
+      return restored;
+    } catch (error) {
+      if (generation !== this.authGeneration) return null;
+      if (!(error instanceof MobileApiError) || error.status !== 401) throw error;
       this.accessToken = '';
-      await clearMobileApiToken();
+      this.currentUserId = '';
+      await this.writeCredentials(clearMobileApiToken);
       return null;
     }
   }
 
   async signIn(input: SignInInput) {
+    const generation = ++this.authGeneration;
     const session = await this.request<AuthSession>('/mobile/auth/sign-in', {
       method: 'POST',
       body: JSON.stringify(input),
     });
-    this.accessToken = session.accessToken ?? '';
-    if (this.accessToken) await setMobileApiToken(this.accessToken);
-    return session;
+    return this.acceptSession(session, generation);
   }
 
   async signUp(input: SignUpInput) {
+    const generation = ++this.authGeneration;
     const session = await this.request<AuthSession>('/mobile/auth/sign-up', {
       method: 'POST',
       body: JSON.stringify(input),
     });
-    this.accessToken = session.accessToken ?? '';
-    if (this.accessToken) await setMobileApiToken(this.accessToken);
-    return session;
+    return this.acceptSession(session, generation);
   }
 
   async signOut(): Promise<void> {
-    try {
-      if (this.accessToken) await this.request<void>('/mobile/auth/sign-out', { method: 'POST' });
-    } finally {
-      this.accessToken = '';
-      await clearMobileApiToken();
+    this.authGeneration += 1;
+    const revoke = this.accessToken ? this.request<void>('/mobile/auth/sign-out', { method: 'POST' }) : Promise.resolve();
+    const token = this.accessToken, installationId = this.pushInstallationId;
+    if (token && installationId) {
+      // Queued cleanup must keep the old session credential even if another
+      // account signs in before the preceding registration finishes.
+      const client = new MobileApiClient(this.baseUrl, () => token);
+      void this.writePushRegistration(() => client.request<void>('/mobile/push/devices', {
+        method: 'DELETE', body: JSON.stringify({ installationId }),
+      }, 3_000)).catch(() => undefined);
     }
+    this.pushInstallationId = '';
+    this.accessToken = '';
+    this.currentUserId = '';
+    // Revocation is authoritative. Failed best-effort device cleanup must not
+    // turn an otherwise successful logout into a failure.
+    const results = await Promise.allSettled([revoke, this.writeCredentials(clearMobileApiToken)]);
+    if (results[1]?.status === 'rejected') throw new LocalSignOutError();
+    const failure = results.slice(0, 2).find(result => result.status === 'rejected');
+    if (failure?.status === 'rejected') throw failure.reason;
   }
 
   changePassword(input: ChangePasswordInput): Promise<void> {
     return this.request<void>('/mobile/auth/change-password', { method: 'POST', body: JSON.stringify(input) });
+  }
+
+  async requestPasswordReset(email: string, signal?: AbortSignal): Promise<void> {
+    const result = await this.request<{ accepted: boolean }>('/mobile/auth/password-reset/request', {
+      method: 'POST', body: JSON.stringify({ email: accountEmail(email) }), ...(signal ? { signal } : {}),
+    });
+    if (result?.accepted !== true) throw new Error('The reset request could not be confirmed. Try again later.');
+  }
+
+  async confirmPasswordReset(input: PasswordResetInput, signal?: AbortSignal): Promise<void> {
+    const generation = this.authGeneration, hadSession = Boolean(this.accessToken);
+    const result = await this.request<unknown>('/mobile/auth/password-reset/confirm', {
+      method: 'POST', body: JSON.stringify(passwordResetInput(input)), ...(signal ? { signal } : {}),
+    });
+    if (result !== undefined) throw new Error('The password reset result could not be confirmed. Try signing in before requesting another code.');
+    if (generation !== this.authGeneration || !hadSession) return;
+    this.authGeneration += 1;
+    this.accessToken = '';
+    this.currentUserId = '';
+    this.pushInstallationId = '';
+    try { await this.writeCredentials(clearMobileApiToken); }
+    catch { throw new LocalSignOutError(); }
+  }
+
+  async requestEmailVerification(signal?: AbortSignal): Promise<void> {
+    const result = await this.request<{ accepted: boolean }>('/mobile/auth/email-verification/request', {
+      method: 'POST', body: '{}', ...(signal ? { signal } : {}),
+    });
+    if (result?.accepted !== true) throw new Error('The verification request could not be confirmed. Try again later.');
+  }
+
+  async confirmEmailVerification(code: string, signal?: AbortSignal): Promise<void> {
+    const result = await this.request<{ emailVerified: boolean }>('/mobile/auth/email-verification/confirm', {
+      method: 'POST', body: JSON.stringify({ code: accountCode(code) }), ...(signal ? { signal } : {}),
+    });
+    if (result?.emailVerified !== true) throw new Error('Email verification could not be confirmed. Request a new code and try again.');
   }
 
   loadSnapshot() {
@@ -535,8 +642,16 @@ class ApiParishLinkRepository implements ParishLinkRepository {
   }
 
   async createAppointment(input: CreateAppointmentInput) {
+    if (!this.currentUserId) throw new Error('Sign in before submitting a request.');
+    const userId = this.currentUserId, generation = this.authGeneration;
+    const { serviceId, parishId, clergyId, venueId, date, time, participants } = input;
+    const idempotencyKey = await this.submissions.get(JSON.stringify({
+      userId, serviceId, parishId, clergyId, venueId, date, time, participants,
+    }));
+    if (generation !== this.authGeneration || userId !== this.currentUserId) throw new Error('The account changed before submission. Review the request after signing in.');
     return submitAppointmentWithDocuments(input, {
       randomUUID: Crypto.randomUUID,
+      idempotencyKey,
       create: (metadata, idempotencyKey) => this.request<Appointment>('/mobile/appointments', {
         method: 'POST',
         headers: { 'Idempotency-Key': idempotencyKey },
@@ -571,9 +686,10 @@ class ApiParishLinkRepository implements ParishLinkRepository {
         type: input.mimeType,
       } as unknown as Blob);
     }
-    return this.request<Appointment>(
+    return this.client.request<Appointment>(
       `/mobile/appointments/${encodeURIComponent(appointmentId)}/documents/${encodeURIComponent(documentId)}`,
       { method: 'POST', body },
+      60_000,
     );
   }
 
@@ -593,10 +709,23 @@ class ApiParishLinkRepository implements ParishLinkRepository {
     return this.request<void>('/mobile/queue/tickets/active', { method: 'DELETE' });
   }
 
-  askAssistant(prompt: string) {
+  async registerPushDevice(input: PushDeviceRegistration): Promise<void> {
+    if (!this.currentUserId || !this.accessToken) throw new Error('Sign in to register notifications.');
+    const generation = this.authGeneration;
+    this.pushInstallationId = input.installationId;
+    await this.writePushRegistration(async () => {
+      if (generation !== this.authGeneration || !this.accessToken) throw new Error('Notification registration was cancelled.');
+      await this.client.request<{ registered: true }>('/mobile/push/devices', {
+        method: 'POST', body: JSON.stringify(input),
+      }, 10_000);
+    });
+    if (generation !== this.authGeneration) throw new Error('Notification registration was cancelled.');
+  }
+
+  askAssistant(prompt: string, allowExternalAI = false) {
     return this.request<AssistantMessage>('/mobile/assistant', {
       method: 'POST',
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({ prompt, allowExternalAI }),
     });
   }
 

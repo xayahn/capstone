@@ -18,6 +18,10 @@ The current client/server integration uses `/api/mobile` and returns the domain 
 | `GET` | `/api/mobile/auth/session` | Mobile bearer token |
 | `POST` | `/api/mobile/auth/sign-out` | Mobile bearer token |
 | `POST` | `/api/mobile/auth/change-password` | Mobile bearer token |
+| `POST` | `/api/mobile/auth/password-reset/request` | Public; IP- and normalized-email-throttled |
+| `POST` | `/api/mobile/auth/password-reset/confirm` | Public; IP- and normalized-email-throttled |
+| `POST` | `/api/mobile/auth/email-verification/request` | Mobile bearer token; IP- and account-throttled |
+| `POST` | `/api/mobile/auth/email-verification/confirm` | Mobile bearer token; IP- and account-throttled |
 | `GET` | `/api/mobile/snapshot` | Mobile bearer token |
 | `POST` | `/api/mobile/availability` | Mobile bearer token, user-throttled |
 | `POST` | `/api/mobile/appointments` | Mobile bearer token, user-throttled, `Idempotency-Key` |
@@ -26,6 +30,8 @@ The current client/server integration uses `/api/mobile` and returns the domain 
 | `POST` | `/api/mobile/queue/tickets` | Mobile bearer token, user-throttled, `Idempotency-Key` |
 | `DELETE` | `/api/mobile/queue/tickets/active` | Mobile bearer token |
 | `POST` | `/api/mobile/assistant` | Mobile bearer token, user-throttled |
+| `POST` | `/api/mobile/push/devices` | Mobile bearer token; binds one installation to the current user/session |
+| `DELETE` | `/api/mobile/push/devices` | Mobile bearer token; unregisters only the matching current user/session installation |
 | `PUT` | `/api/mobile/profile` | Mobile bearer token |
 
 The internal portal uses `GET/POST /api/admin/state` for role-scoped reads and command-style writes, plus private document upload/download routes under `/api/admin/documents`. Admin writes use the protected internal session, same-origin validation, server role/parish checks, bounded JSON input, optimistic versions where applicable, and an `Idempotency-Key` per logical command.
@@ -46,6 +52,23 @@ The `/api/v1` material below remains the forward contract for a future explicitl
 ### Authentication and authorization
 
 Clients send the selected platform's secure session credential. The backend derives `userId`, role, memberships, and session security state; clients cannot assign them. Every protected resource applies [`RBAC.md`](RBAC.md). Mobile parishioner endpoints enforce ownership. Admin endpoints enforce internal role, parish/resource scope, and workflow permission.
+
+### Implemented parishioner recovery and email verification
+
+These routes apply only to mobile parishioner credentials. Internal parish staff, clergy, and system-administrator recovery remains a separate managed SSO/identity-provider process.
+
+| Method/path | Request | Success | Important behavior |
+|---|---|---|---|
+| `POST /api/mobile/auth/password-reset/request` | `{email}` | `202` with generic `{accepted:true,...}` | The response is identical for eligible, unknown, inactive, and non-parishioner accounts. Acceptance means only that the request was safely accepted for asynchronous handling; it does not prove a challenge was created or an email reached an inbox. |
+| `POST /api/mobile/auth/password-reset/confirm` | `{email,code,newPassword,confirmPassword}` | `204` | A valid delivered challenge changes the password, marks the email verified if needed, revokes every mobile session and push-device binding for the account, consumes all outstanding challenges through the credential-version change, and requires manual sign-in. |
+| `POST /api/mobile/auth/email-verification/request` | no body | `202 {accepted:true}` | Requires the current mobile bearer session. The challenge is bound to that account and session. An already verified account is acknowledged without issuing another usable challenge. |
+| `POST /api/mobile/auth/email-verification/confirm` | `{code}` | `200 {emailVerified:true}` | Requires the same active account/session binding and consumes the challenge once. |
+
+Codes are server-generated 12-character values. Only their SHA-256 hashes are stored; plaintext exists only transiently for delivery. A challenge expires after 15 minutes, only the newest code for the account/purpose is usable, and it becomes ineligible after five wrong attempts. Confirmation failures use the same invalid-or-expired message. Request and confirmation routes have separate database-backed IP and account/email limits.
+
+The implemented mailer sends only to the fixed Resend HTTPS endpoint, rejects redirects, applies an eight-second deadline and bounded response parsing, and enables a challenge only after the provider accepts the send request. Provider acceptance is not inbox delivery. It is fail-closed unless all four server settings are valid: `MAIL_ENABLED=true`, `MAIL_DELIVERY_VERIFIED=true`, `RESEND_API_KEY`, and `MAIL_FROM`. All four are unavailable in the current local environment, so live request routes return the same `503` unavailable result for every address; no local email-delivery evidence exists.
+
+New and legacy accounts can have `emailVerified:false`. The server returns that flag in the profile/session contract, but appointment creation does not yet enforce verified email. Any enforcement policy requires stakeholder approval, migration/user communication, support fallback, and acceptance evidence. Detailed setup is in [`ACCOUNT_RECOVERY.md`](ACCOUNT_RECOVERY.md).
 
 ### Common headers
 
@@ -95,7 +118,7 @@ Do not expose stack traces, SQL, storage keys, provider secrets, existence of un
 
 | HTTP | Typical meaning |
 |---:|---|
-| `200/201/204` | Successful read/create/no-content action |
+| `200/201/202/204` | Successful read/create/accepted asynchronous request/no-content action; `202` does not prove downstream delivery |
 | `400` | Malformed input |
 | `401` | Authentication required/expired |
 | `403` | Authenticated but not authorized |
@@ -313,8 +336,17 @@ The response always contains the message identity and text. Structured guidance 
 - Action kinds are `service`, `appointment`, `documents`, `queue`, `home`, and `contact_parish`; `serviceId` and `appointmentId` are present only when needed for a typed client action.
 - Service information and requirements come deterministically from the active database catalogue. Appointment and document summaries are queried with `parishioner_user_id = authenticatedActor.id`; a supplied appointment ID cannot cross that ownership boundary. Queue guidance reads only the authenticated actor's active ticket, and parish-directory guidance uses the actor's home parish.
 - The assistant receives no uploaded file bytes or private document contents and has no mutation, approval, verification, scheduling, queue, or record tools.
-- Prompts are redacted before storage or any optional provider call. Known service, requirement, appointment, queue, directory, safety, and product-workflow answers remain deterministic.
-- Gemini is an optional server-only phrasing dependency for otherwise-unmatched general product questions only. It receives the redacted general prompt without actor-owned database context, may replace only the response `text`, has an eight-second timeout, and falls back to deterministic guidance when no key is configured or the provider fails. The local evidence does not include a real Gemini provider-key run.
+- Raw prompts/transcripts are not stored. Exact service checklists, live appointment/queue status, directory answers and human-authority decisions remain local. Private query results never become provider context.
+- The implemented mobile assistant request accepts `{prompt, allowExternalAI?: boolean}`. Gemini requires the explicit server feature flag, a server-only key and per-account client consent. Only supported public questions passing the positive vocabulary/privacy/authority boundary can be sent, with public catalogue/directory/navigation context. Unsupported wording, identifiers, sensitive questions, disabled configuration and provider failures use local guidance.
+- Assistant responses add `provider: 'gemini' | 'parishlink'` and, where relevant, a controlled `fallbackReason`: `disabled`, `consent_required`, `private_or_sensitive`, `unavailable`, `invalid_response` or `out_of_scope`. Provider outputs cannot invent executable actions, links or business-write tools. Source/action identifiers are selected by the server. Live local public-question verification passed on 6 November with Gemini 3.5 Flash; production and wider AI-quality validation remain separate.
+
+### Implemented native push registration
+
+`POST /api/mobile/push/devices` accepts `{installationId, expoPushToken, platform, projectId}`; the installation/project IDs are UUIDs and platform is `ios` or `android`. It returns `{registered:true}`. `DELETE` accepts `{installationId}` and is scoped to the authenticated session. Neither endpoint accepts a recipient user ID or arbitrary message.
+
+New notification rows atomically enqueue per-device deliveries. Dispatch checks active user/session, current device binding and notification preference again. Provider payloads contain generic preview text and `notificationId/entityType/entityId`; private message contents remain behind authenticated API access. Registration does not replay historical notifications.
+
+See [provider setup](GEMINI_PUSH_SETUP.md) for the separately protected scheduled-dispatch route and retry/receipt operation. An Expo ticket/receipt is provider handoff evidence, not proof that the user saw a notification.
 
 ## 5. Internal portal endpoints
 

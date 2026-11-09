@@ -2,6 +2,8 @@ import { env } from 'cloudflare:workers';
 import { MobileServiceError } from '@/backend/auth/mobile-auth';
 import { mobileAllowedOrigins } from '@/backend/config/runtime-config';
 import { recordServerFailure } from '@/backend/observability/server-log';
+import { readSmallJson, RequestBodyError } from '@/backend/http/small-json';
+import { schedulePushDispatch } from '@/backend/notifications/background-dispatch';
 
 const BASE_HEADERS = {
   'Access-Control-Allow-Headers': 'Authorization, Content-Type, Idempotency-Key, If-Match, X-Request-Id',
@@ -20,10 +22,9 @@ function requestOriginAllowed(request: Request): boolean {
   return mobileAllowedOrigins(env.MOBILE_ALLOWED_ORIGINS, development).has(origin);
 }
 
-function withMobileCors(response: Response, request: Request): Response {
+function withMobileCors(response: Response, allowedOrigin: string | null): Response {
   const headers = new Headers(response.headers);
-  const origin = request.headers.get('origin');
-  if (origin && requestOriginAllowed(request)) headers.set('Access-Control-Allow-Origin', origin);
+  if (allowedOrigin) headers.set('Access-Control-Allow-Origin', allowedOrigin);
   const vary = headers.get('Vary');
   headers.set('Vary', vary ? `${vary}, Origin` : 'Origin');
   return new Response(response.body, {
@@ -44,7 +45,7 @@ export function mobileEmpty(status = 204): Response {
 export function mobileOptions(request: Request): Response {
   try {
     if (!requestOriginAllowed(request)) return mobileJson({ error: 'This browser origin is not allowed.' }, 403);
-    const response = withMobileCors(mobileEmpty(204), request);
+    const response = withMobileCors(mobileEmpty(204), request.headers.get('origin'));
     response.headers.set('Access-Control-Max-Age', '600');
     return response;
   } catch (error) {
@@ -54,30 +55,31 @@ export function mobileOptions(request: Request): Response {
 }
 
 export async function readMobileJson(request: Request, maxBytes = 24_000): Promise<Record<string, unknown>> {
-  if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) {
-    throw new MobileServiceError('Send this request as JSON.', 415);
-  }
-  const declaredLength = Number(request.headers.get('content-length') ?? 0);
-  if (declaredLength > maxBytes) throw new MobileServiceError('The request is too large.', 413);
-  const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > maxBytes) throw new MobileServiceError('The request is too large.', 413);
-  let value: unknown;
   try {
-    value = JSON.parse(text);
-  } catch {
-    throw new MobileServiceError('The request body is not valid JSON.');
+    return await readSmallJson(request, maxBytes);
+  } catch (error) {
+    if (error instanceof RequestBodyError) throw new MobileServiceError(error.message, error.status);
+    throw error;
   }
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new MobileServiceError('The request body is invalid.');
-  return value as Record<string, unknown>;
 }
 
 export async function mobileRoute(request: Request, work: () => Promise<Response>): Promise<Response> {
+  // Validate once. Revalidating broken configuration in the error handler used
+  // to throw a second time instead of returning a controlled, fail-closed error.
   try {
     if (!requestOriginAllowed(request)) return mobileJson({ error: 'This browser origin is not allowed.' }, 403);
-    return withMobileCors(await work(), request);
   } catch (error) {
-    if (error instanceof MobileServiceError) return withMobileCors(mobileJson({ error: error.message }, error.status), request);
+    const requestId = recordServerFailure('mobile-cors', error);
+    return mobileJson({ error: 'The mobile API origin policy is unavailable.', requestId }, 503);
+  }
+  const allowedOrigin = request.headers.get('origin');
+  try {
+    const response = await work();
+    if (response.ok && !['GET', 'HEAD', 'OPTIONS'].includes(request.method)) schedulePushDispatch();
+    return withMobileCors(response, allowedOrigin);
+  } catch (error) {
+    if (error instanceof MobileServiceError) return withMobileCors(mobileJson({ error: error.message }, error.status), allowedOrigin);
     const requestId = recordServerFailure('mobile-api', error);
-    return withMobileCors(mobileJson({ error: 'The request could not be completed. Please try again.', requestId }, 500), request);
+    return withMobileCors(mobileJson({ error: 'The request could not be completed. Please try again.', requestId }, 500), allowedOrigin);
   }
 }

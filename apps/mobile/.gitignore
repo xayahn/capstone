@@ -17,3 +17,5 @@ coverage/
 *.p12
 *.mobileprovision
 *.log
+google-services.json
+GoogleService-Info.plist
