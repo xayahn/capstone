@@ -21,7 +21,7 @@ for (const file of migrationFiles) {
 }
 
 const expectedTables = [
-  'announcements', 'appointment_events', 'appointment_participants', 'appointments',
+  'announcements', 'appointment_change_requests', 'appointment_events', 'appointment_participants', 'appointments',
   'audit_logs', 'availability_blocks', 'chatbot_messages', 'clergy_assignments',
   'clergy_profiles', 'document_requirements', 'document_submissions', 'evaluation_responses',
   'idempotency_keys', 'mobile_credentials', 'mobile_email_challenges', 'mobile_rate_limits', 'mobile_sessions',
@@ -55,6 +55,11 @@ for (const index of [
   'idx_mobile_email_challenges_user_purpose',
   'idx_mobile_email_challenges_expiry',
   'idx_staff_sessions_user_expiry',
+  'idx_change_requests_one_pending',
+  'idx_notifications_dedupe',
+  'idx_audit_parish_created',
+  'idx_audit_created',
+  'idx_audit_action_created',
 ]) {
   if (!indexNames.has(index)) throw new Error(`Required migration index is missing: ${index}`);
 }
@@ -65,6 +70,14 @@ if (!database.prepare("SELECT name FROM sqlite_schema WHERE type='trigger' AND n
 for (const trigger of ['mobile_password_invalidate_challenges', 'mobile_identity_invalidate_challenges']) {
   if (!database.prepare("SELECT name FROM sqlite_schema WHERE type='trigger' AND name=?").get(trigger)) throw new Error(`Required account safety trigger is missing: ${trigger}`);
 }
+for (const table of ['users', 'appointments', 'documents', 'queue', 'assignments', 'announcements', 'records']) {
+  const prefix = table === 'users' ? 'trg_users_role' : `trg_${table}_status`;
+  for (const event of ['insert', 'update']) {
+    if (!database.prepare("SELECT name FROM sqlite_schema WHERE type='trigger' AND name=?").get(`${prefix}_${event}`)) throw new Error(`Required integrity trigger is missing: ${prefix}_${event}`);
+  }
+}
+const appointmentColumns = new Set(database.prepare("PRAGMA table_info('appointments')").all().map(row => String(row.name)));
+if (!appointmentColumns.has('buffer_before_minutes') || !appointmentColumns.has('buffer_after_minutes')) throw new Error('Appointment buffer snapshot columns are missing.');
 const credentialColumns = new Set(database.prepare("PRAGMA table_info('mobile_credentials')").all().map(row => String(row.name)));
 if (!credentialColumns.has('auth_version') || !credentialColumns.has('email_verified_at')) throw new Error('Account lifecycle credential columns are missing.');
 

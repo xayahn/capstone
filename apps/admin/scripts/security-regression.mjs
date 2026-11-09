@@ -214,13 +214,20 @@ try {
   const badPhone=await attempt(()=>mobile.updateMobileProfile(mobileActor,{displayName:'Synthetic Regression',mobileNumber:'----------',homeParishId:'p1',notificationsEnabled:true}));
   record('punctuation-only phone rejected',badPhone.status,400,badPhone.status===400);
   record('SQLite UTC timestamp normalized',validation.utcTimestamp('2026-09-20 12:30:00'),'2026-09-20T12:30:00Z',validation.utcTimestamp('2026-09-20 12:30:00')==='2026-09-20T12:30:00Z');
-  // An existing service's buffer matters even when the incoming request's own buffer does not overlap its core time.
+  // An existing appointment's buffer matters even when the incoming request's own buffer does not overlap its core time.
+  // Buffers are captured when an appointment is booked (migration 0007), so the stored snapshot is authoritative.
   const buffered = await mobile.createMobileAppointment(mobileActor,input,crypto.randomUUID());
-  runSql("UPDATE service_types SET buffer_after_minutes=45 WHERE id='baptism'");
+  runSql("UPDATE appointments SET buffer_after_minutes=45 WHERE id=?",buffered.id);
   const bufferBooking=await attempt(()=>mobile.createMobileAppointment(mobileActor,{...input,time:'9:30 AM'},crypto.randomUUID()));
   const bufferAvailability=await mobile.searchMobileAvailability(input);
   record('existing appointment buffer blocks adjacent booking',bufferBooking.status,409,bufferBooking.status===409);
   record('availability and booking agree on buffers',bufferAvailability.slots.find(s=>s.time==='9:30 AM')?.available,false,bufferAvailability.slots.find(s=>s.time==='9:30 AM')?.available===false);
+  // Changing a sacrament's settings later must not move or enlarge bookings that already exist.
+  runSql("UPDATE appointments SET buffer_after_minutes=15 WHERE id=?",buffered.id);
+  runSql("UPDATE service_types SET buffer_after_minutes=45 WHERE id='baptism'");
+  const afterSettingsChange=await mobile.searchMobileAvailability(input);
+  record('service buffer edits do not retroactively change existing bookings',afterSettingsChange.slots.find(s=>s.time==='9:30 AM')?.available,true,afterSettingsChange.slots.find(s=>s.time==='9:30 AM')?.available===true);
+  runSql("UPDATE service_types SET buffer_after_minutes=15 WHERE id='baptism'");
   runSql("UPDATE appointments SET status='cancelled' WHERE id=?",buffered.id);
   runSql("INSERT INTO availability_blocks(id,parish_id,kind,starts_at,ends_at,created_by)VALUES('parish-closure','p1','closure',?,?,?)",date+'T00:00:00Z',date+'T23:59:59Z',staff.id);
   const closureBooking=await attempt(()=>mobile.createMobileAppointment(mobileActor,input,crypto.randomUUID()));

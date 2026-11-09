@@ -12,6 +12,9 @@ export const parishes = sqliteTable('parishes', {
   timezone: text('timezone').notNull().default('Asia/Manila'),
   address: text('address'),
   officeHours: text('office_hours'),
+  contactPhone: text('contact_phone'),
+  contactEmail: text('contact_email'),
+  description: text('description'),
   isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
   createdAt,
   updatedAt,
@@ -176,6 +179,9 @@ export const appointments = sqliteTable('appointments', {
   decidedBy: text('decided_by').references(() => users.id),
   decidedAt: text('decided_at'),
   version: integer('version').notNull().default(1),
+  /** Buffers captured at booking time (0007); later service edits never move existing bookings. */
+  bufferBeforeMinutes: integer('buffer_before_minutes'),
+  bufferAfterMinutes: integer('buffer_after_minutes'),
   createdAt,
   updatedAt,
 }, (table) => [
@@ -265,8 +271,13 @@ export const notifications = sqliteTable('notifications', {
   pushProviderId: text('push_provider_id'),
   deliveredAt: text('delivered_at'),
   readAt: text('read_at'),
+  /** De-duplication key for system notifications such as reminders (0007). */
+  dedupeKey: text('dedupe_key'),
   createdAt,
-}, (table) => [index('idx_notifications_recipient_read').on(table.recipientUserId, table.readAt, table.createdAt)]);
+}, (table) => [
+  index('idx_notifications_recipient_read').on(table.recipientUserId, table.readAt, table.createdAt),
+  uniqueIndex('idx_notifications_dedupe').on(table.dedupeKey).where(sql`${table.dedupeKey} IS NOT NULL`),
+]);
 
 export const pushDevices = sqliteTable('push_devices', {
   id: text('id').primaryKey(),
@@ -429,4 +440,57 @@ export const auditLogs = sqliteTable('audit_logs', {
 }, (table) => [
   index('idx_audit_entity').on(table.entityType, table.entityId, table.createdAt),
   index('idx_audit_actor').on(table.actorId, table.createdAt),
+  index('idx_audit_parish_created').on(table.parishId, table.createdAt),
+  index('idx_audit_created').on(table.createdAt),
+  index('idx_audit_action_created').on(table.action, table.createdAt),
+]);
+
+/** Internal portal email/password sign-in (0006). */
+export const staffCredentials = sqliteTable('staff_credentials', {
+  userId: text('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  passwordHash: text('password_hash').notNull(),
+  passwordSalt: text('password_salt').notNull(),
+  passwordIterations: integer('password_iterations').notNull().default(210000),
+  failedAttempts: integer('failed_attempts').notNull().default(0),
+  lockedUntil: text('locked_until'),
+  mustChangePassword: integer('must_change_password', { mode: 'boolean' }).notNull().default(true),
+  passwordChangedAt: text('password_changed_at').notNull().default(sql`(datetime('now'))`),
+  createdAt,
+  updatedAt,
+});
+
+export const staffSessions = sqliteTable('staff_sessions', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull().unique(),
+  expiresAt: text('expires_at').notNull(),
+  revokedAt: text('revoked_at'),
+  lastSeenAt: text('last_seen_at').notNull().default(sql`(datetime('now'))`),
+  userAgentHash: text('user_agent_hash'),
+  createdAt,
+}, (table) => [index('idx_staff_sessions_user_expiry').on(table.userId, table.expiresAt)]);
+
+/** Parishioner reschedule/cancellation requests decided by parish personnel (0007). */
+export const appointmentChangeRequests = sqliteTable('appointment_change_requests', {
+  id: text('id').primaryKey(),
+  appointmentId: text('appointment_id').notNull().references(() => appointments.id, { onDelete: 'cascade' }),
+  kind: text('kind').$type<'reschedule' | 'cancel'>().notNull(),
+  requestedBy: text('requested_by').notNull().references(() => users.id),
+  previousStartsAt: text('previous_starts_at'),
+  previousEndsAt: text('previous_ends_at'),
+  proposedStartsAt: text('proposed_starts_at'),
+  proposedEndsAt: text('proposed_ends_at'),
+  reason: text('reason').notNull(),
+  status: text('status').$type<'pending' | 'approved' | 'rejected' | 'withdrawn'>().notNull().default('pending'),
+  decidedBy: text('decided_by').references(() => users.id),
+  decidedAt: text('decided_at'),
+  decisionNote: text('decision_note'),
+  createdAt,
+  updatedAt,
+}, (table) => [
+  uniqueIndex('idx_change_requests_one_pending').on(table.appointmentId).where(sql`${table.status} = 'pending'`),
+  index('idx_change_requests_status_created').on(table.status, table.createdAt),
+  index('idx_change_requests_appointment').on(table.appointmentId, table.createdAt),
+  check('change_request_kind', sql`${table.kind} IN ('reschedule','cancel')`),
+  check('change_request_status', sql`${table.status} IN ('pending','approved','rejected','withdrawn')`),
 ]);

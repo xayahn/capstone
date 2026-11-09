@@ -31,23 +31,12 @@
 - `backend/auth/staff-session.ts`: resolves the signed-in person for server pages and admin API routes
 - `backend/routes/admin/auth/*`: the four endpoints above
 - `frontend/components/sign-in-landing.tsx`, `change-password-panel.tsx`: sign-in and password screens
-- `db/staff-schema.ts` and `drizzle/0006_staff_auth.sql`: `staff_credentials`, `staff_sessions`
+- `drizzle/0006_staff_auth.sql`: `staff_credentials`, `staff_sessions`
 - `tests/staff-auth.test.ts`: 11 tests (policy, cookie parsing, lockout, deactivation, expiry, sign-out, temporary password and forced change, parishioner exclusion)
 
 ## Local demonstration accounts
 
-Seeded **only when `NODE_ENV` is not `production`** (local `pnpm dev`). All data is synthetic. They are listed on the local sign-in page under "Local demonstration accounts".
-
-**Password for every demo account:** `ParishLink2026!`
-
-| Email | Role | Scope |
-|---|---|---|
-| `admin@parishlink.test` | System administrator | Vicariate-wide (technical administration; no sacramental approval authority) |
-| `staff.cathedral@parishlink.test` | Parish staff | Metropolitan Cathedral of San Fernando |
-| `staff.sanguillermo@parishlink.test` | Parish staff | San Guillermo Parish |
-| `dizon@example.test` | Clergy | Msgr. R. Dizon, Metropolitan Cathedral |
-| `manalo@example.test` | Clergy | Fr. A. Manalo, San Guillermo Parish |
-| `pineda@example.test` | Clergy | Fr. M. Pineda, Sta. Lucia Parish |
+Seeded only in local development, together with the synthetic demonstration data. The full list of staff, clergy and parishioner demo accounts (password `ParishLink2026!`) is in [DEMO_DATA.md](DEMO_DATA.md). The local sign-in page lists them under "Local demonstration accounts".
 
 > These accounts and this password must never be used with real personal data or in a production deployment.
 

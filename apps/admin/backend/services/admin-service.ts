@@ -17,7 +17,7 @@ import {
   type QueueTicket,
 } from '@/shared/domain';
 import { allowedAppointmentTransitions } from '@/shared/workflow';
-import { occupiedStart, occupiedEnd } from '@/shared/scheduling';
+import { occupiedStart, occupiedEnd, resourceConflict } from '@/shared/scheduling';
 import { validCalendarDate } from '@/shared/validation';
 import { scoped } from '@/backend/services/admin-scope';
 import { loadDashboardMetrics } from '@/backend/services/dashboard-metrics';
@@ -755,26 +755,16 @@ async function createClergyAssignment(actor: Actor, mutation: Extract<AdminMutat
     .first<{ clergyName: string; venueName: string }>();
   if (!resource) throw new AdminServiceError('Choose an active priest and venue for that parish.');
   const id = crypto.randomUUID();
+  const conflict = resourceConflict({
+    blockedStart: startsAt.toISOString(), blockedEnd: endsAt.toISOString(),
+    clergyId: mutation.clergyId, venueId: mutation.venueId, parishId: mutation.parishId,
+  });
   const result = await db.prepare(`INSERT INTO clergy_assignments
     (id, clergy_id, clergy_name, parish_id, venue_id, venue_name, service, starts_at, ends_at, created_by)
-    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (
-      SELECT 1 FROM clergy_assignments ca WHERE ca.status = 'confirmed'
-        AND datetime(ca.starts_at) < datetime(?) AND datetime(ca.ends_at) > datetime(?)
-        AND (ca.clergy_id = ? OR ca.venue_id = ?)
-    ) AND NOT EXISTS (
-      SELECT 1 FROM appointments a WHERE a.status NOT IN ('rejected','completed','cancelled','no_show')
-        AND ${occupiedStart('a')} < datetime(?) AND ${occupiedEnd('a')} > datetime(?)
-        AND (a.clergy_id = ? OR a.venue_id = ?)
-    ) AND NOT EXISTS (
-      SELECT 1 FROM availability_blocks ab
-        WHERE datetime(ab.starts_at) < datetime(?) AND datetime(ab.ends_at) > datetime(?)
-        AND (ab.clergy_id = ? OR ab.venue_id = ? OR (ab.clergy_id IS NULL AND ab.venue_id IS NULL AND ab.parish_id = ?))
-    )`).bind(
+    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT ${conflict.sql}`).bind(
       id, mutation.clergyId, resource.clergyName, mutation.parishId, mutation.venueId,
       resource.venueName, service, startsAt.toISOString(), endsAt.toISOString(), actor.id,
-      endsAt.toISOString(), startsAt.toISOString(), mutation.clergyId, mutation.venueId,
-      endsAt.toISOString(), startsAt.toISOString(), mutation.clergyId, mutation.venueId,
-      endsAt.toISOString(), startsAt.toISOString(), mutation.clergyId, mutation.venueId, mutation.parishId,
+      ...conflict.values,
     ).run();
   if (Number(result.meta.changes ?? 0) !== 1) throw new AdminServiceError('That priest or venue already has an overlapping appointment or assignment.', 409);
   await writeAudit(actor, 'clergy.assignment.create', 'clergy_assignment', id, mutation.parishId, 'success', `${service}; ${startsAt.toISOString()}`);

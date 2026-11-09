@@ -3,7 +3,7 @@ import { ChangePasswordPanel } from '@/frontend/components/change-password-panel
 import { SignInLanding } from '@/frontend/components/sign-in-landing';
 import { getStaffUser } from '@/backend/auth/staff-session';
 import { STAFF_SIGN_OUT_PATH } from '@/frontend/lib/staff-session';
-import { LOCAL_DEMO_STAFF_ACCOUNTS, LOCAL_DEMO_STAFF_PASSWORD } from '@/db/runtime';
+import { LOCAL_DEMO_PASSWORD, LOCAL_DEMO_STAFF_ACCOUNTS } from '@/db/demo-accounts';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +16,7 @@ export default async function Home({ searchParams }: HomeProps) {
     return (
       <SignInLanding
         demoAccounts={development ? LOCAL_DEMO_STAFF_ACCOUNTS : undefined}
-        demoPassword={development ? LOCAL_DEMO_STAFF_PASSWORD : undefined}
+        demoPassword={development ? LOCAL_DEMO_PASSWORD : undefined}
       />
     );
   }

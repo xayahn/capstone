@@ -1,5 +1,5 @@
 import { validCalendarDate, validPhoneNumber, utcTimestamp } from '@/shared/validation';
-import { occupiedStart, occupiedEnd } from '@/shared/scheduling';
+import { resourceConflict } from '@/shared/scheduling';
 import { ensurePublicRuntimeDatabase, getRawDb } from '@/db/runtime';
 import { MobileServiceError, type MobileActor, type MobileProfile } from '@/backend/auth/mobile-auth';
 import { sha256Hex } from '@/backend/security/idempotency';
@@ -356,6 +356,9 @@ export async function searchMobileAvailability(input: Record<string, unknown>) {
   const venueId = textField(input.venueId, 'Venue', 100);
   const date = textField(input.date, 'Date', 10);
   if (!validCalendarDate(date)) throw new MobileServiceError('Choose a valid appointment date.');
+  // When rescheduling, the parishioner's own appointment must not block its new slot.
+  const excludeAppointmentId = typeof input.excludeAppointmentId === 'string' && input.excludeAppointmentId.length <= 100
+    ? input.excludeAppointmentId : null;
 
   const db = getRawDb();
   const resource = await db.prepare(`SELECT s.duration_minutes AS durationMinutes,
@@ -380,25 +383,9 @@ export async function searchMobileAvailability(input: Record<string, unknown>) {
     const end = new Date(start.getTime() + Number(resource.durationMinutes) * 60_000);
     const blockedStart = new Date(start.getTime() - Number(resource.bufferBeforeMinutes) * 60_000).toISOString();
     const blockedEnd = new Date(end.getTime() + Number(resource.bufferAfterMinutes) * 60_000).toISOString();
-    const conflict = await db.prepare(`SELECT (
-        EXISTS (SELECT 1 FROM appointments a
-          WHERE a.status NOT IN ('rejected','completed','cancelled','no_show')
-            AND ${occupiedStart('a')} < datetime(?) AND ${occupiedEnd('a')} > datetime(?)
-            AND (a.clergy_id = ? OR a.venue_id = ?))
-        OR EXISTS (SELECT 1 FROM availability_blocks ab
-          WHERE datetime(ab.starts_at) < datetime(?) AND datetime(ab.ends_at) > datetime(?)
-            AND (ab.clergy_id = ? OR ab.venue_id = ? OR (ab.clergy_id IS NULL AND ab.venue_id IS NULL AND ab.parish_id = ?)))
-        OR EXISTS (SELECT 1 FROM clergy_assignments ca
-          WHERE ca.status = 'confirmed'
-            AND datetime(ca.starts_at) < datetime(?) AND datetime(ca.ends_at) > datetime(?)
-            AND (ca.clergy_id = ? OR ca.venue_id = ?))
-      ) AS blocked`)
-      .bind(
-        blockedEnd, blockedStart, clergyId, venueId,
-        blockedEnd, blockedStart, clergyId, venueId, parishId,
-        blockedEnd, blockedStart, clergyId, venueId,
-      ).first<{ blocked: number }>();
-    return { time, available: !Boolean(conflict?.blocked) };
+    const conflict = resourceConflict({ blockedStart, blockedEnd, clergyId, venueId, parishId, excludeAppointmentId });
+    const row = await db.prepare(`SELECT ${conflict.sql} AS blocked`).bind(...conflict.values).first<{ blocked: number }>();
+    return { time, available: !Boolean(row?.blocked) };
   }));
   return { slots };
 }
@@ -530,30 +517,18 @@ export async function createMobileAppointment(
     .bind(serviceTypeId).all<{ id: string; name: string; instructions: string | null; isRequired: number; updatedAt: string }>();
   const checklistVersionId = `chk_${(await sha256Hex(JSON.stringify(requirements.results))).slice(0, 24)}`;
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const conflict = resourceConflict({ blockedStart, blockedEnd, clergyId, venueId, parishId });
   const statements = [db.prepare(`INSERT INTO appointments
     (id, reference, parishioner_user_id, parishioner_name, service_type_id, checklist_version_id, parish_id,
-      clergy_id, clergy_name, venue_id, venue_name, starts_at, ends_at, status)
-    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'submitted'
-    WHERE NOT EXISTS (
-      SELECT 1 FROM appointments a
-      WHERE a.status NOT IN ('rejected','completed','cancelled','no_show')
-        AND ${occupiedStart('a')} < datetime(?) AND ${occupiedEnd('a')} > datetime(?)
-        AND (a.clergy_id = ? OR a.venue_id = ?)
-    ) AND NOT EXISTS (
-      SELECT 1 FROM availability_blocks ab
-      WHERE datetime(ab.starts_at) < datetime(?) AND datetime(ab.ends_at) > datetime(?)
-        AND (ab.clergy_id = ? OR ab.venue_id = ? OR (ab.clergy_id IS NULL AND ab.venue_id IS NULL AND ab.parish_id = ?))
-    ) AND NOT EXISTS (
-      SELECT 1 FROM clergy_assignments ca
-      WHERE ca.status = 'confirmed' AND datetime(ca.starts_at) < datetime(?) AND datetime(ca.ends_at) > datetime(?)
-        AND (ca.clergy_id = ? OR ca.venue_id = ?)
-    )`)
+      clergy_id, clergy_name, venue_id, venue_name, starts_at, ends_at, status,
+      buffer_before_minutes, buffer_after_minutes)
+    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'submitted', ?, ?
+    WHERE NOT ${conflict.sql}`)
     .bind(
       appointmentId, reference, actor.id, actor.displayName, serviceTypeId, checklistVersionId, parishId,
       clergyId, resource.clergyName, venueId, resource.venueName, startsAt, endsAt,
-      blockedEnd, blockedStart, clergyId, venueId,
-      blockedEnd, blockedStart, clergyId, venueId, parishId,
-      blockedEnd, blockedStart, clergyId, venueId,
+      Number(resource.bufferBeforeMinutes), Number(resource.bufferAfterMinutes),
+      ...conflict.values,
     ),
     ...participants.map((participant) => db.prepare(`INSERT INTO appointment_participants
       (id, appointment_id, participant_type, full_name, date_of_birth, notes)

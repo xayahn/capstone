@@ -15,6 +15,7 @@
     "test": "vitest run --config vitest.config.ts --configLoader runner",
     "db:generate": "drizzle-kit generate",
     "db:validate": "node scripts/validate-migration.mjs",
+    "demo:reset": "node scripts/demo-reset.mjs",
     "smoke:local": "node scripts/smoke-local.mjs",
     "probe:local": "node scripts/local-runtime-probe.mjs",
     "test:accounts:local": "node scripts/check-account-local.mjs",
