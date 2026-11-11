@@ -112,6 +112,8 @@ describe('synthetic demonstration seed', () => {
     expect(parishioners.n).toBe(4);
     const pending = database.prepare("SELECT kind FROM appointment_change_requests WHERE status = 'pending' ORDER BY kind").all() as { kind: string }[];
     expect(pending.map((row) => row.kind)).toEqual(['cancel', 'reschedule']);
+    const directory = database.prepare("SELECT COUNT(*) AS n FROM parishes WHERE address IS NOT NULL AND office_hours IS NOT NULL AND contact_phone IS NOT NULL AND contact_email LIKE '%@parishlink.test'").get() as { n: number };
+    expect(directory.n).toBe(8);
     const admin = database.prepare("SELECT full_name AS name FROM users WHERE id = 'user-admin-demo'").get() as { name: string };
     expect(admin.name).toBe('Ana Fernandez');
   });

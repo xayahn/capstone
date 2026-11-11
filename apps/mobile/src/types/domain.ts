@@ -39,11 +39,21 @@ export interface ClergyMember {
   name: string;
 }
 
+/** Public contact details published by the parish (fields are null until entered by parish staff). */
+export interface ParishContact {
+  address: string | null;
+  officeHours: string | null;
+  phone: string | null;
+  email: string | null;
+  description: string | null;
+}
+
 export interface Parish {
   id: ParishId;
   name: string;
   clergy: ClergyMember[];
   venueId: string;
+  contact?: ParishContact;
 }
 
 export interface SacramentService {
@@ -89,6 +99,35 @@ export interface UploadAppointmentDocumentInput {
   sizeBytes?: number;
 }
 
+/**
+ * Parishioner change policy decided by the server: cancel immediately before approval,
+ * request cancellation after approval, and request a reschedule at least 24 hours ahead.
+ */
+export interface AllowedChanges {
+  cancel: 'immediate' | 'request' | null;
+  reschedule: boolean;
+}
+
+export interface PendingChange {
+  kind: 'reschedule' | 'cancel';
+  proposedDate?: string;
+  proposedTime?: string;
+  reason: string;
+  requestedAt: string;
+}
+
+export interface ChangeDecision {
+  kind: 'reschedule' | 'cancel';
+  status: 'approved' | 'rejected';
+  note?: string;
+}
+
+export interface RescheduleInput {
+  date: string;
+  time: string;
+  reason: string;
+}
+
 export interface Appointment {
   id: string;
   reference: string;
@@ -107,6 +146,11 @@ export interface Appointment {
   documents: AppointmentDocument[];
   submittedAt: string;
   updatedAt: string;
+  /** Precise parish workflow status (for example "ready_to_approve"). */
+  workflowStatus?: string;
+  pendingChange?: PendingChange | null;
+  lastChangeDecision?: ChangeDecision | null;
+  allowedChanges?: AllowedChanges;
 }
 
 export interface AppointmentDraft {
@@ -209,11 +253,21 @@ export interface AssistantClarification {
   }>;
 }
 
+export interface ParishAnnouncement {
+  id: string;
+  title: string;
+  body: string;
+  scope: 'parish' | 'vicariate';
+  parishName: string;
+  publishedAt: string;
+}
+
 export interface RepositorySnapshot {
   source: 'api' | 'demo';
   profile: ParishionerProfile;
   appointments: Appointment[];
   notifications: AppNotification[];
+  announcements?: ParishAnnouncement[];
   activeQueueTicket?: QueueTicket;
 }
 
@@ -223,6 +277,8 @@ export interface AvailabilitySearchInput {
   clergyId: string;
   venueId: string;
   date: string;
+  /** When rescheduling, the appointment's own slot does not count as a conflict. */
+  excludeAppointmentId?: string;
 }
 
 export interface AvailabilitySlot {

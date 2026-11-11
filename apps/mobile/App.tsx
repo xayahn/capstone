@@ -52,7 +52,10 @@ import {
   summarizeDocuments,
 } from './src/lib/status';
 import { AssistantScreen, initialAssistantMessages } from './src/screens/AssistantScreen';
+import { AnnouncementsScreen } from './src/screens/AnnouncementsScreen';
+import { ParishesScreen } from './src/screens/ParishesScreen';
 import { ServicesScreen } from './src/screens/ServicesScreen';
+import { appointmentStart } from './src/lib/changePolicy';
 import { colors, fonts, radii, shadow, spacing, type } from './src/theme';
 import type {
   AppNotification,
@@ -67,9 +70,11 @@ import type {
   ParishionerProfile,
   QueueService,
   RepositorySnapshot,
+  RescheduleInput,
   SacramentId,
   UploadAppointmentDocumentInput,
 } from './src/types/domain';
+import { AppointmentChangesPanel } from './src/components/AppointmentChangesPanel';
 
 type Route =
   | 'home'
@@ -79,6 +84,8 @@ type Route =
   | 'booking'
   | 'appointment-detail'
   | 'notifications'
+  | 'announcements'
+  | 'parishes'
   | 'queue'
   | 'assistant'
   | 'profile';
@@ -101,6 +108,8 @@ const backRoute: Record<Route, Route> = {
   booking: 'services',
   'appointment-detail': 'appointments',
   notifications: 'more',
+  announcements: 'more',
+  parishes: 'more',
   queue: 'more',
   assistant: 'more',
   profile: 'more',
@@ -223,10 +232,7 @@ const AppContent = () => {
       navigateMain('home');
       return;
     }
-    Alert.alert(
-      'Contact parish staff',
-      `Please contact ${getParish(snapshot.profile.homeParishId)?.name ?? 'your parish office'} through its verified public contact details. ParishLink will not invent contact information.`,
-    );
+    navigate('parishes');
   };
   const selectedAppointment = snapshot.appointments.find(
     (appointment) => appointment.id === selectedAppointmentId,
@@ -240,6 +246,8 @@ const AppContent = () => {
     booking: 'Request an appointment',
     'appointment-detail': 'Appointment details',
     notifications: 'Notifications',
+    announcements: 'Announcements',
+    parishes: 'Parishes & office hours',
     queue: 'Walk-in queue',
     assistant: 'Parish guide',
     profile: 'Profile & settings',
@@ -274,6 +282,8 @@ const AppContent = () => {
             onBook={openBooking}
             onServices={() => openServices()}
             onAppointment={openAppointment}
+            onAnnouncements={() => navigate('announcements')}
+            onParishes={() => navigate('parishes')}
             onQueue={() => navigate('queue')}
             onAssistant={() => navigate('assistant')}
           />
@@ -307,6 +317,10 @@ const AppContent = () => {
             <AppointmentDetailScreen
               appointment={selectedAppointment}
               onUpload={parishLink.uploadAppointmentDocument}
+              onSearchAvailability={parishLink.searchAvailability}
+              onCancel={parishLink.cancelAppointment}
+              onReschedule={parishLink.requestReschedule}
+              onWithdraw={parishLink.withdrawChangeRequest}
             />
           ) : (
             <EmptyState
@@ -327,6 +341,18 @@ const AppContent = () => {
               else if (notification.target.kind === 'assistant') navigate('assistant');
               else navigateMain('home');
             }}
+          />
+        ) : null}
+        {route === 'announcements' ? (
+          <AnnouncementsScreen
+            announcements={snapshot.announcements ?? []}
+            homeParishId={snapshot.profile.homeParishId}
+          />
+        ) : null}
+        {route === 'parishes' ? (
+          <ParishesScreen
+            homeParishId={snapshot.profile.homeParishId}
+            onExploreServices={() => openServices()}
           />
         ) : null}
         {route === 'queue' ? (
@@ -573,11 +599,82 @@ const Screen = ({ children, keyboard = false }: { children: React.ReactNode; key
   ) : content;
 };
 
+type HomeReminderItem = {
+  id: string;
+  title: string;
+  body: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  appointmentId?: string;
+};
+
+const buildHomeReminders = (snapshot: RepositorySnapshot, now: Date = new Date()): HomeReminderItem[] => {
+  const items: HomeReminderItem[] = [];
+  const coveredAppointments = new Set<string>();
+
+  for (const notice of snapshot.notifications) {
+    if (notice.readAt || notice.target.kind !== 'appointment') continue;
+    if (!/tomorrow|upcoming|documents|attention|reschedule|cancellation/i.test(notice.title)) continue;
+    if (coveredAppointments.has(notice.target.appointmentId)) continue;
+    coveredAppointments.add(notice.target.appointmentId);
+    items.push({
+      id: notice.id,
+      title: notice.title,
+      body: notice.body,
+      icon: /document|attention/i.test(notice.title) ? 'documents-outline' : 'alarm-outline',
+      appointmentId: notice.target.appointmentId,
+    });
+    if (items.length >= 2) return items;
+  }
+
+  for (const appointment of snapshot.appointments) {
+    if (items.length >= 2) break;
+    if (['completed', 'cancelled', 'rejected'].includes(appointment.status)) continue;
+    if (coveredAppointments.has(appointment.id)) continue;
+    const start = appointmentStart(appointment);
+    const msUntil = start ? start.getTime() - now.getTime() : -1;
+    if (msUntil <= 0) continue;
+    const serviceName = getService(appointment.serviceId)?.name ?? 'Appointment';
+    const missing = appointment.documents.filter((doc) => doc.required && (doc.status === 'missing' || doc.status === 'needs_action')).length;
+    if (missing > 0) {
+      coveredAppointments.add(appointment.id);
+      items.push({
+        id: `home-doc-${appointment.id}`,
+        title: `${missing} required ${missing === 1 ? 'document needs' : 'documents need'} attention`,
+        body: `Upload or replace the remaining requirement for ${serviceName} (${appointment.reference}) so parish staff can continue review.`,
+        icon: 'documents-outline',
+        appointmentId: appointment.id,
+      });
+    } else if (msUntil <= 72 * 3_600_000) {
+      coveredAppointments.add(appointment.id);
+      items.push({
+        id: `home-soon-${appointment.id}`,
+        title: msUntil <= 24 * 3_600_000 ? 'Appointment within 24 hours' : 'Upcoming appointment in 3 days',
+        body: `${serviceName} (${appointment.reference}) is scheduled for ${formatDate(appointment.date, true)} at ${appointment.time}. Bring original certificates if requested.`,
+        icon: 'alarm-outline',
+        appointmentId: appointment.id,
+      });
+    } else if (appointment.pendingChange) {
+      coveredAppointments.add(appointment.id);
+      items.push({
+        id: `home-change-${appointment.id}`,
+        title: appointment.pendingChange.kind === 'reschedule' ? 'Reschedule request pending' : 'Cancellation request pending',
+        body: `Your request for ${appointment.reference} is waiting for parish review. Your current schedule stays active until decided.`,
+        icon: 'time-outline',
+        appointmentId: appointment.id,
+      });
+    }
+  }
+
+  return items;
+};
+
 const HomeScreen = ({
   snapshot,
   onBook,
   onServices,
   onAppointment,
+  onAnnouncements,
+  onParishes,
   onQueue,
   onAssistant,
 }: {
@@ -585,10 +682,14 @@ const HomeScreen = ({
   onBook: (service: SacramentId) => void;
   onServices: () => void;
   onAppointment: (id: string) => void;
+  onAnnouncements: () => void;
+  onParishes: () => void;
   onQueue: () => void;
   onAssistant: () => void;
 }) => {
   const nextAppointment = snapshot.appointments.find((item) => !['completed', 'cancelled', 'rejected'].includes(item.status));
+  const reminders = buildHomeReminders(snapshot);
+  const recentAnnouncements = (snapshot.announcements ?? []).slice(0, 2);
   return (
     <Screen>
       {snapshot.source === 'demo' ? <Notice title="Demonstration mode" body="All people, records, schedules, and ticket numbers shown here are samples stored on this device." tone="warning" icon="flask-outline" /> : null}
@@ -605,6 +706,8 @@ const HomeScreen = ({
         <QuickAction icon="heart-outline" label="Wedding" onPress={() => onBook('wedding')} />
         <QuickAction icon="people-outline" label="Walk-in queue" onPress={onQueue} />
         <QuickAction icon="chatbubbles-outline" label="Ask ParishLink" onPress={onAssistant} />
+        <QuickAction icon="megaphone-outline" label="Announcements" onPress={onAnnouncements} />
+        <QuickAction icon="business-outline" label="Parishes & hours" onPress={onParishes} />
       </View>
 
       <SectionTitle>Your next step</SectionTitle>
@@ -633,14 +736,59 @@ const HomeScreen = ({
         </>
       ) : null}
 
-      <SectionTitle>Parish reminder</SectionTitle>
-      <Card style={styles.reminderCard}>
-        <IconTile name="information-circle-outline" />
-        <View style={styles.flex}>
-          <Text style={styles.itemTitle}>Bring original documents when requested</Text>
-          <Text style={styles.mutedText}>An uploaded copy helps with preparation but does not replace parish staff verification or official church records.</Text>
-        </View>
-      </Card>
+      <SectionTitle>{reminders.length > 1 ? 'Parish reminders' : 'Parish reminder'}</SectionTitle>
+      {reminders.length ? reminders.map((reminder) => (
+        <Pressable
+          key={reminder.id}
+          accessibilityRole={reminder.appointmentId ? 'button' : undefined}
+          accessibilityLabel={reminder.title}
+          disabled={!reminder.appointmentId}
+          onPress={() => { if (reminder.appointmentId) onAppointment(reminder.appointmentId); }}
+          style={({ pressed }) => pressed && reminder.appointmentId ? styles.cardPressed : undefined}
+        >
+          <Card style={styles.reminderCard}>
+            <IconTile name={reminder.icon} />
+            <View style={styles.flex}>
+              <Text style={styles.itemTitle}>{reminder.title}</Text>
+              <Text style={styles.mutedText}>{reminder.body}</Text>
+            </View>
+            {reminder.appointmentId ? <Ionicons name="chevron-forward" size={18} color={colors.oxblood} /> : null}
+          </Card>
+        </Pressable>
+      )) : (
+        <Card style={styles.reminderCard}>
+          <IconTile name="information-circle-outline" />
+          <View style={styles.flex}>
+            <Text style={styles.itemTitle}>Bring original documents when requested</Text>
+            <Text style={styles.mutedText}>An uploaded copy helps with preparation but does not replace parish staff verification or official church records.</Text>
+          </View>
+        </Card>
+      )}
+
+      <SectionTitle
+        action={(
+          <Pressable accessibilityRole="button" accessibilityLabel="View all announcements" onPress={onAnnouncements} style={styles.sectionAction}>
+            <Text style={styles.inlineLinkText}>View all</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.oxblood} />
+          </Pressable>
+        )}
+      >
+        Announcements
+      </SectionTitle>
+      {recentAnnouncements.length ? recentAnnouncements.map((notice) => (
+        <Pressable key={notice.id} accessibilityRole="button" accessibilityLabel={`Announcement: ${notice.title}`} onPress={onAnnouncements} style={({ pressed }) => pressed && styles.cardPressed}>
+          <Card style={styles.announcementPreview}>
+            <View style={styles.rowBetween}>
+              <Text style={styles.reference}>{notice.parishName}</Text>
+              <StatusBadge label={notice.scope === 'vicariate' ? 'Vicariate' : 'Parish'} tone={notice.scope === 'vicariate' ? 'info' : 'positive'} />
+            </View>
+            <Text style={styles.itemTitle}>{notice.title}</Text>
+            <Text numberOfLines={3} style={styles.mutedText}>{notice.body}</Text>
+          </Card>
+        </Pressable>
+      )) : (
+        <EmptyCard title="No current notices" body="Published parish and Vicariate announcements will appear here." />
+      )}
     </Screen>
   );
 };
@@ -677,6 +825,14 @@ const AppointmentCard = ({ appointment, onPress }: { appointment: Appointment; o
         <InfoRow icon="calendar-outline" text={`${formatDate(appointment.date)} • ${appointment.time}`} />
         <InfoRow icon="location-outline" text={parish?.name ?? 'Parish'} />
         <InfoRow icon="documents-outline" text={`${documents.submitted}/${documents.total} submitted • ${documents.verified} staff verified`} />
+        {appointment.pendingChange ? (
+          <InfoRow
+            icon="time-outline"
+            text={appointment.pendingChange.kind === 'reschedule'
+              ? `Reschedule requested (${appointment.pendingChange.proposedDate ? formatDate(appointment.pendingChange.proposedDate, true) : 'new date'} ${appointment.pendingChange.proposedTime ?? ''})`.trim()
+              : 'Cancellation requested — awaiting parish confirmation'}
+          />
+        ) : null}
         <View style={styles.inlineLink}>
           <Text style={styles.inlineLinkText}>View progress</Text>
           <Ionicons name="chevron-forward" size={18} color={colors.oxblood} />
@@ -909,6 +1065,10 @@ const BookingScreen = ({
 const AppointmentDetailScreen = ({
   appointment,
   onUpload,
+  onSearchAvailability,
+  onCancel,
+  onReschedule,
+  onWithdraw,
 }: {
   appointment: Appointment;
   onUpload: (
@@ -916,6 +1076,10 @@ const AppointmentDetailScreen = ({
     documentId: string,
     input: UploadAppointmentDocumentInput,
   ) => Promise<Appointment>;
+  onSearchAvailability: (input: AvailabilitySearchInput) => Promise<AvailabilitySlot[]>;
+  onCancel: (appointmentId: string, reason: string) => Promise<Appointment>;
+  onReschedule: (appointmentId: string, input: RescheduleInput) => Promise<Appointment>;
+  onWithdraw: (appointmentId: string) => Promise<Appointment>;
 }) => {
   const service = getService(appointment.serviceId)!;
   const parish = getParish(appointment.parishId)!;
@@ -976,6 +1140,14 @@ const AppointmentDetailScreen = ({
         <InfoRow icon="location-outline" text={parish.name} />
         <InfoRow icon="person-outline" text={clergy?.name ?? 'Assigned clergy'} />
       </Card>
+
+      <AppointmentChangesPanel
+        appointment={appointment}
+        onSearchAvailability={onSearchAvailability}
+        onCancel={onCancel}
+        onReschedule={onReschedule}
+        onWithdraw={onWithdraw}
+      />
 
       <SectionTitle>Progress</SectionTitle>
       <Card>
@@ -1111,6 +1283,8 @@ const MoreScreen = ({ snapshot, mode, onNavigate }: { snapshot: RepositorySnapsh
       <StatusBadge label={mode === 'demo' ? 'Demo' : 'Connected'} tone={mode === 'demo' ? 'warning' : 'positive'} />
     </Card>
     <MoreLink icon="notifications-outline" title="Notifications" body={`${snapshot.notifications.filter((item) => !item.readAt).length} unread updates`} onPress={() => onNavigate('notifications')} />
+    <MoreLink icon="megaphone-outline" title="Announcements" body={`${(snapshot.announcements ?? []).length} published parish & Vicariate notices`} onPress={() => onNavigate('announcements')} />
+    <MoreLink icon="business-outline" title="Parishes & office hours" body="Eight parishes, clergy directory, and published contact info" onPress={() => onNavigate('parishes')} />
     <MoreLink icon="people-outline" title="Walk-in queue" body={snapshot.activeQueueTicket ? `Active ticket ${snapshot.activeQueueTicket.number}` : 'Request a parish office ticket'} onPress={() => onNavigate('queue')} />
     <MoreLink icon="chatbubbles-outline" title="Parish guide" body="General guidance with a staff handoff boundary" onPress={() => onNavigate('assistant')} />
     <MoreLink icon="person-circle-outline" title="Profile & settings" body="Contact details, home parish, and preferences" onPress={() => onNavigate('profile')} />
@@ -1376,7 +1550,9 @@ const styles = StyleSheet.create({
   rowBetween: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
   rowBetweenTop: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.sm, justifyContent: 'space-between' },
   serviceHeaderCompact: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: spacing.sm },
-  reminderCard: { alignItems: 'center', flexDirection: 'row', gap: spacing.md },
+  reminderCard: { alignItems: 'center', flexDirection: 'row', gap: spacing.md, marginBottom: spacing.xs },
+  announcementPreview: { gap: spacing.xs, marginBottom: spacing.xs },
+  sectionAction: { alignItems: 'center', flexDirection: 'row', gap: 2, paddingVertical: spacing.xxs },
   lead: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 14, lineHeight: 21, marginTop: -spacing.sm },
   itemTitle: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 15, lineHeight: 22 },
   reference: { color: colors.oxblood, fontFamily: fonts.bodyBold, fontSize: 12, letterSpacing: 0.5 },

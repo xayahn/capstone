@@ -14,7 +14,8 @@ import { PARISHES, QUEUE_SERVICES, SACRAMENT_SERVICES, applyCatalog } from '../d
 import { getDemoGuidance } from '../lib/assistant';
 import { assertAcceptablePassword, isEmailAddress, normalizeEmail } from '../lib/auth';
 import { accountCode, accountEmail, passwordResetInput } from '../lib/accountCodes';
-import { getBookableDates, getSlotAvailability, hasScheduleConflict } from '../lib/scheduling';
+import { getBookableDates, getSlotAvailability, hasScheduleConflict, formatDate } from '../lib/scheduling';
+import { appointmentStart, localChangeOptions } from '../lib/changePolicy';
 import type {
   AppNotification,
   AppCatalog,
@@ -25,12 +26,14 @@ import type {
   AuthSession,
   ChangePasswordInput,
   CreateAppointmentInput,
+  ParishAnnouncement,
   ParishId,
   ParishionerProfile,
   PasswordResetInput,
   QueueService,
   QueueTicket,
   RepositorySnapshot,
+  RescheduleInput,
   SignInInput,
   SignUpInput,
   UploadAppointmentDocumentInput,
@@ -59,6 +62,11 @@ export interface ParishLinkRepository {
     input: UploadAppointmentDocumentInput,
   ): Promise<Appointment>;
   markNotificationRead(id: string): Promise<void>;
+  /** Cancel immediately before approval, or send a cancellation request after approval. */
+  cancelAppointment(appointmentId: string, reason: string): Promise<Appointment>;
+  /** Ask the parish to move the appointment to a new offered slot (same priest and venue). */
+  requestReschedule(appointmentId: string, input: RescheduleInput): Promise<Appointment>;
+  withdrawChangeRequest(appointmentId: string): Promise<Appointment>;
   joinQueue(parishId: ParishId, service: QueueService): Promise<QueueTicket>;
   leaveQueue(): Promise<void>;
   askAssistant(prompt: string, allowExternalAI?: boolean): Promise<AssistantMessage>;
@@ -153,7 +161,72 @@ const makeSeedSnapshot = (profile = DEMO_PROFILE, includeSamples = profile.id ==
       createdAt: now,
       target: { kind: 'home' },
     }],
+    announcements: makeDemoAnnouncements(profile.homeParishId, now),
   };
+};
+
+const makeDemoAnnouncements = (homeParishId: ParishId, now: string): ParishAnnouncement[] => {
+  const homeParishName = PARISHES.find((item) => item.id === homeParishId)?.name ?? 'Metropolitan Cathedral of San Fernando';
+  return [
+    {
+      id: 'demo-ann-vicariate',
+      title: 'Simbang Gabi preparation across the Vicariate',
+      body: 'Dawn novena Masses begin December 16 across the eight parishes of the Vicariate of St. John Mary Vianney. Check your parish bulletin for local schedules.',
+      scope: 'vicariate',
+      parishName: 'Vicariate-wide',
+      publishedAt: now,
+    },
+    {
+      id: `demo-ann-${homeParishId}`,
+      title: 'Sacramental document submission guidance',
+      body: 'Upload clear PDF or photo copies in ParishLink before visiting the office. Bring original certificates when requested by parish staff.',
+      scope: 'parish',
+      parishName: homeParishName,
+      publishedAt: now,
+    },
+  ];
+};
+
+const buildDemoReminders = (snapshot: RepositorySnapshot, now: Date = new Date()): AppNotification[] => {
+  const known = new Set(snapshot.notifications.map((item) => item.id));
+  const created: AppNotification[] = [];
+  const isoNow = now.toISOString();
+  for (const appointment of snapshot.appointments) {
+    const start = appointmentStart(appointment);
+    if (!start) continue;
+    const msUntil = start.getTime() - now.getTime();
+    if (msUntil <= 0) continue;
+    const serviceName = SACRAMENT_SERVICES.find((item) => item.id === appointment.serviceId)?.name ?? 'Appointment';
+    const parishName = PARISHES.find((item) => item.id === appointment.parishId)?.name ?? 'your parish';
+    const when = `${formatDate(appointment.date, true)} at ${appointment.time}`;
+    if (appointment.status === 'approved' || appointment.status === 'scheduled') {
+      const key = msUntil <= 24 * 3_600_000 ? `reminder:${appointment.id}:1d` : msUntil <= 72 * 3_600_000 ? `reminder:${appointment.id}:3d` : '';
+      if (key && !known.has(key)) {
+        known.add(key);
+        created.push({
+          id: key,
+          title: msUntil <= 24 * 3_600_000 ? 'Appointment tomorrow' : 'Upcoming appointment',
+          body: `${serviceName} at ${parishName} is scheduled for ${when} (${appointment.reference}).`,
+          createdAt: isoNow,
+          target: { kind: 'appointment', appointmentId: appointment.id },
+        });
+      }
+    }
+    const missingRequired = appointment.documents.filter((doc) => doc.required && (doc.status === 'missing' || doc.status === 'needs_action')).length;
+    const docKey = `reminder:${appointment.id}:documents`;
+    if (['submitted', 'pending_verification', 'needs_action'].includes(appointment.status)
+      && missingRequired > 0 && msUntil <= 14 * 24 * 3_600_000 && !known.has(docKey)) {
+      known.add(docKey);
+      created.push({
+        id: docKey,
+        title: 'Documents still needed',
+        body: `${appointment.reference} (${serviceName}, ${when}) still has ${missingRequired} required document${missingRequired === 1 ? '' : 's'} to upload or replace before approval.`,
+        createdAt: isoNow,
+        target: { kind: 'appointment', appointmentId: appointment.id },
+      });
+    }
+  }
+  return created;
 };
 
 async function passwordDigest(password: string, salt: string): Promise<string> {
@@ -169,7 +242,7 @@ async function makePasswordRecord(password: string): Promise<{ passwordSalt: str
 const wait = (milliseconds = 220) =>
   new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 
-class DemoParishLinkRepository implements ParishLinkRepository {
+export class DemoParishLinkRepository implements ParishLinkRepository {
   readonly mode = 'demo' as const;
   private currentUserId = '';
 
@@ -308,17 +381,33 @@ class DemoParishLinkRepository implements ParishLinkRepository {
 
   async loadSnapshot() {
     await wait(120);
-    return this.read();
+    const snapshot = await this.read();
+    const reminders = buildDemoReminders(snapshot);
+    const announcements = snapshot.announcements ?? makeDemoAnnouncements(snapshot.profile.homeParishId, new Date().toISOString());
+    if (reminders.length === 0 && snapshot.announcements) return snapshot;
+    const updated: RepositorySnapshot = {
+      ...snapshot,
+      notifications: [...reminders, ...snapshot.notifications],
+      announcements,
+    };
+    await this.write(updated);
+    return updated;
   }
 
   async searchAvailability(input: AvailabilitySearchInput) {
     const snapshot = await this.read();
+    const existing = input.excludeAppointmentId
+      ? snapshot.appointments.find((item) => item.id === input.excludeAppointmentId)
+      : undefined;
     return getSlotAvailability(
       input.date,
       input.clergyId,
       input.venueId,
-      SACRAMENT_SERVICES.find((service) => service.id === input.serviceId)?.durationMinutes ?? 60,
+      existing?.durationMinutes ?? SACRAMENT_SERVICES.find((service) => service.id === input.serviceId)?.durationMinutes ?? 60,
       snapshot.appointments,
+      existing?.bufferBeforeMinutes ?? 15,
+      existing?.bufferAfterMinutes ?? 15,
+      input.excludeAppointmentId,
     );
   }
 
@@ -412,6 +501,72 @@ class DemoParishLinkRepository implements ParishLinkRepository {
           : notification,
       ),
     });
+  }
+
+  /** Local simulation of the server change policy for the offline demonstration. */
+  private async updateDemoAppointment(
+    appointmentId: string,
+    change: (appointment: Appointment, now: string, allAppointments: Appointment[]) => { appointment: Appointment; notice: string },
+  ): Promise<Appointment> {
+    await wait();
+    const snapshot = await this.read();
+    const current = snapshot.appointments.find((item) => item.id === appointmentId);
+    if (!current) throw new Error('The appointment could not be found.');
+    const now = new Date().toISOString();
+    const { appointment, notice } = change(current, now, snapshot.appointments);
+    const updated: Appointment = { ...appointment, updatedAt: now };
+    updated.allowedChanges = localChangeOptions(updated);
+    const notification: AppNotification = { id: `notice-${Date.now()}`, title: 'Appointment update', body: notice, createdAt: now, target: { kind: 'appointment', appointmentId } };
+    await this.write({
+      ...snapshot,
+      appointments: snapshot.appointments.map((item) => item.id === appointmentId ? updated : item),
+      notifications: [notification, ...snapshot.notifications],
+    });
+    return updated;
+  }
+
+  cancelAppointment(appointmentId: string, reason: string) {
+    if (reason.trim().length < 4) return Promise.reject(new Error('Give a short reason so the parish office understands your request.'));
+    return this.updateDemoAppointment(appointmentId, (appointment, now) => {
+      const options = localChangeOptions(appointment);
+      if (options.cancel === 'immediate') {
+        return { appointment: { ...appointment, status: 'cancelled', workflowStatus: 'cancelled', pendingChange: null }, notice: `${appointment.reference} was cancelled at your request.` };
+      }
+      if (options.cancel === 'request') {
+        return { appointment: { ...appointment, pendingChange: { kind: 'cancel', reason: reason.trim(), requestedAt: now } }, notice: `Your request to cancel ${appointment.reference} was sent to the parish office.` };
+      }
+      throw new Error('This appointment can no longer be cancelled in the app. Please contact the parish office.');
+    });
+  }
+
+  requestReschedule(appointmentId: string, input: RescheduleInput) {
+    if (input.reason.trim().length < 4) return Promise.reject(new Error('Give a short reason so the parish office understands your request.'));
+    return this.updateDemoAppointment(appointmentId, (appointment, now, allAppointments) => {
+      if (!localChangeOptions(appointment).reschedule) throw new Error('This appointment can no longer be rescheduled in the app. Reschedule requests must be made at least 24 hours ahead.');
+      if (appointment.date === input.date && appointment.time === input.time) throw new Error('Choose a different date or time from your current schedule.');
+      if (hasScheduleConflict({
+        date: input.date,
+        time: input.time,
+        clergyId: appointment.clergyId,
+        venueId: appointment.venueId,
+        durationMinutes: appointment.durationMinutes,
+        bufferBeforeMinutes: appointment.bufferBeforeMinutes,
+        bufferAfterMinutes: appointment.bufferAfterMinutes,
+      }, allAppointments, appointment.id)) {
+        throw new Error('That time is no longer available for the same priest and venue. Choose another slot.');
+      }
+      return {
+        appointment: { ...appointment, pendingChange: { kind: 'reschedule', proposedDate: input.date, proposedTime: input.time, reason: input.reason.trim(), requestedAt: now } },
+        notice: `Your request to move ${appointment.reference} to ${input.date} ${input.time} was sent to the parish office.`,
+      };
+    });
+  }
+
+  withdrawChangeRequest(appointmentId: string) {
+    return this.updateDemoAppointment(appointmentId, (appointment) => ({
+      appointment: { ...appointment, pendingChange: null },
+      notice: `Your request for ${appointment.reference} was withdrawn.`,
+    }));
   }
 
   async joinQueue(parishId: ParishId, service: QueueService) {
@@ -695,6 +850,24 @@ export class ApiParishLinkRepository implements ParishLinkRepository {
 
   markNotificationRead(id: string) {
     return this.request<void>(`/mobile/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' });
+  }
+
+  cancelAppointment(appointmentId: string, reason: string) {
+    return this.request<Appointment>(`/mobile/appointments/${encodeURIComponent(appointmentId)}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  requestReschedule(appointmentId: string, input: RescheduleInput) {
+    return this.request<Appointment>(`/mobile/appointments/${encodeURIComponent(appointmentId)}/reschedule`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
+
+  withdrawChangeRequest(appointmentId: string) {
+    return this.request<Appointment>(`/mobile/appointments/${encodeURIComponent(appointmentId)}/change-request/withdraw`, { method: 'POST' });
   }
 
   joinQueue(parishId: ParishId, service: QueueService) {

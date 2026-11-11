@@ -14,26 +14,83 @@ import { LOCAL_DEMO_PARISHIONER_ACCOUNTS, LOCAL_DEMO_PASSWORD, LOCAL_DEMO_STAFF_
  * - every submitted/verified file exists in private storage with a matching SHA-256.
  */
 
-type Parish = { id: string; key: string; code: string; staffId: string; staffName: string; clergy: { id: string; userId: string; name: string }[]; venues: { id: string; name: string }[] };
+type ParishContactSeed = { address: string; officeHours: string; phone: string; email: string; description: string };
+type Parish = { id: string; key: string; code: string; staffId: string; staffName: string; contact: ParishContactSeed; clergy: { id: string; userId: string; name: string }[]; venues: { id: string; name: string }[] };
 
 const PARISH_DETAILS: Record<string, Omit<Parish, 'id'>> = {
   'metropolitan-cathedral': { key: 'cathedral', code: 'MCSF', staffId: 'user-staff-cathedral', staffName: 'Maria Santos',
+    contact: {
+      address: 'Consunji St., Brgy. Sto. Rosario, City of San Fernando, Pampanga (sample directory)',
+      officeHours: 'Tue–Sat 8:00 AM – 12:00 NN, 1:30 PM – 5:00 PM; Sun 8:00 AM – 11:30 AM',
+      phone: '+63 (045) 555-0101',
+      email: 'office.cathedral@parishlink.test',
+      description: 'Seat of the Archdiocese and mother church serving the downtown San Fernando community.',
+    },
     clergy: [{ id: 'clergy-dizon', userId: 'user-clergy-dizon', name: 'Msgr. R. Dizon' }, { id: 'fr-e-santos', userId: 'user-clergy-santos', name: 'Fr. E. Santos' }],
     venues: [{ id: 'venue-cathedral-main', name: 'Main church' }, { id: 'venue-cathedral-chapel', name: 'Blessed Sacrament Chapel' }] },
   'san-guillermo': { key: 'sanguillermo', code: 'SGP', staffId: 'user-staff-sanguillermo', staffName: 'Jose Bautista',
+    contact: {
+      address: 'Cabambangan, Bacolor, Pampanga (sample directory)',
+      officeHours: 'Tue–Sun 8:00 AM – 12:00 NN, 1:30 PM – 4:30 PM',
+      phone: '+63 (045) 555-0102',
+      email: 'office.sanguillermo@parishlink.test',
+      description: 'Historic parish of Bacolor coordinating sacramental preparation and archive inquiries.',
+    },
     clergy: [{ id: 'clergy-manalo', userId: 'user-clergy-manalo', name: 'Fr. A. Manalo' }],
     venues: [{ id: 'venue-sg-main', name: 'Main church' }, { id: 'venue-sg-baptistry', name: 'Baptistry' }] },
   'sanctuario-san-jose': { key: 'sanctuario', code: 'SSJ', staffId: 'user-staff-sanctuario', staffName: 'Ramon Lingat',
+    contact: {
+      address: 'Brgy. San Jose, City of San Fernando, Pampanga (sample directory)',
+      officeHours: 'Tue–Sat 8:30 AM – 12:00 NN, 1:30 PM – 5:00 PM',
+      phone: '+63 (045) 555-0103',
+      email: 'office.sanctuario@parishlink.test',
+      description: 'Parish community dedicated to St. Joseph in the Vicariate of St. John Mary Vianney.',
+    },
     clergy: [{ id: 'fr-j-cruz', userId: 'user-clergy-cruz', name: 'Fr. J. Cruz' }], venues: [{ id: 'venue-sanctuario-san-jose', name: 'Main church' }] },
   'sta-lucia': { key: 'stalucia', code: 'SLP', staffId: 'user-staff-stalucia', staffName: 'Elena Pamintuan',
+    contact: {
+      address: 'Brgy. Sta. Lucia, City of San Fernando, Pampanga (sample directory)',
+      officeHours: 'Tue–Sat 8:00 AM – 12:00 NN, 1:00 PM – 4:30 PM',
+      phone: '+63 (045) 555-0104',
+      email: 'office.stalucia@parishlink.test',
+      description: 'Parish office serving families of Brgy. Sta. Lucia and neighboring communities.',
+    },
     clergy: [{ id: 'clergy-pineda', userId: 'user-clergy-pineda', name: 'Fr. M. Pineda' }], venues: [{ id: 'venue-sl-main', name: 'Main church' }] },
   'sto-nino': { key: 'stonino', code: 'SNP', staffId: 'user-staff-stonino', staffName: 'Carmela Dayrit',
+    contact: {
+      address: 'Brgy. Sto. Niño, City of San Fernando, Pampanga (sample directory)',
+      officeHours: 'Tue–Sat 8:00 AM – 12:00 NN, 1:30 PM – 5:00 PM',
+      phone: '+63 (045) 555-0105',
+      email: 'office.stonino@parishlink.test',
+      description: 'Parish community coordinating baptisms, confirmations, weddings, and pastoral care.',
+    },
     clergy: [{ id: 'fr-b-tolentino', userId: 'user-clergy-tolentino', name: 'Fr. B. Tolentino' }], venues: [{ id: 'venue-sto-nino', name: 'Main church' }] },
   'san-isidro-labrador': { key: 'sanisidro', code: 'SILP', staffId: 'user-staff-sanisidro', staffName: 'Noel Guevarra',
+    contact: {
+      address: 'Brgy. San Isidro, Bacolor / San Fernando boundary, Pampanga (sample directory)',
+      officeHours: 'Tue–Sat 8:30 AM – 12:00 NN, 1:30 PM – 4:30 PM',
+      phone: '+63 (045) 555-0106',
+      email: 'office.sanisidro@parishlink.test',
+      description: 'Parish office assisting parishioners with sacramental scheduling and document review.',
+    },
     clergy: [{ id: 'fr-c-reyes', userId: 'user-clergy-reyes', name: 'Fr. C. Reyes' }], venues: [{ id: 'venue-san-isidro-labrador', name: 'Main church' }] },
   'st-joseph': { key: 'stjoseph', code: 'SJP', staffId: 'user-staff-stjoseph', staffName: 'Lourdes Manansala',
+    contact: {
+      address: 'City of San Fernando, Pampanga (sample directory)',
+      officeHours: 'Tue–Sat 8:00 AM – 12:00 NN, 1:30 PM – 5:00 PM',
+      phone: '+63 (045) 555-0107',
+      email: 'office.stjoseph@parishlink.test',
+      description: 'Parish community in the Vicariate of St. John Mary Vianney.',
+    },
     clergy: [{ id: 'fr-d-lopez', userId: 'user-clergy-lopez', name: 'Fr. D. Lopez' }], venues: [{ id: 'venue-st-joseph', name: 'Main church' }] },
   'our-lady-of-lourdes': { key: 'lourdes', code: 'OLL', staffId: 'user-staff-lourdes', staffName: 'Victor Sangalang',
+    contact: {
+      address: 'Cabetican, Bacolor, Pampanga (sample directory)',
+      officeHours: 'Tue–Sun 8:00 AM – 12:00 NN, 1:30 PM – 5:00 PM',
+      phone: '+63 (045) 555-0108',
+      email: 'office.lourdes@parishlink.test',
+      description: 'Archdiocesan shrine welcoming pilgrims and parishioners for liturgies and sacraments.',
+    },
     clergy: [{ id: 'fr-n-ocampo', userId: 'user-clergy-ocampo', name: 'Fr. N. Ocampo' }], venues: [{ id: 'venue-our-lady-of-lourdes', name: 'Main church' }] },
 };
 
@@ -149,6 +206,8 @@ export async function seedDemoData(db: D1Database, files: R2Bucket | undefined, 
   // People and places ------------------------------------------------------
   add(`INSERT INTO users (id, email, full_name, role, home_parish_id) VALUES ('user-admin-demo', 'admin@parishlink.test', 'Ana Fernandez', 'system_admin', NULL)`);
   for (const parish of parishes) {
+    add(`UPDATE parishes SET address = ?, office_hours = ?, contact_phone = ?, contact_email = ?, description = ?, updated_at = ? WHERE id = ?`,
+      parish.contact.address, parish.contact.officeHours, parish.contact.phone, parish.contact.email, parish.contact.description, sqlTime(now), parish.id);
     add('INSERT INTO users (id, email, full_name, role, home_parish_id) VALUES (?, ?, ?, ?, ?)',
       parish.staffId, `staff.${parish.key}@parishlink.test`, parish.staffName, 'parish_staff', parish.id);
     for (const clergy of parish.clergy) {

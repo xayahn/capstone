@@ -1173,13 +1173,17 @@ function documentClarification(): AssistantReply {
 
 async function parishOfficeGuidance(actor: MobileActor): Promise<AssistantReply> {
   const parish = await getRawDb().prepare(`SELECT name, address, office_hours AS officeHours,
+      contact_phone AS contactPhone, contact_email AS contactEmail,
       updated_at AS updatedAt FROM parishes WHERE id = ? AND is_active = 1 LIMIT 1`)
     .bind(actor.homeParishId).first<{
       name: string;
       address: string | null;
       officeHours: string | null;
+      contactPhone?: string | null;
+      contactEmail?: string | null;
       updatedAt: string;
     }>();
+  const hasPublishedDirectory = Boolean(parish && (parish.address || parish.officeHours || parish.contactPhone || parish.contactEmail));
   return {
     title: parish?.name ?? 'Contact your parish',
     text: parish
@@ -1191,7 +1195,9 @@ async function parishOfficeGuidance(actor: MobileActor): Promise<AssistantReply>
       bullets: [
         ...(parish.address ? [`Address: ${parish.address}`] : []),
         ...(parish.officeHours ? [`Office hours: ${parish.officeHours}`] : []),
-        ...(!parish.address && !parish.officeHours ? ['No address or office hours are currently published.'] : []),
+        ...(parish.contactPhone ? [`Phone: ${parish.contactPhone}`] : []),
+        ...(parish.contactEmail ? [`Email: ${parish.contactEmail}`] : []),
+        ...(!hasPublishedDirectory ? ['No address or office hours are currently published.'] : []),
       ],
       sources: [{
         label: `${parish.name} public office information`,

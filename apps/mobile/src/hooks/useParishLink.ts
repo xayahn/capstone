@@ -20,6 +20,7 @@ import type {
   PasswordResetInput,
   QueueService,
   RepositorySnapshot,
+  RescheduleInput,
   SignInInput,
   SignUpInput,
   UploadAppointmentDocumentInput,
@@ -224,6 +225,34 @@ export const useParishLink = () => {
     [mergeAppointment, refresh, refreshAfterSave, repository, run],
   );
 
+  /** Shared wrapper for cancel/reschedule/withdraw: merge the returned appointment, then refresh. */
+  const changeAppointment = useCallback(
+    (operation: () => Promise<Appointment>) =>
+      run(async (isCurrent) => {
+        const appointment = await operation();
+        if (!isCurrent()) return appointment;
+        mergeAppointment(appointment);
+        await refreshAfterSave();
+        return appointment;
+      }),
+    [mergeAppointment, refreshAfterSave, run],
+  );
+
+  const cancelAppointment = useCallback(
+    (appointmentId: string, reason: string) => changeAppointment(() => repository.cancelAppointment(appointmentId, reason)),
+    [changeAppointment, repository],
+  );
+
+  const requestReschedule = useCallback(
+    (appointmentId: string, input: RescheduleInput) => changeAppointment(() => repository.requestReschedule(appointmentId, input)),
+    [changeAppointment, repository],
+  );
+
+  const withdrawChangeRequest = useCallback(
+    (appointmentId: string) => changeAppointment(() => repository.withdrawChangeRequest(appointmentId)),
+    [changeAppointment, repository],
+  );
+
   const signUp = useCallback(
     (input: SignUpInput) =>
       run(async (isCurrent) => {
@@ -384,6 +413,9 @@ export const useParishLink = () => {
     searchAvailability,
     createAppointment,
     uploadAppointmentDocument,
+    cancelAppointment,
+    requestReschedule,
+    withdrawChangeRequest,
     markNotificationRead,
     joinQueue,
     leaveQueue,

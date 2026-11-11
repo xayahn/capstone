@@ -82,6 +82,7 @@ export const getSlotAvailability = (
   appointments: Appointment[],
   bufferBeforeMinutes = 15,
   bufferAfterMinutes = 15,
+  excludeAppointmentId?: string,
 ) =>
   TIME_SLOTS.map((time) => ({
     time,
@@ -96,6 +97,7 @@ export const getSlotAvailability = (
         bufferAfterMinutes,
       },
       appointments,
+      excludeAppointmentId,
     ),
   }));
 
