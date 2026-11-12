@@ -151,6 +151,77 @@ function parseMutation(value: unknown): AdminMutation {
         ...(capacity === undefined ? {} : { capacity }),
       };
     }
+    case 'parish.profile.update':
+      return {
+        action,
+        parishId: stringField(value.parishId, 'Parish', 100) as string,
+        address: stringField(value.address, 'Parish address', 240, false) ?? null,
+        officeHours: stringField(value.officeHours, 'Office hours', 160, false) ?? null,
+        contactPhone: stringField(value.contactPhone, 'Contact phone', 40, false) ?? null,
+        contactEmail: stringField(value.contactEmail, 'Contact email', 254, false) ?? null,
+        description: stringField(value.description, 'Parish description', 500, false) ?? null,
+      };
+    case 'service.update': {
+      const durationMinutes = Number(value.durationMinutes);
+      const bufferBeforeMinutes = Number(value.bufferBeforeMinutes);
+      const bufferAfterMinutes = Number(value.bufferAfterMinutes);
+      if (!Number.isInteger(durationMinutes) || !Number.isInteger(bufferBeforeMinutes) || !Number.isInteger(bufferAfterMinutes)) {
+        throw new AdminServiceError('Duration and buffers must be whole numbers of minutes.');
+      }
+      if (typeof value.isActive !== 'boolean') {
+        throw new AdminServiceError('Sacrament availability must be active or paused.');
+      }
+      return {
+        action,
+        serviceTypeId: stringField(value.serviceTypeId, 'Sacrament', 100) as string,
+        durationMinutes,
+        bufferBeforeMinutes,
+        bufferAfterMinutes,
+        description: stringField(value.description, 'Sacrament description', 500, false) ?? null,
+        isActive: value.isActive,
+      };
+    }
+    case 'requirement.create': {
+      if (typeof value.isRequired !== 'boolean') {
+        throw new AdminServiceError('Specify whether the requirement is mandatory or optional.');
+      }
+      const sortOrder =
+        value.sortOrder === undefined || value.sortOrder === null || value.sortOrder === ''
+          ? undefined
+          : Number(value.sortOrder);
+      if (sortOrder !== undefined && !Number.isInteger(sortOrder)) {
+        throw new AdminServiceError('Requirement order must be a whole number.');
+      }
+      return {
+        action,
+        serviceTypeId: stringField(value.serviceTypeId, 'Sacrament', 100) as string,
+        name: stringField(value.name, 'Requirement name', 120) as string,
+        instructions: stringField(value.instructions, 'Requirement instructions', 500, false) ?? null,
+        isRequired: value.isRequired,
+        ...(sortOrder === undefined ? {} : { sortOrder }),
+      };
+    }
+    case 'requirement.update': {
+      if (typeof value.isRequired !== 'boolean') {
+        throw new AdminServiceError('Specify whether the requirement is mandatory or optional.');
+      }
+      if (typeof value.isActive !== 'boolean') {
+        throw new AdminServiceError('Requirement state must be active or inactive.');
+      }
+      const sortOrder = Number(value.sortOrder);
+      if (!Number.isInteger(sortOrder)) {
+        throw new AdminServiceError('Requirement order must be a whole number.');
+      }
+      return {
+        action,
+        requirementId: stringField(value.requirementId, 'Requirement', 100) as string,
+        name: stringField(value.name, 'Requirement name', 120) as string,
+        instructions: stringField(value.instructions, 'Requirement instructions', 500, false) ?? null,
+        isRequired: value.isRequired,
+        sortOrder,
+        isActive: value.isActive,
+      };
+    }
     default:
       throw new AdminServiceError('Unknown administrative action.');
   }

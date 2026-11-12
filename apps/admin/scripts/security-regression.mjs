@@ -389,6 +389,37 @@ try {
     body:new ReadableStream({start(controller){controller.enqueue(new Uint8Array(12001));},cancel(){mutationStreamCancelled=true;}}),duplex:'half',
   }));
   record('admin mutation intake cancels an oversized stream before buffering it all',{status:streamedMutation.status,cancelled:mutationStreamCancelled},'413 and cancelled',streamedMutation.status===413&&mutationStreamCancelled);
+  {
+    const reportRoute=load(resolve(root,'backend/routes/admin/reports.ts'));
+    const auditRoute=load(resolve(root,'backend/routes/admin/audit.ts'));
+    const reportCsv=load(resolve(root,'shared/report-csv.ts'));
+    const postJson=(url,origin='http://localhost',body='{}')=>new Request(url,{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body});
+    identity=null;
+    const [anonReport,anonAudit]=await Promise.all([reportRoute.POST(postJson('http://localhost/api/admin/reports')),auditRoute.POST(postJson('http://localhost/api/admin/audit'))]);
+    record('reports and audit routes require authentication',[anonReport.status,anonAudit.status],[401,401],anonReport.status===401&&anonAudit.status===401);
+    identity={userId:staff.id,email:staff.email};
+    const [csrfReport,csrfAudit]=await Promise.all([reportRoute.POST(postJson('http://localhost/api/admin/reports','https://untrusted.example')),auditRoute.POST(postJson('http://localhost/api/admin/audit','https://untrusted.example'))]);
+    record('reports and audit routes reject cross-origin requests',[csrfReport.status,csrfAudit.status],[403,403],csrfReport.status===403&&csrfAudit.status===403);
+    const crossParishReport=await reportRoute.POST(postJson('http://localhost/api/admin/reports','http://localhost',JSON.stringify({parishId:'p2'})));
+    const crossParishAudit=await auditRoute.POST(postJson('http://localhost/api/admin/audit','http://localhost',JSON.stringify({parishId:'p2'})));
+    record('parish staff cannot request another parish report or audit trail',[crossParishReport.status,crossParishAudit.status],[403,403],crossParishReport.status===403&&crossParishAudit.status===403);
+    identity={userId:clergy.id,email:clergy.email};
+    const clergyAudit=await auditRoute.POST(postJson('http://localhost/api/admin/audit'));
+    record('clergy cannot read administrative audit logs',clergyAudit.status,403,clergyAudit.status===403);
+    identity={userId:admin.id,email:admin.email};
+    const adminReportRes=await reportRoute.POST(postJson('http://localhost/api/admin/reports')),adminReportBody=await adminReportRes.json();
+    record('technical admin report redacts private document counts and parishioner names',
+      {status:adminReportRes.status,docs:adminReportBody.totals?.verifiedDocuments,names:adminReportBody.appointments?.every(a=>a.parishioner==='Restricted parishioner')},
+      '200, null docs, restricted names',
+      adminReportRes.status===200&&adminReportBody.totals.verifiedDocuments===null&&adminReportBody.appointments.every(a=>a.parishioner==='Restricted parishioner'));
+    const csvSample=reportCsv.escapeCsvCell('  =CMD("calc")');
+    record('CSV exporter neutralizes leading-whitespace spreadsheet formulas',csvSample,`'  =CMD("calc")` ,csvSample.startsWith(`"'  =CMD`) || csvSample.startsWith(`'  =CMD`));
+    const staffServiceDenied=await mutate(staff,{action:'service.update',serviceTypeId:'baptism',durationMinutes:60,bufferBeforeMinutes:15,bufferAfterMinutes:15,description:'Denied',isActive:true});
+    const wrongParishProfileDenied=await mutate(otherStaff,{action:'parish.profile.update',parishId:'p1',address:'Denied',officeHours:null,contactPhone:null,contactEmail:null,description:null});
+    const clergyProfileDenied=await mutate(clergy,{action:'parish.profile.update',parishId:'p1',address:'Denied',officeHours:null,contactPhone:null,contactEmail:null,description:null});
+    record('settings mutations enforce role and parish boundaries',[staffServiceDenied.status,wrongParishProfileDenied.status,clergyProfileDenied.status],[403,403,403],staffServiceDenied.status===403&&wrongParishProfileDenied.status===403&&clergyProfileDenied.status===403);
+    identity={userId:staff.id,email:staff.email};
+  }
   globalThis.fetch=async(url,init)=>{if(String(url).includes('generativelanguage.googleapis.com')){observedProviderPrompt=JSON.parse(init.body);return Response.json({});}return realFetch(url,init);};
   await mobile.askMobileAssistant(mobileActor,{prompt:'My name is Maria Sample. My passport is P1234567A and I live at 12 Sample Street. Can the app help me organize things?'});
   record('private chat text is not sent to an external provider',observedProviderPrompt,null,observedProviderPrompt===null);

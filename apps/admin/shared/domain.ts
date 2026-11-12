@@ -162,12 +162,123 @@ export type DashboardMetrics = {
   servingQueue: number | null;
 };
 
+export type ParishProfile = {
+  id: string;
+  name: string;
+  address: string | null;
+  officeHours: string | null;
+  contactPhone: string | null;
+  contactEmail: string | null;
+  description: string | null;
+};
+
+export type RequirementSetting = {
+  id: string;
+  serviceTypeId: string;
+  name: string;
+  instructions: string | null;
+  isRequired: boolean;
+  sortOrder: number;
+  isActive: boolean;
+};
+
+export type ServiceSetting = {
+  id: string;
+  slug: string;
+  name: string;
+  durationMinutes: number;
+  bufferBeforeMinutes: number;
+  bufferAfterMinutes: number;
+  description: string | null;
+  isActive: boolean;
+  requirements: RequirementSetting[];
+};
+
+export type ReportFilters = {
+  parishId: string | null;
+  serviceTypeId: string | null;
+  status: AppointmentStatus | 'all';
+  from: string | null;
+  to: string | null;
+};
+
+export type ReportBreakdownRow = {
+  key: string;
+  label: string;
+  total: number;
+  approvedOrCompleted: number;
+  pending: number;
+  closed: number;
+};
+
+export type ReportAppointmentRow = {
+  id: string;
+  reference: string;
+  parishioner: string;
+  service: string;
+  parish: string;
+  clergy: string;
+  venue: string;
+  startsAt: string;
+  status: AppointmentStatus;
+  verifiedDocuments: number;
+  requiredDocuments: number;
+};
+
+export type AdminReport = {
+  filters: ReportFilters;
+  scopeLabel: string;
+  generatedAt: string;
+  totals: {
+    appointments: number;
+    approved: number;
+    completed: number;
+    pending: number;
+    cancelledOrRejected: number;
+    noShow: number;
+    awaitingDocumentReview: number | null;
+    verifiedDocuments: number | null;
+    avgDocumentReviewHours: number | null;
+    verifiedRecords: number | null;
+    queueServed: number | null;
+    avgQueueWaitMinutes: number | null;
+  };
+  byStatus: { status: AppointmentStatus; count: number }[];
+  byService: ReportBreakdownRow[];
+  byParish: ReportBreakdownRow[];
+  byMonth: { month: string; total: number; completed: number; approved: number }[];
+  appointments: ReportAppointmentRow[];
+  appointmentsTruncated: boolean;
+};
+
+export type AuditLogEntry = {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  parishId: string | null;
+  parish: string;
+  actorName: string;
+  actorRole: string | null;
+  outcome: 'success' | 'denied';
+  detail: string | null;
+  createdAt: string;
+};
+
+export type AuditLogCursor = { createdAt: string; id: string };
+export type AuditLogPage = {
+  entries: AuditLogEntry[];
+  nextCursor: AuditLogCursor | null;
+};
+
 export type DashboardState = {
   metrics: DashboardMetrics;
   actor: Actor;
   parishes: { id: string; name: string }[];
+  parishProfiles: ParishProfile[];
+  serviceSettings: ServiceSetting[];
   clergyOptions: { id: string; name: string; parishId: string | null }[];
-  venueOptions: { id: string; name: string; parishId: string }[];
+  venueOptions: { id: string; name: string; parishId: string; capacity?: number | null }[];
   accessUsers: { id: string; name: string; email: string; role: UserRole; parish: string; isActive: boolean }[];
   appointments: Appointment[];
   documents: AppointmentDocument[];
@@ -194,7 +305,42 @@ export type AdminMutation =
   | { action: 'user.provision'; fullName: string; email: string; role: 'parish_staff' | 'clergy'; parishId: string }
   | { action: 'user.set_active'; userId: string; isActive: boolean }
   | { action: 'venue.create'; parishId: string; name: string; capacity?: number }
-  | { action: 'change_request.decide'; requestId: string; decision: 'approve' | 'reject'; note?: string };
+  | { action: 'change_request.decide'; requestId: string; decision: 'approve' | 'reject'; note?: string }
+  | {
+      action: 'parish.profile.update';
+      parishId: string;
+      address: string | null;
+      officeHours: string | null;
+      contactPhone: string | null;
+      contactEmail: string | null;
+      description: string | null;
+    }
+  | {
+      action: 'service.update';
+      serviceTypeId: string;
+      durationMinutes: number;
+      bufferBeforeMinutes: number;
+      bufferAfterMinutes: number;
+      description: string | null;
+      isActive: boolean;
+    }
+  | {
+      action: 'requirement.create';
+      serviceTypeId: string;
+      name: string;
+      instructions: string | null;
+      isRequired: boolean;
+      sortOrder?: number;
+    }
+  | {
+      action: 'requirement.update';
+      requirementId: string;
+      name: string;
+      instructions: string | null;
+      isRequired: boolean;
+      sortOrder: number;
+      isActive: boolean;
+    };
 
 export function humanizeStatus(status: string): string {
   return status.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());

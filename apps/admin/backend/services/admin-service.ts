@@ -25,13 +25,17 @@ import { recordServerFailure } from '@/backend/observability/server-log';
 import { validCalendarDate } from '@/shared/validation';
 import { scoped } from '@/backend/services/admin-scope';
 import { loadDashboardMetrics } from '@/backend/services/dashboard-metrics';
+import { AdminServiceError } from '@/backend/services/admin-error';
+import {
+  createRequirementSetting,
+  loadParishProfiles,
+  loadServiceSettings,
+  updateParishProfile,
+  updateRequirementSetting,
+  updateServiceSetting,
+} from '@/backend/services/settings-service';
 
-export class AdminServiceError extends Error {
-  constructor(message: string, readonly status = 400) {
-    super(message);
-    this.name = 'AdminServiceError';
-  }
-}
+export { AdminServiceError };
 
 type ActorRow = {
   id: string;
@@ -213,8 +217,8 @@ export async function loadDashboardState(actor: Actor): Promise<DashboardState> 
     : db.prepare(`SELECT id, display_title AS name, home_parish_id AS parishId
         FROM clergy_profiles WHERE is_active = 1 AND EXISTS (SELECT 1 FROM users u WHERE u.id = clergy_profiles.user_id AND u.is_active = 1) AND home_parish_id = ? ORDER BY display_title`).bind(actor.parishId);
   const venueOptionQuery = actor.role === 'system_admin'
-    ? db.prepare(`SELECT id, name, parish_id AS parishId FROM venues WHERE is_active = 1 ORDER BY name`)
-    : db.prepare(`SELECT id, name, parish_id AS parishId FROM venues
+    ? db.prepare(`SELECT id, name, parish_id AS parishId, capacity FROM venues WHERE is_active = 1 ORDER BY name`)
+    : db.prepare(`SELECT id, name, parish_id AS parishId, capacity FROM venues
         WHERE is_active = 1 AND parish_id = ? ORDER BY name`).bind(actor.parishId);
   const accessUserQuery = actor.role === 'system_admin'
     ? db.prepare(`SELECT u.id, u.full_name AS name, u.email, u.role,
@@ -230,7 +234,7 @@ export async function loadDashboardState(actor: Actor): Promise<DashboardState> 
     recordServerFailure('reminder-generation', error);
     return 0;
   });
-  const [appointmentsResult, documentsResult, queueResult, announcementsResult, recordsResult, assignmentsResult, parishesResult, clergyOptionsResult, venueOptionsResult, accessUsersResult, metrics, changeRequests] = await Promise.all([
+  const [appointmentsResult, documentsResult, queueResult, announcementsResult, recordsResult, assignmentsResult, parishesResult, clergyOptionsResult, venueOptionsResult, accessUsersResult, metrics, changeRequests, parishProfiles, serviceSettings] = await Promise.all([
     appointmentQuery.all<AppointmentRow>(),
     documentQuery.all<AppointmentDocument>(),
     queueQuery.all<QueueTicket>(),
@@ -239,10 +243,12 @@ export async function loadDashboardState(actor: Actor): Promise<DashboardState> 
     assignmentQuery.all<ClergyAssignment>(),
     parishQuery.all<{ id: string; name: string }>(),
     clergyOptionQuery.all<{ id: string; name: string; parishId: string | null }>(),
-    venueOptionQuery.all<{ id: string; name: string; parishId: string }>(),
+    venueOptionQuery.all<{ id: string; name: string; parishId: string; capacity: number | null }>(),
     accessUserQuery.all<{ id: string; name: string; email: string; role: InternalUserRole; parish: string; isActive: number }>(),
     loadDashboardMetrics(actor),
     loadChangeRequests(actor),
+    loadParishProfiles(actor),
+    loadServiceSettings(),
   ]);
 
   const appointments: Appointment[] = appointmentsResult.results.map((row) => ({
@@ -257,8 +263,13 @@ export async function loadDashboardState(actor: Actor): Promise<DashboardState> 
   return {
     actor,
     parishes: parishesResult.results,
+    parishProfiles,
+    serviceSettings,
     clergyOptions: clergyOptionsResult.results,
-    venueOptions: venueOptionsResult.results,
+    venueOptions: venueOptionsResult.results.map((item) => ({
+      ...item,
+      capacity: item.capacity === null || item.capacity === undefined ? null : Number(item.capacity),
+    })),
     accessUsers: accessUsersResult.results.map((item) => ({ ...item, isActive: Boolean(item.isActive) })),
     appointments,
     documents: documentsResult.results,
@@ -1050,5 +1061,21 @@ export async function performAdminMutation(
       return finishAdminIdempotency(actor, idempotency);
     case 'change_request.decide':
       return decideChangeRequest(actor, mutation, idempotency);
+    case 'parish.profile.update': {
+      const parishId = await updateParishProfile(actor, mutation);
+      return finishAdminIdempotency(actor, idempotency, parishId);
+    }
+    case 'service.update': {
+      const serviceId = await updateServiceSetting(actor, mutation);
+      return finishAdminIdempotency(actor, idempotency, serviceId);
+    }
+    case 'requirement.create': {
+      const requirementId = await createRequirementSetting(actor, mutation);
+      return finishAdminIdempotency(actor, idempotency, requirementId);
+    }
+    case 'requirement.update': {
+      const requirementId = await updateRequirementSetting(actor, mutation);
+      return finishAdminIdempotency(actor, idempotency, requirementId);
+    }
   }
 }
