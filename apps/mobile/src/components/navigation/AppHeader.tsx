@@ -25,7 +25,7 @@ export const AppHeader = ({
         <BrandMark compact />
       ) : (
         <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={onBack} style={styles.headerButton}>
-          <Ionicons name="arrow-back" size={23} color={colors.paperLight} />
+          <Ionicons name="arrow-back" size={26} color={colors.paperLight} />
         </Pressable>
       )}
     </View>
@@ -40,7 +40,7 @@ export const AppHeader = ({
         onPress={onNotifications}
         style={styles.headerButton}
       >
-        <Ionicons name={unreadCount ? 'notifications' : 'notifications-outline'} size={22} color={colors.paperLight} />
+        <Ionicons name={unreadCount ? 'notifications' : 'notifications-outline'} size={24} color={colors.paperLight} />
         {unreadCount ? (
           <View style={styles.unreadDot}>
             <Text style={styles.unreadDotText}>{Math.min(9, unreadCount)}</Text>
@@ -57,15 +57,15 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.gold,
     borderBottomWidth: 1,
     flexDirection: 'row',
-    minHeight: 70,
+    minHeight: 72,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
-  headerSide: { alignItems: 'center', width: 48 },
-  headerButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
+  headerSide: { alignItems: 'center', width: 50 },
+  headerButton: { alignItems: 'center', height: 48, justifyContent: 'center', width: 48 },
   headerCopy: { flex: 1, minWidth: 0, paddingHorizontal: spacing.xs },
-  headerEyebrow: { color: colors.goldSoft, fontFamily: fonts.bodyBold, fontSize: 10, letterSpacing: 1.1, textTransform: 'uppercase' },
-  headerTitle: { color: colors.card, fontFamily: fonts.displayBold, fontSize: 23, lineHeight: 27 },
+  headerEyebrow: { color: colors.goldSoft, fontFamily: fonts.bodyBold, fontSize: 11, letterSpacing: 1.1, textTransform: 'uppercase' },
+  headerTitle: { color: colors.card, fontFamily: fonts.displayBold, fontSize: 24, lineHeight: 28 },
   unreadDot: {
     alignItems: 'center',
     backgroundColor: colors.goldSoft,

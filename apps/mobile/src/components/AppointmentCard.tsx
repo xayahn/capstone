@@ -77,8 +77,8 @@ const styles = StyleSheet.create({
   appointmentCard: { gap: spacing.xs, marginBottom: spacing.md },
   rowBetweenTop: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.sm, justifyContent: 'space-between' },
   serviceHeaderCompact: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: spacing.sm },
-  itemTitle: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 15, lineHeight: 22 },
-  reference: { color: colors.oxblood, fontFamily: fonts.bodyBold, fontSize: 12, letterSpacing: 0.5 },
+  itemTitle: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 16.5, lineHeight: 23 },
+  reference: { color: colors.oxblood, fontFamily: fonts.bodyBold, fontSize: 13.5, letterSpacing: 0.5 },
   inlineLink: { alignItems: 'center', alignSelf: 'flex-end', flexDirection: 'row', gap: spacing.xxs, marginTop: spacing.xs },
-  inlineLinkText: { color: colors.oxblood, fontFamily: fonts.bodyBold, fontSize: 14 },
+  inlineLinkText: { color: colors.oxblood, fontFamily: fonts.bodyBold, fontSize: 15 },
 });

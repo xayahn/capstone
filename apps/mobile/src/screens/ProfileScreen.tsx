@@ -167,12 +167,12 @@ export const ProfileScreen = ({
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  cardHeadline: { color: colors.ink, fontFamily: fonts.displayBold, fontSize: 27, lineHeight: 31 },
-  fieldHint: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 12, lineHeight: 18, marginTop: -spacing.xs },
-  fieldLabel: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 14, marginBottom: spacing.xs, marginTop: spacing.md },
+  cardHeadline: { color: colors.ink, fontFamily: fonts.displayBold, fontSize: 28, lineHeight: 32 },
+  fieldHint: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 13.5, lineHeight: 19, marginTop: -spacing.xs },
+  fieldLabel: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 16, marginBottom: spacing.xs, marginTop: spacing.md },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   settingRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.md, marginVertical: spacing.lg },
-  itemTitle: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 15, lineHeight: 22 },
-  mutedText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 14, lineHeight: 21 },
-  savedText: { color: colors.green, fontFamily: fonts.bodyBold, fontSize: 14, marginBottom: spacing.sm },
+  itemTitle: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 16.5, lineHeight: 23 },
+  mutedText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 15, lineHeight: 22 },
+  savedText: { color: colors.green, fontFamily: fonts.bodyBold, fontSize: 15, marginBottom: spacing.sm },
 });

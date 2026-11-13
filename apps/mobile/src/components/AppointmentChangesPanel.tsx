@@ -179,14 +179,14 @@ export const AppointmentChangesPanel = ({
 const styles = StyleSheet.create({
   block: { gap: spacing.sm },
   actions: { gap: spacing.sm, marginTop: spacing.sm },
-  label: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 14, marginTop: spacing.sm },
-  muted: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 14, lineHeight: 21 },
-  error: { color: colors.red, fontFamily: fonts.bodySemibold, fontSize: 13, lineHeight: 20 },
+  label: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 16, marginTop: spacing.sm },
+  muted: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 15, lineHeight: 22 },
+  error: { color: colors.red, fontFamily: fonts.bodySemibold, fontSize: 14.5, lineHeight: 21 },
   chips: { gap: spacing.xs, paddingVertical: spacing.xxs },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   row: { alignItems: 'center', flexDirection: 'row', gap: spacing.xs },
   input: {
     backgroundColor: colors.cardStrong, borderColor: colors.line, borderRadius: radii.md, borderWidth: 1, color: colors.ink,
-    fontFamily: fonts.body, fontSize: 16, minHeight: 72, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, textAlignVertical: 'top',
+    fontFamily: fonts.body, fontSize: 16.5, minHeight: 78, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, textAlignVertical: 'top',
   },
 });

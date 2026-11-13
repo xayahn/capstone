@@ -181,7 +181,7 @@ export const WelcomeScreen = ({
                       style={styles.privacyConsent}
                     >
                       <View style={[styles.checkbox, acceptPrivacyNotice && styles.checkboxChecked]}>
-                        {acceptPrivacyNotice ? <Ionicons name="checkmark" size={15} color={colors.paperLight} /> : null}
+                        {acceptPrivacyNotice ? <Ionicons name="checkmark" size={18} color={colors.paperLight} /> : null}
                       </View>
                       <Text style={styles.privacyConsentText}>
                         I understand ParishLink stores personal and sacramental-service information only for coordination, and authorized parish personnel make all official decisions.
@@ -243,10 +243,10 @@ const styles = StyleSheet.create({
   welcomeScroll: { alignItems: 'center', gap: spacing.xl, minHeight: '100%', padding: spacing.xl, paddingBottom: 48 },
   welcomeBrand: { alignItems: 'center', gap: spacing.sm, marginTop: spacing.xl },
   welcomeTitle: { color: colors.card, fontFamily: fonts.displayBold, fontSize: 48, lineHeight: 52 },
-  welcomeSubtitle: { color: colors.paperLight, fontFamily: fonts.body, fontSize: 15, lineHeight: 22, maxWidth: 330, textAlign: 'center' },
+  welcomeSubtitle: { color: colors.paperLight, fontFamily: fonts.body, fontSize: 16.5, lineHeight: 24, maxWidth: 340, textAlign: 'center' },
   welcomeCard: { gap: spacing.md, maxWidth: 520, width: '100%' },
-  welcomeFooter: { color: colors.paperLight, fontFamily: fonts.body, fontSize: 12, lineHeight: 18, maxWidth: 500, opacity: 0.88, textAlign: 'center' },
-  cardHeadline: { color: colors.ink, fontFamily: fonts.displayBold, fontSize: 27, lineHeight: 31 },
+  welcomeFooter: { color: colors.paperLight, fontFamily: fonts.body, fontSize: 13, lineHeight: 19, maxWidth: 500, opacity: 0.92, textAlign: 'center' },
+  cardHeadline: { color: colors.ink, fontFamily: fonts.displayBold, fontSize: 28, lineHeight: 33 },
   authModeSwitch: {
     backgroundColor: colors.paperLight,
     borderColor: colors.line,
@@ -259,16 +259,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: radii.pill,
     flex: 1,
-    minHeight: 48,
+    minHeight: 52,
     justifyContent: 'center',
     paddingHorizontal: spacing.sm,
   },
   authModeButtonActive: { backgroundColor: colors.oxblood },
-  authModeText: { color: colors.inkSoft, fontFamily: fonts.bodyBold, fontSize: 14 },
+  authModeText: { color: colors.inkSoft, fontFamily: fonts.bodyBold, fontSize: 15.5 },
   authModeTextActive: { color: colors.paperLight },
   authSection: { gap: spacing.sm, marginTop: spacing.sm },
-  authSectionLabel: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 14 },
-  fieldHint: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 12, lineHeight: 18, marginTop: -spacing.xs },
+  authSectionLabel: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 16 },
+  fieldHint: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 13.5, lineHeight: 19, marginTop: -spacing.xs },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   privacyConsent: {
     alignItems: 'flex-start',
@@ -278,20 +278,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.sm,
-    padding: spacing.sm,
+    padding: spacing.md,
   },
   checkbox: {
     alignItems: 'center',
     borderColor: colors.oxblood,
-    borderRadius: 5,
-    borderWidth: 1.5,
-    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    height: 28,
     justifyContent: 'center',
     marginTop: 1,
-    width: 22,
+    width: 28,
   },
   checkboxChecked: { backgroundColor: colors.oxblood },
-  privacyConsentText: { color: colors.inkSoft, flex: 1, fontFamily: fonts.body, fontSize: 13, lineHeight: 19 },
-  privacyNote: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 12, lineHeight: 18, textAlign: 'center' },
-  errorText: { color: colors.red, fontFamily: fonts.bodySemibold, fontSize: 13, lineHeight: 20 },
+  privacyConsentText: { color: colors.ink, flex: 1, fontFamily: fonts.body, fontSize: 14.5, lineHeight: 21 },
+  privacyNote: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 13.5, lineHeight: 20, textAlign: 'center' },
+  errorText: { color: colors.red, fontFamily: fonts.bodySemibold, fontSize: 14.5, lineHeight: 21 },
 });

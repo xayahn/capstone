@@ -27,5 +27,5 @@ export const AppointmentsScreen = ({ appointments, onOpen }: AppointmentsScreenP
 );
 
 const styles = StyleSheet.create({
-  lead: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 14, lineHeight: 21, marginTop: -spacing.sm },
+  lead: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 15, lineHeight: 22, marginTop: -spacing.sm },
 });

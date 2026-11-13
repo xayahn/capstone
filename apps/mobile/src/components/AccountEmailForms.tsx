@@ -113,10 +113,10 @@ export function EmailVerificationCard({ email, emailVerified, mode, request, con
 
 const styles = StyleSheet.create({
   form: { gap: spacing.sm }, field: { gap: spacing.xs },
-  label: { fontFamily: fonts.bodySemibold, fontSize: 14, color: colors.ink },
-  input: { ...type.body, minHeight: 50, borderWidth: 1, borderColor: colors.line, borderRadius: radii.sm,
-    backgroundColor: colors.card, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm },
-  copy: { ...type.body, color: colors.inkSoft }, hint: { ...type.body, fontSize: 13, lineHeight: 20, color: colors.inkSoft },
+  label: { fontFamily: fonts.bodySemibold, fontSize: 16, color: colors.ink },
+  input: { ...type.body, minHeight: 54, borderWidth: 1, borderColor: colors.line, borderRadius: radii.sm,
+    backgroundColor: colors.card, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  copy: { ...type.body, color: colors.inkSoft }, hint: { ...type.body, fontSize: 14.5, lineHeight: 21, color: colors.inkSoft },
   error: { ...type.body, color: colors.red }, email: { ...type.body, fontFamily: fonts.bodySemibold },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, flex: { flex: 1 },
 });

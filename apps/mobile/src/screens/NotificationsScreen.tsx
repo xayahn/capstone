@@ -51,13 +51,13 @@ export const NotificationsScreen = ({ notifications, onOpen }: NotificationsScre
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   cardPressed: { opacity: 0.7, transform: [{ scale: 0.995 }] },
-  lead: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 14, lineHeight: 21, marginTop: -spacing.sm },
+  lead: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 15, lineHeight: 22, marginTop: -spacing.sm },
   notificationCard: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
   notificationTitleRow: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.sm },
-  notificationTitle: { color: colors.ink, flex: 1, fontFamily: fonts.bodyBold, fontSize: 15, lineHeight: 22, minWidth: 0 },
+  notificationTitle: { color: colors.ink, flex: 1, fontFamily: fonts.bodyBold, fontSize: 16.5, lineHeight: 23, minWidth: 0 },
   notificationUnread: { backgroundColor: colors.cardStrong, borderColor: colors.gold },
-  notificationDot: { backgroundColor: colors.oxblood, borderRadius: 5, height: 10, marginTop: 5, width: 10 },
+  notificationDot: { backgroundColor: colors.oxblood, borderRadius: 6, height: 12, marginTop: 5, width: 12 },
   notificationDotRead: { backgroundColor: colors.line },
-  noticeTime: { color: colors.inkSoft, fontFamily: fonts.bodyMedium, fontSize: 12 },
-  mutedText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 14, lineHeight: 21 },
+  noticeTime: { color: colors.inkSoft, fontFamily: fonts.bodyMedium, fontSize: 13.5 },
+  mutedText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 15, lineHeight: 22 },
 });

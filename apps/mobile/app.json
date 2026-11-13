@@ -27,7 +27,7 @@
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": false,
-          "NSAllowsLocalNetworking": false
+          "NSAllowsLocalNetworking": true
         }
       },
       "icon": "./assets/icon.png"

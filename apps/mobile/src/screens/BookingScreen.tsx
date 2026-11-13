@@ -344,8 +344,8 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   horizontalChips: { gap: spacing.xs, paddingVertical: spacing.xxs },
-  fieldLabel: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 14, marginBottom: spacing.xs, marginTop: spacing.md },
-  helperText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 13, lineHeight: 19, marginTop: spacing.sm },
+  fieldLabel: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 16, marginBottom: spacing.xs, marginTop: spacing.md },
+  helperText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 14.5, lineHeight: 21, marginTop: spacing.sm },
   loadingRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm, paddingVertical: spacing.md },
   documentRow: {
     alignItems: 'center',
@@ -356,8 +356,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   documentHeading: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  itemTitle: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 15, lineHeight: 22 },
-  mutedText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 14, lineHeight: 21 },
-  selectedFileNote: { color: colors.oxblood, fontFamily: fonts.bodySemibold, fontSize: 12, lineHeight: 18, marginTop: 3 },
-  errorText: { color: colors.red, fontFamily: fonts.bodySemibold, fontSize: 13, lineHeight: 20 },
+  itemTitle: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 16.5, lineHeight: 23 },
+  mutedText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 15, lineHeight: 22 },
+  selectedFileNote: { color: colors.oxblood, fontFamily: fonts.bodySemibold, fontSize: 13.5, lineHeight: 19, marginTop: 3 },
+  errorText: { color: colors.red, fontFamily: fonts.bodySemibold, fontSize: 14.5, lineHeight: 21 },
 });

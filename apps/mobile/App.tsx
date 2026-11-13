@@ -366,7 +366,7 @@ const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.paper, flex: 1 },
   screenHost: { flex: 1 },
   globalNotice: { backgroundColor: colors.paper, paddingHorizontal: spacing.md, paddingTop: spacing.sm },
-  itemTitle: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 15, lineHeight: 22 },
-  mutedCentered: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 14, lineHeight: 21, textAlign: 'center' },
+  itemTitle: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 16.5, lineHeight: 23 },
+  mutedCentered: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 15.5, lineHeight: 22, textAlign: 'center' },
   loadingScreen: { alignItems: 'center', backgroundColor: colors.paper, flex: 1, gap: spacing.lg, justifyContent: 'center' },
 });

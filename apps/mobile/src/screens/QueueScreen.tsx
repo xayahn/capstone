@@ -115,11 +115,11 @@ export const QueueScreen = ({
 const styles = StyleSheet.create({
   ticketCard: { alignItems: 'center', gap: spacing.md },
   ticketNumberLarge: { color: colors.oxblood, fontFamily: fonts.displayBold, fontSize: 24, lineHeight: 32, textAlign: 'center', flexShrink: 1, maxWidth: '100%' },
-  ticketParish: { color: colors.ink, fontFamily: fonts.display, fontSize: 20, textAlign: 'center' },
+  ticketParish: { color: colors.ink, fontFamily: fonts.display, fontSize: 22, textAlign: 'center' },
   queueStats: { alignItems: 'center', backgroundColor: colors.paperLight, borderRadius: radii.md, flexDirection: 'row', padding: spacing.md, width: '100%' },
   verticalDivider: { backgroundColor: colors.line, height: 46, width: 1 },
-  mutedCentered: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 14, lineHeight: 21, textAlign: 'center' },
-  cardHeadline: { color: colors.ink, fontFamily: fonts.displayBold, fontSize: 27, lineHeight: 31 },
-  fieldLabel: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 14, marginBottom: spacing.xs, marginTop: spacing.md },
+  mutedCentered: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 15.5, lineHeight: 22, textAlign: 'center' },
+  cardHeadline: { color: colors.ink, fontFamily: fonts.displayBold, fontSize: 28, lineHeight: 32 },
+  fieldLabel: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 16, marginBottom: spacing.xs, marginTop: spacing.md },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
 });
