@@ -5,6 +5,9 @@ const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const executable = process.execPath;
 const productionEnvironment = {
   ...process.env,
+  EXPO_PUBLIC_APP_ENV: 'production',
+  EXPO_PUBLIC_DEMO_MODE: 'false',
+  EXPO_PUBLIC_API_BASE_URL: 'https://parishlink.internal',
   PARISHLINK_REQUIRE_PRODUCTION: 'true',
 };
 

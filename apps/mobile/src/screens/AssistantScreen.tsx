@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useMemo, useRef, useState, type Dispatch, type ElementRef, type SetStateAction } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -74,7 +74,7 @@ export const AssistantScreen = ({
 }) => {
   const [prompt, setPrompt] = useState('');
   const [sending, setSending] = useState(false);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ElementRef<typeof ScrollView>>(null);
   const hasMounted = useRef(false);
   const active = useRef(true);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
