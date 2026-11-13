@@ -1,4 +1,5 @@
 import { validCalendarDate, validPhoneNumber, utcTimestamp } from '@/shared/validation';
+import { isUniqueConstraintError, nextParishQueueTicketNumber, shortAppointmentReference } from '@/shared/identifiers';
 import { resourceConflict } from '@/shared/scheduling';
 import { parishionerChangeOptions } from '@/shared/change-policy';
 import type { AppointmentStatus } from '@/shared/domain';
@@ -309,9 +310,9 @@ async function activeQueueTicket(userId: string) {
     ? await getRawDb().prepare(`SELECT COUNT(*) AS count FROM queue_tickets
         WHERE parish_id = ? AND (
           status = 'serving' OR (status = 'waiting'
-            AND (priority > ? OR (priority = ? AND issued_at < ?)))
+            AND (priority > ? OR (priority = ? AND (issued_at < ? OR (issued_at = ? AND ticket_number < ?)))))
         )`)
-      .bind(row.parishId, row.priority, row.priority, row.issuedAt).first<{ count: number }>()
+      .bind(row.parishId, row.priority, row.priority, row.issuedAt, row.issuedAt, row.number).first<{ count: number }>()
     : { count: 0 };
   const throughput = await getRawDb().prepare(`SELECT COUNT(*) AS sampleSize,
       AVG((julianday(served_at) - julianday(called_at)) * 1440.0) AS averageServiceMinutes
@@ -574,8 +575,6 @@ export async function createMobileAppointment(
   const endsAt = new Date(start.getTime() + Number(resource.durationMinutes) * 60_000).toISOString();
   const blockedStart = new Date(start.getTime() - Number(resource.bufferBeforeMinutes) * 60_000).toISOString();
   const blockedEnd = new Date(new Date(endsAt).getTime() + Number(resource.bufferAfterMinutes) * 60_000).toISOString();
-  const appointmentId = crypto.randomUUID();
-  const reference = `PL-${new Date().getUTCFullYear()}-${randomReference()}`;
   const requirements = await db.prepare(`SELECT id, name, instructions,
       is_required AS isRequired, updated_at AS updatedAt
     FROM document_requirements
@@ -584,61 +583,69 @@ export async function createMobileAppointment(
   const checklistVersionId = `chk_${(await sha256Hex(JSON.stringify(requirements.results))).slice(0, 24)}`;
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const conflict = resourceConflict({ blockedStart, blockedEnd, clergyId, venueId, parishId });
-  const statements = [db.prepare(`INSERT INTO appointments
-    (id, reference, parishioner_user_id, parishioner_name, service_type_id, checklist_version_id, parish_id,
-      clergy_id, clergy_name, venue_id, venue_name, starts_at, ends_at, status,
-      buffer_before_minutes, buffer_after_minutes)
-    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'submitted', ?, ?
-    WHERE NOT ${conflict.sql}`)
-    .bind(
-      appointmentId, reference, actor.id, actor.displayName, serviceTypeId, checklistVersionId, parishId,
-      clergyId, resource.clergyName, venueId, resource.venueName, startsAt, endsAt,
-      Number(resource.bufferBeforeMinutes), Number(resource.bufferAfterMinutes),
-      ...conflict.values,
-    ),
-    ...participants.map((participant) => db.prepare(`INSERT INTO appointment_participants
-      (id, appointment_id, participant_type, full_name, date_of_birth, notes)
-      SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM appointments WHERE id = ?)`)
-      .bind(crypto.randomUUID(), appointmentId, participant.type, participant.fullName,
-        participant.dateOfBirth, participant.notes, appointmentId)),
-    ...requirements.results.map((requirement) => db.prepare(`INSERT INTO document_submissions
-      (id, appointment_id, requirement_id, requirement_name, requirement_instructions,
-        is_required, checklist_version_id, status)
-      SELECT ?, ?, ?, ?, ?, ?, ?, 'not_submitted'
-      WHERE EXISTS (SELECT 1 FROM appointments WHERE id = ?)`)
-      .bind(crypto.randomUUID(), appointmentId, requirement.id, requirement.name, requirement.instructions,
-        requirement.isRequired, checklistVersionId, appointmentId)),
-    db.prepare(`INSERT INTO appointment_events
-      (id, appointment_id, actor_id, event_type, to_status, detail)
-      SELECT ?, ?, ?, 'request_submitted', 'submitted', 'Submitted by parishioner mobile app'
-      WHERE EXISTS (SELECT 1 FROM appointments WHERE id = ?)`)
-      .bind(crypto.randomUUID(), appointmentId, actor.id, appointmentId),
-    db.prepare(`INSERT INTO notifications
-      (id, recipient_user_id, type, title, body, entity_type, entity_id)
-      SELECT ?, ?, 'appointment', 'Request submitted', ?, 'appointment', ?
-      WHERE EXISTS (SELECT 1 FROM appointments WHERE id = ?)`)
-      .bind(crypto.randomUUID(), actor.id, `${reference} was submitted. This is not yet parish approval.`, appointmentId, appointmentId),
-    db.prepare(`INSERT INTO audit_logs
-      (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-      SELECT ?, ?, 'mobile.appointment.create', 'appointment', ?, ?, 'success', ?
-      WHERE EXISTS (SELECT 1 FROM appointments WHERE id = ?)`)
-      .bind(crypto.randomUUID(), actor.id, appointmentId, parishId, `${serviceTypeId}; ${startsAt}`, appointmentId),
-    db.prepare(`INSERT INTO idempotency_keys
-      (id, actor_id, scope, key_hash, request_hash, resource_id, response_status, expires_at)
-      SELECT ?, ?, 'mobile.appointment.create', ?, ?, ?, 201, ?
-      WHERE EXISTS (SELECT 1 FROM appointments WHERE id = ?)`)
-      .bind(crypto.randomUUID(), actor.id, keyHash, requestHash, appointmentId, expiresAt, appointmentId),
-  ];
 
-  let batchResults;
-  try {
-    batchResults = await db.batch(statements);
-  } catch (error) {
-    const racedReplay = await replayAppointment(actor, await findAppointmentIdempotency(actor, keyHash), requestHash);
-    if (racedReplay) return racedReplay;
-    throw error;
+  let appointmentId = '';
+  let batchResults: Awaited<ReturnType<typeof db.batch>> | undefined;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    appointmentId = crypto.randomUUID();
+    const reference = shortAppointmentReference();
+    const statements = [db.prepare(`INSERT INTO appointments
+      (id, reference, parishioner_user_id, parishioner_name, service_type_id, checklist_version_id, parish_id,
+        clergy_id, clergy_name, venue_id, venue_name, starts_at, ends_at, status,
+        buffer_before_minutes, buffer_after_minutes)
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'submitted', ?, ?
+      WHERE NOT ${conflict.sql}`)
+      .bind(
+        appointmentId, reference, actor.id, actor.displayName, serviceTypeId, checklistVersionId, parishId,
+        clergyId, resource.clergyName, venueId, resource.venueName, startsAt, endsAt,
+        Number(resource.bufferBeforeMinutes), Number(resource.bufferAfterMinutes),
+        ...conflict.values,
+      ),
+      ...participants.map((participant) => db.prepare(`INSERT INTO appointment_participants
+        (id, appointment_id, participant_type, full_name, date_of_birth, notes)
+        SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM appointments WHERE id = ?)`)
+        .bind(crypto.randomUUID(), appointmentId, participant.type, participant.fullName,
+          participant.dateOfBirth, participant.notes, appointmentId)),
+      ...requirements.results.map((requirement) => db.prepare(`INSERT INTO document_submissions
+        (id, appointment_id, requirement_id, requirement_name, requirement_instructions,
+          is_required, checklist_version_id, status)
+        SELECT ?, ?, ?, ?, ?, ?, ?, 'not_submitted'
+        WHERE EXISTS (SELECT 1 FROM appointments WHERE id = ?)`)
+        .bind(crypto.randomUUID(), appointmentId, requirement.id, requirement.name, requirement.instructions,
+          requirement.isRequired, checklistVersionId, appointmentId)),
+      db.prepare(`INSERT INTO appointment_events
+        (id, appointment_id, actor_id, event_type, to_status, detail)
+        SELECT ?, ?, ?, 'request_submitted', 'submitted', 'Submitted by parishioner mobile app'
+        WHERE EXISTS (SELECT 1 FROM appointments WHERE id = ?)`)
+        .bind(crypto.randomUUID(), appointmentId, actor.id, appointmentId),
+      db.prepare(`INSERT INTO notifications
+        (id, recipient_user_id, type, title, body, entity_type, entity_id)
+        SELECT ?, ?, 'appointment', 'Request submitted', ?, 'appointment', ?
+        WHERE EXISTS (SELECT 1 FROM appointments WHERE id = ?)`)
+        .bind(crypto.randomUUID(), actor.id, `${reference} was submitted. This is not yet parish approval.`, appointmentId, appointmentId),
+      db.prepare(`INSERT INTO audit_logs
+        (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+        SELECT ?, ?, 'mobile.appointment.create', 'appointment', ?, ?, 'success', ?
+        WHERE EXISTS (SELECT 1 FROM appointments WHERE id = ?)`)
+        .bind(crypto.randomUUID(), actor.id, appointmentId, parishId, `${serviceTypeId}; ${startsAt}`, appointmentId),
+      db.prepare(`INSERT INTO idempotency_keys
+        (id, actor_id, scope, key_hash, request_hash, resource_id, response_status, expires_at)
+        SELECT ?, ?, 'mobile.appointment.create', ?, ?, ?, 201, ?
+        WHERE EXISTS (SELECT 1 FROM appointments WHERE id = ?)`)
+        .bind(crypto.randomUUID(), actor.id, keyHash, requestHash, appointmentId, expiresAt, appointmentId),
+    ];
+
+    try {
+      batchResults = await db.batch(statements);
+      break;
+    } catch (error) {
+      const racedReplay = await replayAppointment(actor, await findAppointmentIdempotency(actor, keyHash), requestHash);
+      if (racedReplay) return racedReplay;
+      if (attempt < 2 && isUniqueConstraintError(error)) continue;
+      throw error;
+    }
   }
-  if (Number(batchResults[0]?.meta.changes ?? 0) !== 1) {
+  if (!batchResults || Number(batchResults[0]?.meta.changes ?? 0) !== 1) {
     const racedReplay = await replayAppointment(actor, await findAppointmentIdempotency(actor, keyHash), requestHash);
     if (racedReplay) return racedReplay;
     throw new MobileServiceError('That priest or venue is no longer available for the full service time. Choose another slot.', 409);
@@ -647,12 +654,6 @@ export async function createMobileAppointment(
   const result = appointments.find((appointment) => appointment.id === appointmentId);
   if (!result) throw new MobileServiceError('The appointment was safely submitted. Refresh your appointments to view it.', 503);
   return result;
-}
-
-function randomReference(): string {
-  const bytes = new Uint8Array(8);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('').toUpperCase();
 }
 
 export async function markMobileNotificationRead(actor: MobileActor, notificationId: string): Promise<void> {
@@ -689,40 +690,43 @@ export async function joinMobileQueue(
   }
   const parish = await db.prepare('SELECT id FROM parishes WHERE id = ? AND is_active = 1').bind(parishId).first<{ id: string }>();
   if (!parish) throw new MobileServiceError('Choose a valid parish.');
-  const id = crypto.randomUUID();
-  const queueDate = new Date().toISOString().slice(0, 10).replaceAll('-', '');
-  const number = `Q-${queueDate}-${randomReference()}`;
-  const auditId = crypto.randomUUID();
-  let results;
-  try {
-    results = await db.batch([
-      db.prepare(`INSERT INTO queue_tickets
-        (id, ticket_number, parish_id, parishioner_user_id, parishioner_name, service)
-        SELECT ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (
-          SELECT 1 FROM queue_tickets WHERE parishioner_user_id = ? AND status IN ('waiting','serving')
-        )`).bind(id, number, parishId, actor.id, actor.displayName, service, actor.id),
-      db.prepare(`INSERT INTO audit_logs
-        (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-        SELECT ?, ?, 'mobile.queue.join', 'queue_ticket', ?, ?, 'success', ? WHERE changes() = 1`)
-        .bind(auditId, actor.id, id, parishId, service),
-      db.prepare(`INSERT INTO idempotency_keys
-        (id, actor_id, scope, key_hash, request_hash, resource_id, response_status, expires_at)
-        SELECT ?, ?, 'mobile.queue.join', ?, ?, ?, 201, ?
-        WHERE EXISTS (SELECT 1 FROM audit_logs WHERE id = ?)`)
-        .bind(crypto.randomUUID(), actor.id, keyHash, requestHash, id,
-          new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), auditId),
-    ]);
-  } catch (error) {
-    const raced = await db.prepare(`SELECT request_hash AS requestHash, resource_id AS resourceId
-      FROM idempotency_keys WHERE actor_id = ? AND scope = 'mobile.queue.join' AND key_hash = ?`)
-      .bind(actor.id, keyHash).first<IdempotencyRow>();
-    if (raced?.requestHash === requestHash) {
-      const replay = await activeQueueTicket(actor.id);
-      if (replay && replay.id === raced.resourceId) return replay;
+  let results: Awaited<ReturnType<typeof db.batch>> | undefined;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const id = crypto.randomUUID();
+    const number = await nextParishQueueTicketNumber(db, parishId);
+    const auditId = crypto.randomUUID();
+    try {
+      results = await db.batch([
+        db.prepare(`INSERT INTO queue_tickets
+          (id, ticket_number, parish_id, parishioner_user_id, parishioner_name, service)
+          SELECT ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (
+            SELECT 1 FROM queue_tickets WHERE parishioner_user_id = ? AND status IN ('waiting','serving')
+          )`).bind(id, number, parishId, actor.id, actor.displayName, service, actor.id),
+        db.prepare(`INSERT INTO audit_logs
+          (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+          SELECT ?, ?, 'mobile.queue.join', 'queue_ticket', ?, ?, 'success', ? WHERE changes() = 1`)
+          .bind(auditId, actor.id, id, parishId, service),
+        db.prepare(`INSERT INTO idempotency_keys
+          (id, actor_id, scope, key_hash, request_hash, resource_id, response_status, expires_at)
+          SELECT ?, ?, 'mobile.queue.join', ?, ?, ?, 201, ?
+          WHERE EXISTS (SELECT 1 FROM audit_logs WHERE id = ?)`)
+          .bind(crypto.randomUUID(), actor.id, keyHash, requestHash, id,
+            new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), auditId),
+      ]);
+      break;
+    } catch (error) {
+      const raced = await db.prepare(`SELECT request_hash AS requestHash, resource_id AS resourceId
+        FROM idempotency_keys WHERE actor_id = ? AND scope = 'mobile.queue.join' AND key_hash = ?`)
+        .bind(actor.id, keyHash).first<IdempotencyRow>();
+      if (raced?.requestHash === requestHash) {
+        const replay = await activeQueueTicket(actor.id);
+        if (replay && replay.id === raced.resourceId) return replay;
+      }
+      if (attempt < 3 && isUniqueConstraintError(error)) continue;
+      throw error;
     }
-    throw error;
   }
-  if (Number(results[0]?.meta.changes ?? 0) !== 1) {
+  if (!results || Number(results[0]?.meta.changes ?? 0) !== 1) {
     const raced = await db.prepare(`SELECT request_hash AS requestHash, resource_id AS resourceId
       FROM idempotency_keys WHERE actor_id = ? AND scope = 'mobile.queue.join' AND key_hash = ?`)
       .bind(actor.id, keyHash).first<IdempotencyRow>();
@@ -777,6 +781,7 @@ function redactAssistantText(value: string): string {
     .replace(/(?:\+?63|0)\s*9\d{2}[\s-]?\d{3}[\s-]?\d{4}/g, '[phone removed]')
     .replace(/\bPL-\d{4}-[A-Z0-9-]+\b/gi, '[request reference removed]')
     .replace(/\bQ-[A-Z0-9-]+\b/gi, '[queue number removed]')
+    .replace(/(?<!\d-)\b(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])-\d{3}\b(?!-\d)/g, '[queue number removed]')
     .replace(/\b\d{4}[ -]?\d{4}[ -]?\d{4,8}\b/g, '[number removed]')
     .slice(0, 500);
 }
@@ -1233,6 +1238,31 @@ function knownGeneralGuidance(prompt: string): AssistantReply | null {
       followUpPrompts: ['What documents do I need?'],
     };
   }
+  if (/\b(?:reschedule|rescheduling|cancel|cancellation|withdraw|postpone)\b/i.test(prompt)) {
+    return {
+      title: 'Rescheduling and cancellation',
+      text: 'Before parish approval, you can withdraw a submitted request directly from My Appointments. After a request is approved, cancellation requests and reschedule requests (for dates at least 24 hours ahead) are sent to authorized parish staff for review.',
+      category: 'change-policy',
+      escalation: false,
+      bullets: [
+        'Submitted / pending review: withdraw directly or request a new slot at least 24 hours ahead',
+        'Approved requests: submit a reschedule or cancellation request with your reason for staff review',
+        'Parish staff verify clergy and venue availability before confirming any schedule change',
+      ],
+      actions: [{ id: 'view-appointments', label: 'My appointments', kind: 'appointment' }],
+      followUpPrompts: ['What is the status of my latest request?', 'How does document verification work?'],
+    };
+  }
+  if (/\b(?:announcement|announcements|bulletin|notice|notices)\b/i.test(prompt)) {
+    return {
+      title: 'Parish and Vicariate announcements',
+      text: 'Published parish and Vicariate announcements appear on the mobile Home screen and under More -> Announcements. Contact your selected parish office directly to confirm urgent schedule adjustments.',
+      category: 'announcements',
+      escalation: false,
+      actions: [{ id: 'go-home', label: 'Open home screen', kind: 'home' }],
+      followUpPrompts: ['How do notifications work?', 'What services are available?'],
+    };
+  }
   if (/\b(?:notification|notifications|alert|alerts)\b/i.test(prompt)) {
     return {
       title: 'ParishLink notifications',
@@ -1300,28 +1330,33 @@ async function publicAssistantKnowledge(): Promise<PublicKnowledgeSource[]> {
   // Select public fields explicitly. Never reuse snapshot/profile/record queries.
   const db = getRawDb();
   const [services, parishes] = await Promise.all([
-    db.prepare('SELECT name, description FROM service_types WHERE is_active = 1 ORDER BY name LIMIT 10')
-      .all<{ name: string; description: string | null }>(),
-    db.prepare('SELECT name, address, office_hours AS officeHours FROM parishes WHERE is_active = 1 ORDER BY name LIMIT 12')
-      .all<{ name: string; address: string | null; officeHours: string | null }>(),
+    db.prepare('SELECT name, description, duration_minutes AS durationMinutes FROM service_types WHERE is_active = 1 ORDER BY name LIMIT 10')
+      .all<{ name: string; description: string | null; durationMinutes?: number | null }>(),
+    db.prepare('SELECT name, address, office_hours AS officeHours, contact_phone AS contactPhone, contact_email AS contactEmail FROM parishes WHERE is_active = 1 ORDER BY name LIMIT 12')
+      .all<{ name: string; address: string | null; officeHours: string | null; contactPhone?: string | null; contactEmail?: string | null }>(),
   ]);
   return [
     {
       id: 'services',
       content: JSON.stringify(services.results.map(service => ({
-        name: service.name.slice(0, 100), description: service.description?.slice(0, 700) ?? 'No description published.',
+        name: service.name.slice(0, 100),
+        description: service.description?.slice(0, 700) ?? 'No description published.',
+        ...(typeof service.durationMinutes === 'number' ? { durationMinutes: service.durationMinutes } : {}),
       }))),
     },
     {
       id: 'directory',
       content: JSON.stringify(parishes.results.map(parish => ({
-        name: parish.name.slice(0, 150), address: parish.address?.slice(0, 200) ?? 'Not published.',
+        name: parish.name.slice(0, 150),
+        address: parish.address?.slice(0, 200) ?? 'Not published.',
         officeHours: parish.officeHours?.slice(0, 200) ?? 'Not published.',
+        ...(parish.contactPhone ? { contactPhone: parish.contactPhone.slice(0, 60) } : {}),
+        ...(parish.contactEmail ? { contactEmail: parish.contactEmail.slice(0, 120) } : {}),
       }))),
     },
     {
       id: 'navigation',
-      content: 'Parishioners use the mobile application. Services shows the current service information and exact document checklist. Start a request from Services, select available parish/clergy/venue/date/time, and submit for parish review. Submission does not mean approval. My Appointments shows the signed-in user their own request status and documents. Document upload is followed by authorized parish staff review; a replacement may be requested. Final approval and sacramental decisions belong to authorized parish staff/clergy. Walk-in Queue supports one active ticket; staff call and serve visitors; any wait estimate may change. Notifications contains in-app updates to requests and queue activity; external push availability depends on device permission and provider configuration. Profile manages account preferences. Staff and clergy use the separate internal portal with assigned parish/role access. The system supports administration and does not replace official Church archives or pastoral decisions. No payments, donations, live streaming or official eligibility judgments are available in the assistant. No fee schedule or guaranteed response time is published in this guidance.',
+      content: 'Parishioners use the mobile application across the Vicariate of Virgen De Los Remedios. Services shows the five supported sacramental services (Baptism, Wedding, Confirmation, First Communion, and Funeral Mass) and their current parish document checklists. Start a request from Services, select an available parish, priest, venue, date, and time (conflict-checked with preparation and cleanup buffers), and submit for parish review. Submission does not mean approval. My Appointments shows the signed-in user their own request status, reference code, timeline, and document uploads. Authorized parish staff verify uploaded documents and may request a replacement if an image or PDF is unclear or incomplete. Before parish approval, parishioners can withdraw a request directly in My Appointments; after approval, cancellation requests and reschedule requests (for slots at least 24 hours ahead) are reviewed by authorized parish staff. Published parish and Vicariate announcements appear on Home and under More -> Announcements, alongside upcoming appointment and document reminders. Walk-in Queue issues one active sequential daily ticket per visitor (format MMDD-NNN); parish staff call, serve, or mark tickets cancelled or no-show at the office counter, and wait estimates may change. Notifications contains in-app updates to requests, reminders, and queue activity; device push alerts depend on permission and configuration. Profile manages contact details and notification preferences. Staff, clergy, and administrators use the separate internal web portal with role-scoped parish access. ParishLink supports administrative coordination only and never replaces official Church archives, canonical judgments, or pastoral decisions. No payments, donations, livestreaming, fee schedules, or guaranteed turnaround times are offered in the assistant.',
     },
   ];
 }

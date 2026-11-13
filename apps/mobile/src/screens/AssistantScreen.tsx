@@ -13,7 +13,6 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Notice } from '../components/ui';
 import { ASSISTANT_DISCLAIMER, newAssistantMessage } from '../lib/assistant';
 import { colors, fonts, radii, shadow, spacing, type } from '../theme';
@@ -22,6 +21,12 @@ import type { AssistantAction, AssistantMessage } from '../types/domain';
 const DEFAULT_PROMPTS = [
   'What documents do I need?',
   'What is my next appointment step?',
+  'How does the walk-in queue work?',
+];
+
+const GEMINI_PROMPTS = [
+  'How does document verification work?',
+  'How do rescheduling and cancellation work?',
   'How does the walk-in queue work?',
 ];
 
@@ -73,13 +78,14 @@ export const AssistantScreen = ({
   const hasMounted = useRef(false);
   const active = useRef(true);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
-  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const latestAssistant = [...messages].reverse().find((message) => message.from === 'assistant');
-  const suggestedPrompts = useMemo(
-    () => latestAssistant?.followUpPrompts?.slice(0, 3) ?? DEFAULT_PROMPTS,
-    [latestAssistant],
-  );
+  const suggestedPrompts = useMemo(() => {
+    if (canUseGemini && allowExternalAI && messages.length <= 1) {
+      return [...GEMINI_PROMPTS, ...DEFAULT_PROMPTS.slice(0, 2)];
+    }
+    return latestAssistant?.followUpPrompts?.slice(0, 4) ?? DEFAULT_PROMPTS;
+  }, [allowExternalAI, canUseGemini, latestAssistant, messages.length]);
 
   useEffect(() => {
     if (!hasMounted.current) {
@@ -132,21 +138,24 @@ export const AssistantScreen = ({
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.introCard}>
-          <View style={styles.guideIcon}><Ionicons name="chatbubbles-outline" size={25} color={colors.goldSoft} /></View>
+          <View style={styles.guideIcon}><Ionicons name="sparkles-outline" size={25} color={colors.goldSoft} /></View>
           <View style={styles.flex}>
-            <Text style={styles.introEyebrow}>ParishLink guide</Text>
+            <Text style={styles.introEyebrow}>ParishLink AI Assistant</Text>
             <Text style={styles.introTitle}>Clear answers. Helpful next steps.</Text>
-            <Text style={styles.introBody}>Ask about a service, your own request, documents, or a parish-office visit.</Text>
+            <Text style={styles.introBody}>Ask about sacramental services, rescheduling, your own requests, documents, or a parish-office visit.</Text>
           </View>
         </View>
 
         <Notice title="Information, not approval" body={ASSISTANT_DISCLAIMER} tone="warning" icon="shield-checkmark-outline" />
         <View style={styles.introCard}>
           <View style={styles.flex}>
+            <View style={styles.consentHeader}>
+              <Text style={styles.introEyebrow}>{canUseGemini ? (allowExternalAI ? 'GEMINI ON' : 'LOCAL MODE') : 'DEMO MODE'}</Text>
+            </View>
             <Text style={styles.introTitle}>Use Gemini for general questions</Text>
             <Text style={styles.introBody}>{canUseGemini
-              ? 'When enabled, general questions may be sent to Google Gemini. Do not include names, contact details, IDs or private records. Official decisions remain with parish staff. Your private request and queue details stay within ParishLink.'
-              : 'This demonstration uses ParishLink guidance only. Gemini is available through the connected app after you choose to enable it.'}</Text>
+              ? 'When enabled, general public questions use Google Gemini grounded on ParishLink directory and service rules. Exact document checklists and your personal requests stay strictly inside ParishLink.'
+              : 'This demonstration uses ParishLink local guidance only. Connect to the live ParishLink backend to enable Google Gemini.'}</Text>
           </View>
           <Switch accessibilityLabel="Allow general questions to be sent to Google Gemini"
             value={canUseGemini && allowExternalAI} disabled={!canUseGemini || sending}
@@ -183,9 +192,11 @@ export const AssistantScreen = ({
                   accessibilityLiveRegion={user ? 'none' : 'polite'}
                   style={[styles.message, user ? styles.userMessage : styles.assistantMessage]}
                 >
-                  <Text style={[styles.messageAuthor, user && styles.userMessageAuthor]}>{user ? 'You' : message.provider === 'gemini' ? 'Gemini · general guidance' : 'ParishLink guidance'}</Text>
+                  <Text style={[styles.messageAuthor, user && styles.userMessageAuthor]}>{user ? 'You' : message.provider === 'gemini' ? 'Gemini AI · public guidance' : 'ParishLink · local guidance'}</Text>
                   {!user && message.fallbackReason && ['disabled', 'unavailable', 'invalid_response'].includes(message.fallbackReason)
-                    ? <Text style={styles.messageText}>Gemini is unavailable for this reply. Showing ParishLink guidance.</Text> : null}
+                    ? <Text style={styles.localPrivacyNote}>Gemini is unavailable for this reply. Showing ParishLink local guidance.</Text> : null}
+                  {!user && canUseGemini && allowExternalAI && message.provider === 'parishlink' && message.fallbackReason === 'private_or_sensitive'
+                    ? <Text style={styles.localPrivacyNote}>Answered locally inside ParishLink to protect personal request data or exact parish checklists.</Text> : null}
                   {message.title ? <Text style={[styles.messageTitle, user && styles.userMessageText]}>{message.title}</Text> : null}
                   <Text style={[styles.messageText, user && styles.userMessageText]}>{message.text}</Text>
 
@@ -272,7 +283,7 @@ export const AssistantScreen = ({
         </View>
       </ScrollView>
 
-      <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
+      <View style={styles.composer}>
         <View style={styles.composerField}>
           <TextInput
             accessibilityLabel="Ask ParishLink a question"
@@ -308,8 +319,10 @@ const styles = StyleSheet.create({
   introCard: { alignItems: 'center', backgroundColor: colors.leatherDark, borderColor: colors.gold, borderRadius: radii.lg, borderWidth: 1, flexDirection: 'row', gap: spacing.md, padding: spacing.lg, ...shadow },
   guideIcon: { alignItems: 'center', backgroundColor: colors.oxblood, borderColor: colors.gold, borderRadius: radii.md, borderWidth: 1, height: 52, justifyContent: 'center', width: 52 },
   introEyebrow: { color: colors.goldSoft, fontFamily: fonts.bodyBold, fontSize: 12, letterSpacing: 1, textTransform: 'uppercase' },
+  consentHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   introTitle: { color: colors.card, fontFamily: fonts.displayBold, fontSize: 25, lineHeight: 29, marginTop: 2 },
   introBody: { color: colors.paperLight, fontFamily: fonts.body, fontSize: 14, lineHeight: 21, marginTop: 4 },
+  localPrivacyNote: { color: colors.inkSoft, fontFamily: fonts.bodyMedium, fontSize: 12, lineHeight: 18 },
   promptSection: { gap: spacing.xs },
   promptLabel: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 14 },
   promptRow: { gap: spacing.xs, paddingRight: spacing.md },

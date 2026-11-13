@@ -166,7 +166,7 @@ async function run() {
       if (statement && !/^PRAGMA foreign_keys/i.test(statement)) await bounded(db.prepare(statement).run(), 'Apply isolated migration');
     }
   }
-  check('All six append-only migrations execute on actual workerd D1', migrations.length === 6);
+  check('All eight append-only migrations execute on actual workerd D1', migrations.length === 8);
   await bounded(db.prepare("INSERT INTO parishes(id,slug,name)VALUES('probe-parish','probe-parish','Synthetic Worker Parish')").run(), 'Seed synthetic parish');
   const accounts = new Map();
   async function signup(name) {

@@ -112,4 +112,16 @@ describe('bounded parish guidance', () => {
     expect(reply.text).toContain('emergency services');
     expect(reply.escalation).toBe(true);
   });
+
+  it('explains rescheduling, cancellation, and parish announcements locally', () => {
+    const changeReply = getDemoGuidance('How do rescheduling and cancellation work?');
+    expect(changeReply.title).toBe('Rescheduling and cancellation');
+    expect(changeReply.text).toContain('24 hours ahead');
+    expect(changeReply.escalation).toBe(false);
+
+    const announcementReply = getDemoGuidance('Where can I see parish announcements?');
+    expect(announcementReply.title).toBe('Parish and Vicariate announcements');
+    expect(announcementReply.actions?.[0]).toMatchObject({ kind: 'home' });
+    expect(announcementReply.escalation).toBe(false);
+  });
 });

@@ -12,7 +12,7 @@ export interface GeminiAssistantConfiguration {
   model?: string;
 }
 
-export const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash';
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash-lite';
 
 /**
  * Configuration safety check, not proof of provider authentication. Google
@@ -40,56 +40,68 @@ export type GeminiFailureDiagnostic =
 // private query result, file or conversation history enters the provider context.
 const PUBLIC_WORDS = new Set(`
   a about access accessible account accounts action actions active activity activities
-  add after again ahead alert alerts all allow allows also am an and android any app
-  application applications appointment appointments approval approvals approve approved are as
-  ask asking at available availability awaiting back background baptism baptize baptise
-  be before begin beginner being between book booking bookings both bring browser but by
-  can cancel cancellation cancelled cannot change changed changes changing check checking
-  checklist checklists choose choosing church churches clergy click close closed collect
-  common communion compare compared comparing complete completed completing completion
-  confirm confirmation confirmed confused confusing contact continue coordination could
-  create created creating current currently dashboard data date dates decision decisions
-  delay delayed delivered delivery denied depending describe description desktop detail
-  details differ difference differences different digital discover do does doing document
-  documents documentation down download draft drafts duplicate duplicates during each
-  easy edit email enable enabled end enter entry error errors estimate estimated estimates
-  event events every example explain explanation expired expires expiry fail failed
-  failing failure feedback few file files final finally find first follow following
-  for forgot form forms free from funeral general get getting give go good granted
-  guide guidance happen happens has have having hello help helps here hey hi home how human i
-  if important in incomplete information inquiry inquiries instead instructions internal
-  internet into ios is it its just keep know latest learn leave left like link list
-  listed live load loading local location log logged logging login logout lost
-  make making manage management many marriage mass may mean meaning means message
-  messages might missing mobile more most move much need needed needs never new next
-  no not notice notices notification notifications now of office offices official
-  offline on once one online only open operation operations or order other otherwise
-  our out over page pages parish parishes parishioner parishioners parishlink password pending
-  people permission permissions person phone platform please portal prepare preparing
-  previous priest priests privacy private process processing profile progress provide
-  public push queue queues ready real receive received receiving record records refresh
-  register registered registration rejected rejection related reliable reload reminder
-  reminders remote remove replacement replace report reports request requested requests
-  required requirement requirements reset respond response restart result results retry
-  return review reviewed reviewer reviewing role roles rules same save saved saves
-  saving schedule scheduled scheduling screen screens search secure security see select
-  selection send sending sent sequence service services session sessions set setting
-  settings should show showing shown sign signin signed signout signup simple simply slow
-  so some someone staff stage stages start started state status step steps still
-  stop storage store stored submit submitted submitting submission submissions success
-  successful support supported system tablet take taking tell than thank thanks that
-  the their them then there these they thing things this through ticket tickets time
-  times to together too track tracking try two type types understand understanding
-  unread until up update updated updates upload uploaded uploading use used user
-  users using usual usually valid validation venue venues verification verified verify
-  verifying version view visit visits wait waiting walk walkin want wants was way ways
-  web website wedding welcome were what when where which while who why will with
-  without work working works would wrong yes yet you your
+  add advance after again ahead alert alerts all allow allows also am an and android
+  announcement announcements any app application applications appointment appointments
+  approval approvals approve approved archdiocese are as ask asking at available
+  availability awaiting back background banns baptism baptize baptise be before begin
+  beginner being between book booking bookings both bride bring browser buffer buffers
+  bulletin bulletins burial but by can cancel cancellation cancelled cannot catechism
+  cathedral certificate certificates change changed changes changing check checking
+  checklist checklists choose choosing christening church churches clergy click close
+  closed collect common communion compare compared comparing complete completed
+  completing completion confirm confirmation confirmed confused confusing contact
+  continue coordinator coordinators coordination copies copy could counter counters
+  create created creating current currently dashboard data date dates day days decision
+  decisions delay delayed delivered delivery denied depending describe description
+  desktop detail details differ difference differences different digital directory
+  discover do does doing document documents documentation down download draft drafts
+  duplicate duplicates duration during each easy edit eight email enable enabled end
+  endorsement enter entry error errors estimate estimated estimates event events every
+  example explain explanation expired expires expiry fail failed failing failure
+  feedback few fifo file files final finally find first five follow following for
+  forgot form forms four free from funeral general get getting give go godparent
+  godparents good granted groom guide guidance happen happens has have having hello
+  help helps here hey hi home hour hours how human i if important in incomplete
+  information inquiry inquiries instead instructions internal internet into ios is it
+  its just keep know latest learn leave left like link list listed live load loading
+  local location log logged logging login logout lost make making mandatory manage
+  management many marriage mass matrimony may mean meaning means message messages
+  might minute minutes missing mobile month months more most move much need needed
+  needs never new next no not notice notices notification notifications now of office
+  offices official offline on once one online only open operation operations optional
+  or order original originals other otherwise our out over overview page pages pampanga
+  parish parishes parishioner parishioners parishlink password pending people
+  permission permissions person phone photo photos platform please policies policy
+  portal postpone postponed preparation prepare preparing precana previous priest
+  priests print printable printed priorities priority privacy private process
+  processing profile progress provide public purpose purposes push queue queues ready
+  real receive received receiving record records refresh register registered
+  registration rejected rejection related reliable reload reminder reminders remote
+  remove replacement replace report reports request requested requests required
+  requirement requirements reschedule rescheduled reschedules rescheduling reset
+  respond response restart result results retry return review reviewed reviewer
+  reviewing rite rites role roles rule rules sacrament sacramental sacraments same
+  save saved saves saving scan scanned schedule scheduled schedules scheduling screen
+  screens search secure security see select selection seminar seminars send sending
+  sent sequence service services session sessions set setting settings seven should
+  show showing shown shrine sign signin signed signout signup simple simply six slip
+  slips slot slots slow so some someone sponsor sponsors staff stage stages start
+  started state status step steps still stop storage store stored submit submitted
+  submitting submission submissions success successful support supported system tablet
+  take taking tell than thank thanks that the their them then there these they thing
+  things this three through ticket tickets time times to today together tomorrow too
+  track tracking try turnaround two type types understand understanding unread until
+  up update updated updates upload uploaded uploading use used user users using usual
+  usually valid validation venue venues verification verified verify verifying version
+  vicariate view visit visitor visitors visits wait waiting walk walkin want wants was
+  way ways web website wedding week weekday weekdays weekend weekends weeks welcome
+  were what when where which while who why will window windows with withdraw withdrawn
+  withdrawing without work working works would wrong yes yet you your
 `.trim().split(/\s+/));
 
 const PRIVATE_OR_UNSAFE = /\b(?:my|our|name|named|birthday|born|age|address|phone number|email address|reference|identifier|diagnos\w*|pregnan\w*|divorc\w*|annul\w*|adopt\w*|abuse|danger|emergency|suicid\w*|self[ -]?harm|eligible|eligibility|canon(?:ical)?|legal|financial|medical|counsel\w*|pastoral|password|credential\w*|secret\w*|token\w*)\b/i;
 const INJECTION = /\b(?:ignore|override|bypass|pretend|developer|system prompt|instruction|jailbreak|execute|script|roleplay|act as)\b/i;
-const PUBLIC_TOPIC = /\b(?:parish|parishes|parishioner|parishioners|parishlink|appointment|appointments|request|requests|booking|document|documents|checklist|checklists|queue|queues|ticket|tickets|notification|notifications|approval|verification|staff|clergy|priest|priests|baptism|wedding|confirmation|communion|funeral|service|services|app|application|portal|account|signup|login|status)\b/i;
+const PUBLIC_TOPIC = /\b(?:parish|parishes|parishioner|parishioners|parishlink|sacrament|sacraments|sacramental|appointment|appointments|request|requests|booking|schedule|schedules|reschedule|rescheduling|cancel|cancellation|document|documents|checklist|checklists|certificate|certificates|seminar|seminars|queue|queues|ticket|tickets|notification|notifications|reminder|reminders|announcement|announcements|directory|approval|verification|staff|clergy|priest|priests|baptism|wedding|matrimony|confirmation|communion|funeral|service|services|app|application|portal|account|signup|login|status)\b/i;
 
 export function publicGeminiEligibility(
   prompt: string,
@@ -211,7 +223,7 @@ export async function generatePublicAssistantReply(
           contents: [{ role: 'user', parts: [{ text: JSON.stringify({ publicQuestion: publicQuestion(prompt), approvedPublicSources: sources }) }] }],
           generationConfig: {
             temperature: 1, maxOutputTokens: 1_024, responseMimeType: 'application/json',
-            ...(/^gemini-3\.5-flash(?:-lite)?$/.test(model) ? { thinkingConfig: { thinkingLevel: 'MINIMAL' } }
+            ...(/^gemini-3\.[15]-flash(?:-lite)?$/.test(model) ? { thinkingConfig: { thinkingLevel: 'MINIMAL' } }
               : /^gemini-3(?:\.[0-9]+)?-/.test(model) ? { thinkingConfig: { thinkingLevel: 'LOW' } } : {}),
             // Keep the compatible provider schema small. parseReply independently
             // enforces text/source bounds, exact fields and authority safeguards.

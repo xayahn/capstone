@@ -98,7 +98,7 @@ const serviceIcons: Record<SacramentId, keyof typeof Ionicons.glyphMap> = {
   funeral: 'flame-outline',
 };
 
-const mainRoutes = new Set<Route>(['home', 'services', 'appointments', 'more']);
+const mainRoutes = new Set<Route>(['home', 'services', 'appointments', 'assistant', 'more']);
 
 const backRoute: Record<Route, Route> = {
   home: 'home',
@@ -111,7 +111,7 @@ const backRoute: Record<Route, Route> = {
   announcements: 'more',
   parishes: 'more',
   queue: 'more',
-  assistant: 'more',
+  assistant: 'home',
   profile: 'more',
 };
 
@@ -249,7 +249,7 @@ const AppContent = () => {
     announcements: 'Announcements',
     parishes: 'Parishes & office hours',
     queue: 'Walk-in queue',
-    assistant: 'Parish guide',
+    assistant: 'AI Assistant',
     profile: 'Profile & settings',
   };
 
@@ -258,7 +258,7 @@ const AppContent = () => {
       <StatusBar style="light" />
       <AppHeader
         title={titleByRoute[route]}
-        isRoot={mainRoutes.has(route) && routeHistory.at(-1) !== 'assistant'}
+        isRoot={mainRoutes.has(route) && (route === 'assistant' || routeHistory.at(-1) !== 'assistant')}
         unreadCount={snapshot.notifications.filter((item) => !item.readAt).length}
         onBack={goBack}
         onNotifications={() => navigate('notifications')}
@@ -705,7 +705,7 @@ const HomeScreen = ({
         <QuickAction icon="water-outline" label="Baptism" onPress={() => onBook('baptism')} />
         <QuickAction icon="heart-outline" label="Wedding" onPress={() => onBook('wedding')} />
         <QuickAction icon="people-outline" label="Walk-in queue" onPress={onQueue} />
-        <QuickAction icon="chatbubbles-outline" label="Ask ParishLink" onPress={onAssistant} />
+        <QuickAction icon="sparkles-outline" label="AI Assistant" onPress={onAssistant} />
         <QuickAction icon="megaphone-outline" label="Announcements" onPress={onAnnouncements} />
         <QuickAction icon="business-outline" label="Parishes & hours" onPress={onParishes} />
       </View>
@@ -1286,7 +1286,7 @@ const MoreScreen = ({ snapshot, mode, onNavigate }: { snapshot: RepositorySnapsh
     <MoreLink icon="megaphone-outline" title="Announcements" body={`${(snapshot.announcements ?? []).length} published parish & Vicariate notices`} onPress={() => onNavigate('announcements')} />
     <MoreLink icon="business-outline" title="Parishes & office hours" body="Eight parishes, clergy directory, and published contact info" onPress={() => onNavigate('parishes')} />
     <MoreLink icon="people-outline" title="Walk-in queue" body={snapshot.activeQueueTicket ? `Active ticket ${snapshot.activeQueueTicket.number}` : 'Request a parish office ticket'} onPress={() => onNavigate('queue')} />
-    <MoreLink icon="chatbubbles-outline" title="Parish guide" body="General guidance with a staff handoff boundary" onPress={() => onNavigate('assistant')} />
+    <MoreLink icon="sparkles-outline" title="AI Assistant & guide" body="Gemini-powered public guidance and local request help" onPress={() => onNavigate('assistant')} />
     <MoreLink icon="person-circle-outline" title="Profile & settings" body="Contact details, home parish, and preferences" onPress={() => onNavigate('profile')} />
     <Notice title="Parishioner-only mobile app" body="Staff, clergy, and system-administration functions belong in the protected admin website, not this mobile interface." tone="info" icon="lock-closed-outline" />
   </Screen>
@@ -1379,6 +1379,7 @@ const BottomNavigation = ({ active, onNavigate }: { active: Route; onNavigate: (
       <NavItem icon="home-outline" activeIcon="home" label="Home" active={active === 'home'} onPress={() => onNavigate('home')} />
       <NavItem icon="grid-outline" activeIcon="grid" label="Services" active={active === 'services'} onPress={() => onNavigate('services')} />
       <NavItem icon="calendar-outline" activeIcon="calendar" label="Appointments" active={active === 'appointments'} onPress={() => onNavigate('appointments')} />
+      <NavItem icon="sparkles-outline" activeIcon="sparkles" label="Assistant" active={active === 'assistant'} onPress={() => onNavigate('assistant')} />
       <NavItem icon="ellipsis-horizontal-circle-outline" activeIcon="ellipsis-horizontal-circle" label="More" active={active === 'more'} onPress={() => onNavigate('more')} />
     </View>
   </SafeAreaView>

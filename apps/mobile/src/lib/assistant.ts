@@ -167,6 +167,30 @@ export const getDemoGuidance = (prompt: string, snapshot?: RepositorySnapshot): 
     };
   }
 
+  if (/reschedule|rescheduling|cancel|cancellation|withdraw|postpone/i.test(question)) {
+    return {
+      title: 'Rescheduling and cancellation',
+      text: 'Before parish approval, you can withdraw a submitted request directly in My Appointments. Once a request is approved, cancellation requests and reschedule requests (for dates at least 24 hours ahead) are reviewed by authorized parish staff.',
+      escalation: false,
+      bullets: [
+        'Submitted requests: withdraw directly or request a new slot at least 24 hours ahead',
+        'Approved requests: submit a reschedule or cancellation request with your reason for staff review',
+      ],
+      actions: [{ id: 'open-appointments', label: 'My appointments', kind: 'appointment' }],
+      followUpPrompts: ['What is my next appointment step?', 'How does document verification work?'],
+    };
+  }
+
+  if (/announcement|announcements|bulletin|notice|notices/i.test(question)) {
+    return {
+      title: 'Parish and Vicariate announcements',
+      text: 'Published parish and Vicariate notices appear on the Home screen and under More -> Announcements. Contact your parish office to confirm urgent schedule adjustments.',
+      escalation: false,
+      actions: [{ id: 'go-home', label: 'Open home screen', kind: 'home' }],
+      followUpPrompts: ['How does the walk-in queue work?', 'What documents do I need?'],
+    };
+  }
+
   if (/schedule|appointment|book|available|time/i.test(question)) {
     return {
       title: service ? `Request ${service.name}` : 'Request an appointment',

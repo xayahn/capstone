@@ -61,11 +61,11 @@ describe('consented, bounded Gemini public guidance', () => {
   it('uses the shared default when no model is configured', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response());
     const configuration = { ...config, model: undefined };
-    expect(DEFAULT_GEMINI_MODEL).toBe('gemini-3.5-flash');
+    expect(DEFAULT_GEMINI_MODEL).toBe('gemini-3.5-flash-lite');
     expect(publicGeminiEligibility(question, true, configuration)).toBeNull();
     expect((await generatePublicAssistantReply(question, true, sources, configuration, fetch)).provider).toBe('gemini');
     expect(fetch.mock.calls[0][0]).toBe(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent',
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent',
     );
     expect(JSON.parse(fetch.mock.calls[0][1]?.body as string).generationConfig.thinkingConfig)
       .toEqual({ thinkingLevel: 'MINIMAL' });
@@ -274,5 +274,18 @@ describe('consented, bounded Gemini public guidance', () => {
     expect(await generatePublicAssistantReply(question, true, [{ id: 'navigation', content: 'x'.repeat(9_001) }], config, fetch))
       .toEqual({ provider: 'parishlink', fallbackReason: 'invalid_response' });
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'How do sacraments and rescheduling work in ParishLink?',
+    'How do rescheduling and cancellation work?',
+    'Where can parishioners view parish announcements?',
+    'How does document verification work?',
+    'How does the walk-in queue work?',
+  ])('allows public ParishLink guidance topic: %s', async (publicPrompt) => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(validReply));
+    const result = await generatePublicAssistantReply(publicPrompt, true, sources, config, fetch);
+    expect(result.provider).toBe('gemini');
+    expect(fetch).toHaveBeenCalledOnce();
   });
 });

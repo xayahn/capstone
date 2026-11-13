@@ -23,6 +23,8 @@ import { canDecideChangeRequest, loadChangeRequests } from '@/backend/services/c
 import { generateDueReminders } from '@/backend/services/reminders';
 import { recordServerFailure } from '@/backend/observability/server-log';
 import { validCalendarDate } from '@/shared/validation';
+import { nextParishQueueTicketNumber } from '@/shared/identifiers';
+import { cancelQueueTicket, createWalkInAppointment } from '@/backend/services/walkin-service';
 import { scoped } from '@/backend/services/admin-scope';
 import { loadDashboardMetrics } from '@/backend/services/dashboard-metrics';
 import { AdminServiceError } from '@/backend/services/admin-error';
@@ -174,7 +176,7 @@ export async function loadDashboardState(actor: Actor): Promise<DashboardState> 
     FROM queue_tickets q JOIN parishes p ON p.id = q.parish_id
     WHERE ${actor.role === 'clergy' ? '0 = 1' : parishScope.sql}
       AND status IN ('waiting','serving')
-    ORDER BY CASE status WHEN 'serving' THEN 0 ELSE 1 END, priority DESC, issued_at ASC`).bind(
+    ORDER BY CASE status WHEN 'serving' THEN 0 ELSE 1 END, priority DESC, issued_at ASC, ticket_number ASC`).bind(
       ...(actor.role === 'clergy' ? [] : parishScope.values),
     );
 
@@ -699,12 +701,12 @@ const ADMIN_QUEUE_SERVICES = new Set([
   'General inquiry',
 ]);
 
-function randomQueueNumber(): string {
-  const bytes = new Uint8Array(8);
-  crypto.getRandomValues(bytes);
-  const date = new Date().toISOString().slice(0, 10).replaceAll('-', '');
-  const suffix = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('').toUpperCase();
-  return `Q-${date}-${suffix}`;
+async function nextQueueNumber(db: D1Database, parishId: string): Promise<string> {
+  return nextParishQueueTicketNumber(db, parishId);
+
+
+
+
 }
 
 async function issueQueueTicket(
@@ -728,7 +730,7 @@ async function issueQueueTicket(
     db.prepare(`INSERT INTO queue_tickets
       (id, ticket_number, parish_id, parishioner_name, service)
       VALUES (?, ?, ?, ?, ?)`)
-      .bind(id, randomQueueNumber(), mutation.parishId, parishionerName, service),
+      .bind(id, await nextQueueNumber(db, mutation.parishId), mutation.parishId, parishionerName, service),
     db.prepare(`INSERT INTO audit_logs
       (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
       SELECT ?, ?, 'queue.issue', 'queue_ticket', ?, ?, 'success', ? WHERE changes() = 1`)
@@ -758,7 +760,7 @@ async function callNext(
   if (active) throw new AdminServiceError(`${counter} already has an active ticket. Complete it before calling another.`, 409);
   const next = await db.prepare(`SELECT id, ticket_number AS number, parishioner_user_id AS parishionerUserId
     FROM queue_tickets WHERE parish_id = ? AND status = 'waiting'
-    ORDER BY priority DESC, issued_at ASC LIMIT 1`).bind(mutation.parishId).first<{
+    ORDER BY priority DESC, issued_at ASC, ticket_number ASC LIMIT 1`).bind(mutation.parishId).first<{
       id: string; number: string; parishionerUserId: string | null;
     }>();
   if (!next) throw new AdminServiceError('No waiting ticket is available for this parish.', 409);
@@ -1036,6 +1038,10 @@ export async function performAdminMutation(
       return completeQueueTicket(actor, mutation, idempotency);
     case 'queue.issue':
       return issueQueueTicket(actor, mutation, idempotency);
+    case 'queue.cancel':
+      return cancelQueueTicket(actor, mutation, idempotency);
+    case 'walkin.appointment.create':
+      return createWalkInAppointment(actor, mutation, idempotency);
     case 'announcement.publish':
       return publishAnnouncement(actor, mutation, idempotency);
     case 'record.create':

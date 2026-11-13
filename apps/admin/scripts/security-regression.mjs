@@ -446,6 +446,23 @@ try {
     const clean=await upload('scanned.pdf');
     record('matching clean scan accepted',clean.status,200,clean.status===200);
   } finally {if(previousEnvironment===undefined)delete process.env.NODE_ENV;else process.env.NODE_ENV=previousEnvironment;delete env.DOCUMENT_SCANNER;}
+  await mutate(staff,{action:'queue.issue',parishId:'p1',parishionerName:'Synthetic Queue Visitor',service:'General inquiry'});
+  const issuedTicket=sql.prepare("SELECT id,ticket_number AS number FROM queue_tickets WHERE parish_id='p1' AND status='waiting' ORDER BY issued_at DESC LIMIT 1").get();
+  record('front-desk ticket uses sequential MMDD-NNN format',issuedTicket?.number,'MMDD-NNN',/^\d{4}-\d{3}$/.test(issuedTicket?.number??''));
+  const clergyCancelQueue=await mutate(clergy,{action:'queue.cancel',ticketId:issuedTicket.id,status:'cancelled'});
+  record('clergy cannot cancel queue ticket',clergyCancelQueue.status,403,clergyCancelQueue.status===403);
+  const crossCancelQueue=await mutate(otherStaff,{action:'queue.cancel',ticketId:issuedTicket.id,status:'cancelled'});
+  record('cross-parish staff cannot cancel queue ticket',crossCancelQueue.status,403,crossCancelQueue.status===403);
+  const staffCancelQueue=await mutate(staff,{action:'queue.cancel',ticketId:issuedTicket.id,status:'cancelled'});
+  record('assigned parish staff can cancel queue ticket',staffCancelQueue.status,200,staffCancelQueue.status===200);
+  const walkInStart=new Date(Date.now()+14*86_400_000).toISOString();
+  const walkInPayload={action:'walkin.appointment.create',parishId:'p1',parishionerName:'Synthetic Walkin Visitor',contactPhone:'+639178889900',serviceTypeId:'baptism',clergyId:'c1',venueId:'v1',startsAt:walkInStart};
+  for(const denied of [admin,clergy,otherStaff]){
+    const res=await mutate(denied,walkInPayload);
+    record(denied.role+' ('+(denied.parishId??'all')+') cannot book walk-in appointment',res.status,403,res.status===403);
+  }
+  const staffWalkIn=await mutate(staff,walkInPayload);
+  record('assigned parish staff can book walk-in appointment',staffWalkIn.status,200,staffWalkIn.status===200);
   let readinessQueries=0, outage=true;
   const readinessDb={prepare(){return {async all(){readinessQueries++;if(outage)throw new Error('Synthetic transient outage');return {results:[]};}};}};
   const readinessModule={exports:{}};

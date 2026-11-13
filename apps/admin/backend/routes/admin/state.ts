@@ -76,6 +76,30 @@ function parseMutation(value: unknown): AdminMutation {
       };
     case 'queue.complete':
       return { action, ticketId: stringField(value.ticketId, 'Ticket', 100) as string };
+    case 'queue.cancel': {
+      const status = stringField(value.status, 'Queue status', 20);
+      if (status !== 'cancelled' && status !== 'no_show') {
+        throw new AdminServiceError('Choose cancelled or no-show for the queue ticket.');
+      }
+      return {
+        action,
+        ticketId: stringField(value.ticketId, 'Ticket', 100) as string,
+        status,
+      };
+    }
+    case 'walkin.appointment.create':
+      return {
+        action,
+        parishId: stringField(value.parishId, 'Parish', 100) as string,
+        ticketId: stringField(value.ticketId, 'Queue ticket', 100, false) ?? null,
+        parishionerName: stringField(value.parishionerName, 'Visitor name', 120) as string,
+        contactPhone: stringField(value.contactPhone, 'Contact phone', 30, false) ?? null,
+        participantName: stringField(value.participantName, 'Participant name', 160, false) ?? null,
+        serviceTypeId: stringField(value.serviceTypeId, 'Sacrament', 100) as string,
+        clergyId: stringField(value.clergyId, 'Priest', 100) as string,
+        venueId: stringField(value.venueId, 'Venue', 100) as string,
+        startsAt: stringField(value.startsAt, 'Appointment time', 40) as string,
+      };
     case 'queue.issue':
       return {
         action,

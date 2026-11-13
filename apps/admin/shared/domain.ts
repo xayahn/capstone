@@ -80,7 +80,7 @@ export type QueueTicket = {
   parish: string;
   service: string;
   parishioner: string;
-  status: 'waiting' | 'serving' | 'served' | 'cancelled';
+  status: 'waiting' | 'serving' | 'served' | 'cancelled' | 'no_show';
   priority: number;
   issuedAt: string;
   calledAt: string | null;
@@ -296,6 +296,19 @@ export type AdminMutation =
   | { action: 'document.review'; documentId: string; expectedSha256: string; status: 'verified' | 'needs_replacement'; note?: string }
   | { action: 'queue.call_next'; counter: string; parishId: string }
   | { action: 'queue.complete'; ticketId: string }
+  | { action: 'queue.cancel'; ticketId: string; status: 'cancelled' | 'no_show' }
+  | {
+      action: 'walkin.appointment.create';
+      parishId: string;
+      ticketId?: string | null;
+      parishionerName: string;
+      contactPhone?: string | null;
+      participantName?: string | null;
+      serviceTypeId: string;
+      clergyId: string;
+      venueId: string;
+      startsAt: string;
+    }
   | { action: 'queue.issue'; parishId: string; parishionerName: string; service: string }
   | { action: 'announcement.publish'; title: string; body: string; audience: 'all' | 'parish'; parishId?: string }
   | { action: 'record.create'; parishId: string; recordType: string; subjectName: string; eventDate: string; reference: string }

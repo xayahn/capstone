@@ -1,6 +1,7 @@
 'use client';
 
 import type { DashboardState } from '@/shared/domain';
+import { utcTimestamp } from '@/shared/validation';
 import { AppointmentTable, type ModuleId } from '@/frontend/components/modules/portal-shared';
 
 type Props = {
@@ -18,6 +19,11 @@ export function OverviewModule({
 }: Props) {
   const pendingAppointments = data.appointments.filter(
     (item) => !['approved', 'completed', 'cancelled', 'rejected', 'no_show'].includes(item.status),
+  );
+  const parsedGeneratedAt = Date.parse(data.generatedAt);
+  const referenceTime = Number.isFinite(parsedGeneratedAt) ? parsedGeneratedAt : 0;
+  const upcomingAppointments = pendingAppointments.filter(
+    (item) => new Date(utcTimestamp(item.startsAt)).getTime() >= referenceTime,
   );
   const appointmentTotal = Object.values(data.metrics.appointmentStatuses).reduce(
     (sum, count) => sum + (count ?? 0),
@@ -91,7 +97,7 @@ export function OverviewModule({
             </button>
           </div>
           <AppointmentTable
-            items={pendingAppointments.slice(0, 5)}
+            items={upcomingAppointments.slice(0, 5)}
             selectedId={selectedAppointmentId}
             onReview={onReviewAppointment}
           />

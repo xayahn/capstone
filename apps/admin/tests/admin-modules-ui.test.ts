@@ -88,7 +88,7 @@ beforeEach(() => {
         action: 'parish.profile.update',
         entityType: 'parish',
         entityId: 'san-guillermo',
-        parishId: 'san-guillermo',
+        parishId: 'metropolitan-cathedral',
         parish: 'San Guillermo Parish',
         actorName: 'Ana Fernandez',
         actorRole: 'system_admin',
@@ -237,5 +237,43 @@ describe('AdminPortal 10-module navigation, Reports, Audit log, and Settings', (
     await click(moduleName);
     expect(view()).toContain('We could not open the portal');
     expect(view()).not.toContain('Ana Fernandez');
+  });
+
+  it('filters past appointments out of Overview upcoming table, groups Document review, and operates Walk-in queue controls', async () => {
+    state.actor = {
+      id: 'user-staff-sanguillermo',
+      name: 'San Guillermo Clerk',
+      email: 'staff.sanguillermo@parishlink.test',
+      role: 'parish_staff',
+      parishId: 'san-guillermo',
+      parishName: 'San Guillermo Parish',
+      clergyProfileId: null,
+    };
+    state.appointments.push({
+      ...state.appointments[0]!,
+      id: 'appt-past',
+      reference: 'PL-2026-PAST01',
+      parishioner: 'Past Visitor',
+      startsAt: '2026-08-01T09:00:00+08:00',
+      endsAt: '2026-08-01T10:00:00+08:00',
+      status: 'submitted',
+    });
+    await mount();
+    expect(view()).toContain('Upcoming appointments');
+    expect(view()).not.toContain('PL-2026-PAST01');
+
+    await click('Document review');
+    expect(view()).toContain('Review status');
+    expect(view()).toContain('Checklist for');
+
+    await click('Walk-in queue');
+    expect(view()).toContain('Print slip');
+    expect(view()).toContain('Book appointment for visitor');
+
+    await click('Mark no-show');
+    expect(postedMutations.at(-1)).toMatchObject({
+      action: 'queue.cancel',
+      status: 'no_show',
+    });
   });
 });
