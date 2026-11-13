@@ -2,18 +2,24 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ComponentProps, ReactNode } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
+  useWindowDimensions,
   type PressableProps,
   type StyleProp,
+  type TextInputProps,
   type ViewStyle,
 } from 'react-native';
 import { colors, fonts, radii, shadow, spacing, type } from '../theme';
 import type { StatusTone } from '../lib/status';
 
-type IconName = ComponentProps<typeof Ionicons>['name'];
+export type IconName = ComponentProps<typeof Ionicons>['name'];
 
 export const BrandMark = ({ compact = false }: { compact?: boolean }) => (
   <View style={[styles.brandMark, compact && styles.brandMarkCompact]} accessible accessibilityLabel="ParishLink cross emblem">
@@ -181,7 +187,141 @@ export const IconTile = ({ name, color = colors.oxblood }: { name: IconName; col
 
 export const Divider = () => <View style={styles.divider} />;
 
+export const Field = ({ label, ...props }: TextInputProps & { label: string }) => (
+  <View style={styles.field}>
+    <Text style={styles.fieldLabel}>{label}</Text>
+    <TextInput accessibilityLabel={label} placeholderTextColor={colors.inkSoft} style={styles.input} {...props} />
+  </View>
+);
+
+export const Feature = ({ icon, title, body }: { icon: IconName; title: string; body: string }) => (
+  <View style={styles.feature}>
+    <IconTile name={icon} />
+    <View style={styles.flex}>
+      <Text style={styles.itemTitle}>{title}</Text>
+      <Text style={styles.mutedText}>{body}</Text>
+    </View>
+  </View>
+);
+
+export const QuickAction = ({ icon, label, onPress }: { icon: IconName; label: string; onPress: () => void }) => (
+  <Pressable
+    accessibilityRole="button"
+    accessibilityLabel={label}
+    onPress={onPress}
+    style={({ pressed }) => [styles.quickAction, pressed && styles.cardPressed]}
+  >
+    <IconTile name={icon} />
+    <Text style={styles.quickActionLabel}>{label}</Text>
+    <Ionicons name="arrow-forward" size={17} color={colors.oxblood} />
+  </Pressable>
+);
+
+export const MoreLink = ({ icon, title, body, onPress }: { icon: IconName; title: string; body: string; onPress: () => void }) => (
+  <Pressable
+    accessibilityRole="button"
+    accessibilityLabel={title}
+    onPress={onPress}
+    style={({ pressed }) => [styles.moreLink, pressed && styles.cardPressed]}
+  >
+    <IconTile name={icon} />
+    <View style={styles.flex}>
+      <Text style={styles.itemTitle}>{title}</Text>
+      <Text style={styles.mutedText}>{body}</Text>
+    </View>
+    <Ionicons name="chevron-forward" size={21} color={colors.oxblood} />
+  </Pressable>
+);
+
+export const InfoRow = ({ icon, text }: { icon: IconName; text: string }) => (
+  <View style={styles.infoRow}>
+    <Ionicons name={icon} size={17} color={colors.gold} />
+    <Text style={styles.infoText}>{text}</Text>
+  </View>
+);
+
+export const ReviewRow = ({ label, value }: { label: string; value: string }) => (
+  <View style={styles.reviewRow}>
+    <Text style={styles.reviewLabel}>{label}</Text>
+    <Text style={styles.reviewValue}>{value}</Text>
+  </View>
+);
+
+export const QueueStat = ({ value, label }: { value: string; label: string }) => (
+  <View style={styles.queueStat}>
+    <Text style={styles.queueStatValue}>{value}</Text>
+    <Text style={styles.queueStatLabel}>{label}</Text>
+  </View>
+);
+
+export const EmptyCard = ({ title, body }: { title: string; body: string }) => (
+  <Card style={styles.emptyCard}>
+    <Ionicons name="leaf-outline" size={28} color={colors.gold} />
+    <Text style={styles.itemTitle}>{title}</Text>
+    <Text style={styles.mutedCentered}>{body}</Text>
+  </Card>
+);
+
+export const EmptyState = ({
+  icon,
+  title,
+  body,
+  action,
+}: {
+  icon: IconName;
+  title: string;
+  body: string;
+  action: ReactNode;
+}) => (
+  <View style={styles.emptyState}>
+    <Ionicons name={icon} size={40} color={colors.gold} />
+    <Text style={type.title}>{title}</Text>
+    <Text style={styles.mutedCentered}>{body}</Text>
+    {action}
+  </View>
+);
+
+export const FormSection = ({ number, title, children }: { number: string; title: string; children: ReactNode }) => (
+  <Card>
+    <View style={styles.formHeading}>
+      <View style={styles.stepNumber}><Text style={styles.stepNumberText}>{number}</Text></View>
+      <Text style={styles.formTitle}>{title}</Text>
+    </View>
+    <Divider />
+    {children}
+  </Card>
+);
+
+export const LoadingScreen = ({ label }: { label: string }) => (
+  <View style={styles.loadingScreen}>
+    <BrandMark />
+    <ActivityIndicator size="large" color={colors.oxblood} />
+    <Text style={styles.mutedText}>{label}</Text>
+  </View>
+);
+
+export const Screen = ({ children, keyboard = false }: { children: ReactNode; keyboard?: boolean }) => {
+  const { width } = useWindowDimensions();
+  const content = (
+    <ScrollView
+      contentContainerStyle={[styles.screenScroll, width > 720 && styles.screenScrollWide]}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+    >
+      {children}
+    </ScrollView>
+  );
+  return keyboard ? (
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
+      {content}
+    </KeyboardAvoidingView>
+  ) : (
+    content
+  );
+};
+
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   brandMark: {
     alignItems: 'center',
     backgroundColor: colors.oxblood,
@@ -193,8 +333,6 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '45deg' }],
     width: 62,
   },
-  // A 32 px square occupies about 45 px after rotation, keeping it inside the
-  // header's 48 px side column without clipping the diamond corners.
   brandMarkCompact: { borderRadius: 10, borderWidth: 1.5, height: 32, width: 32 },
   brandCross: { transform: [{ rotate: '-45deg' }] },
   card: {
@@ -205,6 +343,7 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     ...shadow,
   },
+  cardPressed: { opacity: 0.7, transform: [{ scale: 0.995 }] },
   eyebrowLight: { color: colors.goldSoft },
   sectionTitleRow: {
     alignItems: 'center',
@@ -265,4 +404,70 @@ const styles = StyleSheet.create({
     width: 46,
   },
   divider: { backgroundColor: colors.line, height: StyleSheet.hairlineWidth, marginVertical: spacing.md },
+  field: { marginTop: spacing.sm },
+  fieldLabel: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 14, marginBottom: spacing.xs, marginTop: spacing.md },
+  input: {
+    backgroundColor: colors.cardStrong,
+    borderColor: colors.line,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    color: colors.ink,
+    fontFamily: fonts.body,
+    fontSize: 16,
+    minHeight: 50,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  feature: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
+  itemTitle: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 15, lineHeight: 22 },
+  mutedText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 14, lineHeight: 21 },
+  mutedCentered: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 14, lineHeight: 21, textAlign: 'center' },
+  quickAction: {
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderColor: colors.line,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 68,
+    padding: spacing.sm,
+    width: '48%',
+    ...shadow,
+  },
+  quickActionLabel: { color: colors.ink, flex: 1, fontFamily: fonts.bodyBold, fontSize: 14, lineHeight: 20 },
+  moreLink: {
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderBottomColor: colors.line,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: spacing.md,
+    minHeight: 74,
+    padding: spacing.md,
+  },
+  infoRow: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.xs },
+  infoText: { color: colors.inkSoft, flex: 1, fontFamily: fonts.body, fontSize: 14, lineHeight: 21 },
+  reviewRow: {
+    borderBottomColor: colors.line,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: spacing.md,
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+  },
+  reviewLabel: { color: colors.inkSoft, fontFamily: fonts.bodyMedium, fontSize: 13 },
+  reviewValue: { color: colors.ink, flex: 1, fontFamily: fonts.bodyBold, fontSize: 13, textAlign: 'right' },
+  queueStat: { alignItems: 'center', flex: 1 },
+  queueStatValue: { color: colors.oxblood, fontFamily: fonts.displayBold, fontSize: 31 },
+  queueStatLabel: { color: colors.inkSoft, fontFamily: fonts.bodyMedium, fontSize: 13 },
+  emptyCard: { alignItems: 'center', gap: spacing.xs },
+  emptyState: { alignItems: 'center', flex: 1, gap: spacing.md, justifyContent: 'center', padding: spacing.xl },
+  formHeading: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
+  stepNumber: { alignItems: 'center', backgroundColor: colors.oxblood, borderRadius: radii.pill, height: 30, justifyContent: 'center', width: 30 },
+  stepNumberText: { color: colors.card, fontFamily: fonts.bodyBold, fontSize: 12 },
+  formTitle: { color: colors.ink, fontFamily: fonts.displayBold, fontSize: 22 },
+  loadingScreen: { alignItems: 'center', backgroundColor: colors.paper, flex: 1, gap: spacing.lg, justifyContent: 'center' },
+  screenScroll: { gap: spacing.lg, padding: spacing.md, paddingBottom: 120 },
+  screenScrollWide: { alignSelf: 'center', maxWidth: 760, width: '100%' },
 });
