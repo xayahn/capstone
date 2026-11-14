@@ -11,6 +11,7 @@ import {
   StatusBadge,
 } from '../components/ui';
 import { PARISHES, QUEUE_SERVICES, getParish } from '../data/catalog';
+import { isQueueTicketAtCounter, queueStatusLabel, queueStatusTone } from '../lib/status';
 import { colors, fonts, radii, spacing } from '../theme';
 import type { ParishId, ParishionerProfile, QueueService, RepositorySnapshot } from '../types/domain';
 
@@ -32,6 +33,7 @@ export const QueueScreen = ({
   const [parishId, setParishId] = useState<ParishId>(profile.homeParishId);
   const [service, setService] = useState<QueueService>('General inquiry');
   const [confirmLeave, setConfirmLeave] = useState(false);
+  const atCounter = ticket ? isQueueTicketAtCounter(ticket.status) : false;
 
   return (
     <Screen>
@@ -42,38 +44,50 @@ export const QueueScreen = ({
         icon="people-outline"
       />
       {ticket ? (
-        <Card style={styles.ticketCard}>
-          <Eyebrow>Active ticket</Eyebrow>
-          <Text style={styles.ticketNumberLarge}>{ticket.number}</Text>
-          <Text style={styles.ticketParish}>{getParish(ticket.parishId)?.name}</Text>
-          <StatusBadge label={ticket.status === 'waiting' ? 'Waiting' : ticket.status} tone="warning" />
-          <View style={styles.queueStats}>
-            <QueueStat value={String(ticket.ahead)} label="people ahead" />
-            <View style={styles.verticalDivider} />
-            <QueueStat
-              value={ticket.estimatedWaitMinutes === null ? '—' : `~${ticket.estimatedWaitMinutes}`}
-              label={ticket.estimatedWaitMinutes === null ? 'estimate pending' : 'minutes'}
+        <>
+          {atCounter ? (
+            <Notice
+              title="Please proceed to the parish window"
+              body="Parish staff have called your ticket number. Present this screen at the parish office counter."
+              tone="positive"
+              icon="megaphone-outline"
             />
-          </View>
-          <Text style={styles.mutedCentered}>
-            For: {ticket.service}. Keep this screen available and follow parish staff instructions.
-          </Text>
-          <AppButton label="Leave queue" variant="danger" loading={loading} onPress={() => setConfirmLeave(true)} />
-          {confirmLeave ? (
-            <View accessibilityRole="alert">
-              <Text style={styles.mutedCentered}>Leave this queue? Your ticket will be released.</Text>
-              <AppButton label="Keep my ticket" variant="secondary" onPress={() => setConfirmLeave(false)} />
-              <AppButton
-                label="Confirm leave queue"
-                variant="danger"
-                loading={loading}
-                onPress={() => {
-                  void onLeave().then(() => setConfirmLeave(false)).catch(() => undefined);
-                }}
+          ) : null}
+          <Card style={styles.ticketCard}>
+            <Eyebrow>{atCounter ? 'Called to counter' : 'Active ticket'}</Eyebrow>
+            <Text style={styles.ticketNumberLarge}>{ticket.number}</Text>
+            <Text style={styles.ticketParish}>{getParish(ticket.parishId)?.name}</Text>
+            <StatusBadge label={queueStatusLabel[ticket.status]} tone={queueStatusTone[ticket.status]} />
+            <View style={styles.queueStats}>
+              <QueueStat value={String(ticket.ahead)} label="people ahead" />
+              <View style={styles.verticalDivider} />
+              <QueueStat
+                value={ticket.estimatedWaitMinutes === null ? '—' : `~${ticket.estimatedWaitMinutes}`}
+                label={ticket.estimatedWaitMinutes === null ? 'estimate pending' : 'minutes'}
               />
             </View>
-          ) : null}
-        </Card>
+            <Text style={styles.mutedCentered}>
+              {atCounter
+                ? `For: ${ticket.service}. Show ticket ${ticket.number} to the staff member at the counter.`
+                : `For: ${ticket.service}. Keep this screen available and follow parish staff instructions.`}
+            </Text>
+            <AppButton label="Leave queue" variant="danger" loading={loading} onPress={() => setConfirmLeave(true)} />
+            {confirmLeave ? (
+              <View accessibilityRole="alert">
+                <Text style={styles.mutedCentered}>Leave this queue? Your ticket will be released.</Text>
+                <AppButton label="Keep my ticket" variant="secondary" onPress={() => setConfirmLeave(false)} />
+                <AppButton
+                  label="Confirm leave queue"
+                  variant="danger"
+                  loading={loading}
+                  onPress={() => {
+                    void onLeave().then(() => setConfirmLeave(false)).catch(() => undefined);
+                  }}
+                />
+              </View>
+            ) : null}
+          </Card>
+        </>
       ) : (
         <Card>
           <Eyebrow>Request one ticket</Eyebrow>
@@ -114,7 +128,7 @@ export const QueueScreen = ({
 
 const styles = StyleSheet.create({
   ticketCard: { alignItems: 'center', gap: spacing.md },
-  ticketNumberLarge: { color: colors.oxblood, fontFamily: fonts.displayBold, fontSize: 24, lineHeight: 32, textAlign: 'center', flexShrink: 1, maxWidth: '100%' },
+  ticketNumberLarge: { color: colors.oxblood, fontFamily: fonts.displayBold, fontSize: 38, lineHeight: 44, textAlign: 'center', flexShrink: 1, maxWidth: '100%' },
   ticketParish: { color: colors.ink, fontFamily: fonts.display, fontSize: 22, textAlign: 'center' },
   queueStats: { alignItems: 'center', backgroundColor: colors.paperLight, borderRadius: radii.md, flexDirection: 'row', padding: spacing.md, width: '100%' },
   verticalDivider: { backgroundColor: colors.line, height: 46, width: 1 },

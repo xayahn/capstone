@@ -1,6 +1,6 @@
-import * as DocumentPicker from 'expo-document-picker';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { DocumentAttachmentControls } from '../components/DocumentAttachmentControls';
 import {
   AppButton,
   ChoiceChip,
@@ -12,22 +12,31 @@ import {
   StatusBadge,
 } from '../components/ui';
 import { PARISHES, SACRAMENT_SERVICES, getParish, getService } from '../data/catalog';
-import { formatDate, getBookableDates } from '../lib/scheduling';
+import {
+  formatBirthDateInput,
+  formatDate,
+  getBookableDates,
+  getParticipantFields,
+  validateBirthDate,
+} from '../lib/scheduling';
 import { colors, fonts, spacing } from '../theme';
 import type {
   AppointmentDocument,
+  AppointmentParticipant,
   AvailabilitySearchInput,
   AvailabilitySlot,
   CreateAppointmentInput,
   ParishId,
   ParishionerProfile,
   SacramentId,
+  UploadAppointmentDocumentInput,
 } from '../types/domain';
 
 export interface BookingScreenProps {
   initialServiceId: SacramentId;
   profile: ParishionerProfile;
   loading: boolean;
+  catalogVersion?: number;
   onSearchAvailability: (input: AvailabilitySearchInput) => Promise<AvailabilitySlot[]>;
   onCancel: () => void;
   onSubmit: (input: CreateAppointmentInput) => Promise<void>;
@@ -52,6 +61,7 @@ export const BookingScreen = ({
   initialServiceId,
   profile,
   loading,
+  catalogVersion: _catalogVersion,
   onSearchAvailability,
   onCancel,
   onSubmit,
@@ -68,6 +78,8 @@ export const BookingScreen = ({
   const [documents, setDocuments] = useState<AppointmentDocument[]>(() => makeChecklist(initialServiceId));
   const [participantName, setParticipantName] = useState(profile.displayName);
   const [participantDateOfBirth, setParticipantDateOfBirth] = useState('');
+  const [partnerName, setPartnerName] = useState('');
+  const [partnerDateOfBirth, setPartnerDateOfBirth] = useState('');
   const [localError, setLocalError] = useState('');
   const [availabilityError, setAvailabilityError] = useState('');
   const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
@@ -75,15 +87,31 @@ export const BookingScreen = ({
 
   const service = getService(serviceId)!;
   const parish = getParish(parishId);
+  const participantFields = getParticipantFields(serviceId);
   const dates = useMemo(() => getBookableDates(new Date(), 10), []);
   const requiredComplete = documents
     .filter((document) => document.required)
     .every((document) => ['selected', 'submitted', 'under_review', 'verified'].includes(document.status));
-  const participantDateValid = !participantDateOfBirth || /^\d{4}-\d{2}-\d{2}$/.test(participantDateOfBirth);
+
+  const primaryBirthError = validateBirthDate(participantDateOfBirth);
+  const secondaryBirthError = participantFields.secondaryType
+    ? validateBirthDate(partnerDateOfBirth)
+    : null;
+  const secondaryValid =
+    !participantFields.secondaryType ||
+    (partnerName.trim().length >= 2 && secondaryBirthError === null);
+
   const complete = Boolean(
-    serviceId && parish && clergyId && date && time
-    && slots.some((slot) => slot.time === time && slot.available)
-    && participantName.trim().length >= 2 && participantDateValid && requiredComplete,
+    serviceId &&
+      parish &&
+      clergyId &&
+      date &&
+      time &&
+      slots.some((slot) => slot.time === time && slot.available) &&
+      participantName.trim().length >= 2 &&
+      primaryBirthError === null &&
+      secondaryValid &&
+      requiredComplete,
   );
 
   useEffect(() => {
@@ -124,41 +152,47 @@ export const BookingScreen = ({
     setTime('');
   };
 
-  const pickDocument = async (document: AppointmentDocument) => {
-    setLocalError('');
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', 'image/jpeg', 'image/png'],
-        copyToCacheDirectory: true,
-        multiple: false,
-      });
-      if (result.canceled) return;
-      const asset = result.assets[0];
-      if (!asset) return;
-      if ((asset.size ?? 0) > 10 * 1024 * 1024) {
-        setLocalError('Choose a PDF, JPG, or PNG file no larger than 10 MB.');
-        return;
-      }
-      setDocuments((current) => current.map((item) => item.id === document.id ? {
-        ...item,
-        status: 'selected',
-        fileName: asset.name,
-        fileUri: asset.uri,
-        mimeType: asset.mimeType ?? 'application/octet-stream',
-        ...(asset.size === undefined ? {} : { sizeBytes: asset.size }),
-        note: 'Selected on this device. Parish staff have not verified this file.',
-      } : item));
-    } catch {
-      setLocalError('The document picker could not open. Check the device permission and try again.');
-    }
+  const applySelectedFile = (documentId: string, file: UploadAppointmentDocumentInput) => {
+    setDocuments((current) =>
+      current.map((item) =>
+        item.id === documentId
+          ? {
+              ...item,
+              status: 'selected',
+              fileName: file.fileName,
+              fileUri: file.fileUri,
+              mimeType: file.mimeType,
+              ...(file.sizeBytes === undefined ? {} : { sizeBytes: file.sizeBytes }),
+              note: 'Selected on this device. Parish staff have not verified this file.',
+            }
+          : item,
+      ),
+    );
   };
 
   const submit = async () => {
     if (!complete || !parish) {
-      setLocalError('Complete the schedule and select every required document before submitting.');
+      setLocalError('Complete the schedule, participant details, and every required document before submitting.');
       return;
     }
     setLocalError('');
+    const participants: AppointmentParticipant[] = [
+      {
+        type: participantFields.primaryType,
+        fullName: participantName.trim().replace(/\s+/g, ' '),
+        ...(participantDateOfBirth.trim() ? { dateOfBirth: participantDateOfBirth.trim() } : {}),
+      },
+      ...(participantFields.secondaryType
+        ? [
+            {
+              type: participantFields.secondaryType,
+              fullName: partnerName.trim().replace(/\s+/g, ' '),
+              ...(partnerDateOfBirth.trim() ? { dateOfBirth: partnerDateOfBirth.trim() } : {}),
+            },
+          ]
+        : []),
+    ];
+
     try {
       await onSubmit({
         serviceId,
@@ -170,11 +204,7 @@ export const BookingScreen = ({
         durationMinutes: service.durationMinutes,
         bufferBeforeMinutes: 15,
         bufferAfterMinutes: 15,
-        participants: [{
-          type: serviceId === 'funeral' ? 'deceased' : serviceId === 'wedding' ? 'principal' : 'candidate',
-          fullName: participantName.trim().replace(/\s+/g, ' '),
-          ...(participantDateOfBirth ? { dateOfBirth: participantDateOfBirth } : {}),
-        }],
+        participants,
         documents,
       });
     } catch {
@@ -275,52 +305,97 @@ export const BookingScreen = ({
 
       <FormSection number="4" title="Participant details">
         <Notice
-          title="Only necessary details"
-          body="Enter the primary person connected to this request. Parish staff may ask for service-specific details through the approved review process."
+          title="Sacrament participant details"
+          body={participantFields.guidanceBody}
           tone="info"
           icon="person-outline"
         />
-        <Field label="Primary participant’s complete name" value={participantName} maxLength={160} autoCapitalize="words" onChangeText={setParticipantName} />
-        <Field label="Birth date (optional, YYYY-MM-DD)" value={participantDateOfBirth} maxLength={10} inputMode="numeric" placeholder="YYYY-MM-DD" onChangeText={setParticipantDateOfBirth} />
-        {!participantDateValid ? <Text style={styles.errorText}>Use the birth date format YYYY-MM-DD.</Text> : null}
+        <Field
+          label={participantFields.primaryLabel}
+          value={participantName}
+          maxLength={160}
+          autoCapitalize="words"
+          onChangeText={setParticipantName}
+        />
+        <Field
+          label={participantFields.primaryBirthLabel}
+          value={participantDateOfBirth}
+          maxLength={10}
+          keyboardType="number-pad"
+          inputMode="numeric"
+          placeholder="YYYY-MM-DD (type 8 digits, e.g. 19580512)"
+          onChangeText={(value) => setParticipantDateOfBirth(formatBirthDateInput(value))}
+        />
+        <Text style={styles.dateHint}>Type numbers only — hyphens are added automatically (YYYY-MM-DD).</Text>
+        {primaryBirthError ? <Text style={styles.errorText}>{primaryBirthError}</Text> : null}
+
+        {participantFields.secondaryType && participantFields.secondaryLabel ? (
+          <>
+            <Field
+              label={participantFields.secondaryLabel}
+              value={partnerName}
+              maxLength={160}
+              autoCapitalize="words"
+              onChangeText={setPartnerName}
+            />
+            {participantFields.secondaryBirthLabel ? (
+              <>
+                <Field
+                  label={participantFields.secondaryBirthLabel}
+                  value={partnerDateOfBirth}
+                  maxLength={10}
+                  keyboardType="number-pad"
+                  inputMode="numeric"
+                  placeholder="YYYY-MM-DD (optional)"
+                  onChangeText={(value) => setPartnerDateOfBirth(formatBirthDateInput(value))}
+                />
+                {secondaryBirthError ? <Text style={styles.errorText}>{secondaryBirthError}</Text> : null}
+              </>
+            ) : null}
+          </>
+        ) : null}
       </FormSection>
 
       <FormSection number="5" title="Document checklist">
         <Notice
           title="Human verification"
-          body="Selecting or submitting a file never marks it verified. Authorized parish staff review each file after submission."
+          body="Take a clear photo of your certificate, pick from your photo library, or attach a PDF. Authorized parish staff verify every file after submission."
           tone="info"
           icon="person-outline"
         />
+        {localError ? <Text style={styles.errorText}>{localError}</Text> : null}
         {documents.map((document) => (
-          <View key={document.id} style={styles.documentRow}>
-            <View style={styles.flex}>
-              <View style={styles.documentHeading}>
-                <Text style={styles.itemTitle}>{document.label}</Text>
-                <StatusBadge label={document.required ? 'Required' : 'Optional'} tone={document.required ? 'warning' : 'neutral'} />
-              </View>
-              <Text style={styles.mutedText}>
-                {document.fileName ?? (document.required ? 'No file selected' : 'You may provide this if available.')}
-              </Text>
-              {document.status === 'selected' ? (
-                <Text style={styles.selectedFileNote}>Selected locally • not staff verified</Text>
-              ) : null}
+          <View key={document.id} style={styles.documentBlock}>
+            <View style={styles.documentHeading}>
+              <Text style={styles.itemTitle}>{document.label}</Text>
+              <StatusBadge label={document.required ? 'Required' : 'Optional'} tone={document.required ? 'warning' : 'neutral'} />
             </View>
-            <AppButton
-              label={document.status === 'selected' ? 'Replace' : 'Choose file'}
-              variant="secondary"
-              onPress={() => void pickDocument(document)}
+            <Text style={styles.mutedText}>
+              {document.fileName ?? (document.required ? 'No file selected' : 'You may provide this if available.')}
+            </Text>
+            {document.status === 'selected' ? (
+              <Text style={styles.selectedFileNote}>Selected locally • not staff verified</Text>
+            ) : null}
+            <DocumentAttachmentControls
+              triggerLabel={document.status === 'selected' ? 'Replace document' : 'Attach document'}
+              requirementLabel={document.label}
+              disabled={loading}
+              onPicked={(file) => applySelectedFile(document.id, file)}
+              onError={setLocalError}
             />
           </View>
         ))}
-        <Text style={styles.helperText}>Accepted formats: PDF, JPG, PNG • Maximum 10 MB per file.</Text>
+        <Text style={styles.helperText}>Accepted formats: Camera photo, JPG, PNG, or PDF • Maximum 10 MB per file.</Text>
       </FormSection>
 
       <FormSection number="6" title="Review and submit">
         <ReviewRow label="Service" value={service.name} />
         <ReviewRow label="Parish" value={parish.name} />
         <ReviewRow label="Clergy" value={parish.clergy.find((item) => item.id === clergyId)?.name ?? 'Not selected'} />
-        <ReviewRow label="Primary participant" value={participantName.trim() || 'Not entered'} />
+        <ReviewRow label={participantFields.primaryReviewLabel} value={participantName.trim() || 'Not entered'} />
+        {participantFields.secondaryReviewLabel ? (
+          <ReviewRow label={participantFields.secondaryReviewLabel} value={partnerName.trim() || 'Not entered'} />
+        ) : null}
         <ReviewRow label="Schedule" value={date && time ? `${formatDate(date)} at ${time}` : 'Not selected'} />
         <ReviewRow
           label="Documents"
@@ -341,23 +416,21 @@ export const BookingScreen = ({
 };
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   horizontalChips: { gap: spacing.xs, paddingVertical: spacing.xxs },
   fieldLabel: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 16, marginBottom: spacing.xs, marginTop: spacing.md },
   helperText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 14.5, lineHeight: 21, marginTop: spacing.sm },
+  dateHint: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 13.5, lineHeight: 19, marginTop: 4 },
   loadingRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm, paddingVertical: spacing.md },
-  documentRow: {
-    alignItems: 'center',
+  documentBlock: {
     borderBottomColor: colors.line,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    gap: spacing.sm,
+    gap: spacing.xs,
     paddingVertical: spacing.md,
   },
-  documentHeading: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  itemTitle: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 16.5, lineHeight: 23 },
+  documentHeading: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, justifyContent: 'space-between' },
+  itemTitle: { color: colors.ink, flex: 1, fontFamily: fonts.bodyBold, fontSize: 16.5, lineHeight: 23 },
   mutedText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 15, lineHeight: 22 },
-  selectedFileNote: { color: colors.oxblood, fontFamily: fonts.bodySemibold, fontSize: 13.5, lineHeight: 19, marginTop: 3 },
-  errorText: { color: colors.red, fontFamily: fonts.bodySemibold, fontSize: 14.5, lineHeight: 21 },
+  selectedFileNote: { color: colors.oxblood, fontFamily: fonts.bodySemibold, fontSize: 13.5, lineHeight: 19 },
+  errorText: { color: colors.red, fontFamily: fonts.bodySemibold, fontSize: 14.5, lineHeight: 21, marginTop: 4 },
 });

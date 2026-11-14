@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import {
   Card,
   ChoiceChip,
@@ -9,6 +9,7 @@ import {
   IconTile,
   Notice,
   StatusBadge,
+  useScreenRefresh,
 } from '../components/ui';
 import { getParish } from '../data/catalog';
 import { colors, fonts, spacing, type } from '../theme';
@@ -35,6 +36,7 @@ export const AnnouncementsScreen = ({
   homeParishId: ParishId;
 }) => {
   const { width } = useWindowDimensions();
+  const { refreshing, onRefresh } = useScreenRefresh();
   const [filter, setFilter] = useState<ScopeFilter>('all');
   const homeParishName = getParish(homeParishId)?.name ?? 'My parish';
 
@@ -48,6 +50,18 @@ export const AnnouncementsScreen = ({
       contentContainerStyle={[styles.screenScroll, width > 720 && styles.screenScrollWide]}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
+      {...(onRefresh
+        ? {
+            refreshControl: (
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={colors.oxblood}
+                colors={[colors.oxblood]}
+              />
+            ),
+          }
+        : {})}
     >
       <Eyebrow>Parish & vicariate bulletin</Eyebrow>
       <Text style={type.title}>Announcements</Text>

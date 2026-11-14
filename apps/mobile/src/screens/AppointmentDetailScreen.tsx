@@ -1,11 +1,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import * as DocumentPicker from 'expo-document-picker';
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { AppointmentChangesPanel } from '../components/AppointmentChangesPanel';
 import { serviceIcons } from '../components/AppointmentCard';
+import { DocumentAttachmentControls } from '../components/DocumentAttachmentControls';
 import {
-  AppButton,
   Card,
   Divider,
   IconTile,
@@ -28,7 +27,6 @@ import {
 import { colors, fonts, spacing } from '../theme';
 import type {
   Appointment,
-  AppointmentDocument,
   AvailabilitySearchInput,
   AvailabilitySlot,
   RescheduleInput,
@@ -64,36 +62,15 @@ export const AppointmentDetailScreen = ({
   const [uploadingDocumentId, setUploadingDocumentId] = useState('');
   const [localError, setLocalError] = useState('');
 
-  const retryUpload = async (document: AppointmentDocument) => {
-    setLocalError('');
-    let input: UploadAppointmentDocumentInput | undefined;
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', 'image/jpeg', 'image/png'],
-        copyToCacheDirectory: true,
-        multiple: false,
-      });
-      if (result.canceled) return;
-      const asset = result.assets[0];
-      if (!asset) return;
-      if ((asset.size ?? 0) > 10 * 1024 * 1024) {
-        setLocalError('Choose a PDF, JPG, or PNG file no larger than 10 MB.');
-        return;
-      }
-      input = {
-        fileUri: asset.uri,
-        fileName: asset.name,
-        mimeType: asset.mimeType ?? 'application/octet-stream',
-        ...(asset.size === undefined ? {} : { sizeBytes: asset.size }),
-      };
-    } catch {
-      setLocalError('The document picker could not open. Check the device permission and try again.');
-      return;
-    }
+  const namedParticipants = (appointment.participants ?? [])
+    .filter((participant) => participant.type !== 'requester')
+    .map((participant) => participant.fullName);
 
-    setUploadingDocumentId(document.id);
+  const uploadPickedDocument = async (documentId: string, input: UploadAppointmentDocumentInput) => {
+    setLocalError('');
+    setUploadingDocumentId(documentId);
     try {
-      await onUpload(appointment.id, document.id, input);
+      await onUpload(appointment.id, documentId, input);
     } catch {
       // The shared repository error is displayed above the screen.
     } finally {
@@ -117,6 +94,9 @@ export const AppointmentDetailScreen = ({
         <InfoRow icon="calendar-outline" text={`${formatDate(appointment.date)} • ${appointment.time}`} />
         <InfoRow icon="location-outline" text={parish.name} />
         <InfoRow icon="person-outline" text={clergy?.name ?? 'Assigned clergy'} />
+        {namedParticipants.length > 0 ? (
+          <InfoRow icon="people-outline" text={`Participants: ${namedParticipants.join(' • ')}`} />
+        ) : null}
       </Card>
 
       <AppointmentChangesPanel
@@ -181,13 +161,13 @@ export const AppointmentDetailScreen = ({
               <StatusBadge label={documentStatusLabel[document.status]} tone={documentStatusTone[document.status]} />
             </View>
             {['missing', 'needs_action'].includes(document.status) ? (
-              <AppButton
-                label={document.status === 'needs_action' ? 'Replace file' : 'Upload file'}
-                icon="cloud-upload-outline"
-                variant="secondary"
+              <DocumentAttachmentControls
+                triggerLabel={document.status === 'needs_action' ? 'Replace document' : 'Upload document'}
+                requirementLabel={document.label}
                 loading={uploadingDocumentId === document.id}
                 disabled={Boolean(uploadingDocumentId)}
-                onPress={() => void retryUpload(document)}
+                onPicked={(file) => uploadPickedDocument(document.id, file)}
+                onError={setLocalError}
               />
             ) : null}
           </View>

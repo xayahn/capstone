@@ -170,4 +170,24 @@ describe('mobile session and network recovery', () => {
     await act(async () => { await expect(hook.refresh()).rejects.toThrow('expired'); });
     expect(hook.session).toBeUndefined(); expect(hook.snapshot).toBeUndefined(); expect(hook.loading).toBe(false);
   });
+  it('reloads both live catalog and snapshot during pullToRefresh without flipping loading state', async () => {
+    await mount();
+    const initialVersion = hook.catalogVersion;
+    const updatedSnapshot = { ...snapshot, appointments: [{ id: 'apt-refreshed' } as Appointment] };
+    repository.loadSnapshot.mockResolvedValueOnce(updatedSnapshot);
+    await act(async () => { await hook.pullToRefresh(); });
+    expect(repository.loadCatalog).toHaveBeenCalledTimes(2);
+    expect(hook.catalogVersion).toBe(initialVersion + 1);
+    expect(hook.snapshot).toEqual(updatedSnapshot);
+    expect(hook.refreshing).toBe(false);
+    expect(hook.loading).toBe(false);
+  });
+  it('retains existing snapshot and surfaces warning when pullToRefresh fails offline', async () => {
+    await mount();
+    repository.loadSnapshot.mockRejectedValueOnce(new Error('Network unavailable'));
+    await act(async () => { await hook.pullToRefresh(); });
+    expect(hook.snapshot).toEqual(snapshot);
+    expect(hook.warning).toContain('Network unavailable');
+    expect(hook.refreshing).toBe(false);
+  });
 });

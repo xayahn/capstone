@@ -2,6 +2,7 @@ import type {
   Appointment,
   AppointmentStatus,
   DocumentStatus,
+  QueueTicket,
 } from '../types/domain';
 
 export type StatusTone = 'neutral' | 'warning' | 'positive' | 'critical' | 'info';
@@ -47,6 +48,25 @@ export const documentStatusTone: Record<DocumentStatus, StatusTone> = {
   needs_action: 'critical',
   not_required: 'neutral',
 };
+
+export const queueStatusLabel: Record<QueueTicket['status'], string> = {
+  waiting: 'Waiting in line',
+  called: 'Called — Proceed to Window',
+  serving: 'Now Serving at Counter',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+};
+
+export const queueStatusTone: Record<QueueTicket['status'], StatusTone> = {
+  waiting: 'warning',
+  called: 'positive',
+  serving: 'positive',
+  completed: 'neutral',
+  cancelled: 'critical',
+};
+
+export const isQueueTicketAtCounter = (status: QueueTicket['status']): boolean =>
+  status === 'called' || status === 'serving';
 
 export interface TimelineItem {
   key: string;

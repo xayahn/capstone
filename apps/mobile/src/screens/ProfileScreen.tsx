@@ -9,9 +9,11 @@ import {
   Eyebrow,
   Field,
   Notice,
+  PasswordChecklist,
   Screen,
 } from '../components/ui';
 import { PARISHES } from '../data/catalog';
+import { evaluatePasswordRules } from '../lib/auth';
 import type { PushState } from '../notifications/pushRegistration';
 import { colors, fonts, spacing } from '../theme';
 import type { ParishId, ParishionerProfile } from '../types/domain';
@@ -53,6 +55,7 @@ export const ProfileScreen = ({
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordSaved, setPasswordSaved] = useState(false);
+  const passwordRules = evaluatePasswordRules(newPassword, confirmPassword, currentPassword);
 
   return (
     <Screen keyboard>
@@ -125,14 +128,14 @@ export const ProfileScreen = ({
         <Text style={styles.mutedText}>Changing your password signs out other devices while keeping this one active.</Text>
         <Field label="Current password" value={currentPassword} onChangeText={setCurrentPassword} secureTextEntry autoComplete="current-password" textContentType="password" />
         <Field label="New password" value={newPassword} onChangeText={setNewPassword} secureTextEntry autoComplete="new-password" textContentType="newPassword" />
-        <Text style={styles.fieldHint}>12–128 characters with uppercase and lowercase letters plus a number.</Text>
         <Field label="Confirm new password" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry autoComplete="new-password" textContentType="newPassword" />
+        <PasswordChecklist password={newPassword} confirmPassword={confirmPassword} currentPassword={currentPassword} />
         {passwordSaved ? <Text style={styles.savedText}>Password changed. Other sessions were signed out.</Text> : null}
         <AppButton
           label="Change password"
           icon="key-outline"
           loading={loading}
-          disabled={loading || !currentPassword || !newPassword || !confirmPassword}
+          disabled={loading || !currentPassword || !passwordRules.allValid}
           onPress={() => void onChangePassword({ currentPassword, newPassword, confirmPassword }).then(() => {
             setCurrentPassword('');
             setNewPassword('');

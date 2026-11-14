@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { getBookableDates, hasScheduleConflict } from '../src/lib/scheduling';
+import {
+  formatBirthDateInput,
+  getBookableDates,
+  getParticipantFields,
+  hasScheduleConflict,
+  validateBirthDate,
+} from '../src/lib/scheduling';
 import type { Appointment } from '../src/types/domain';
 
 const appointment = (overrides: Partial<Appointment> = {}): Appointment => ({
@@ -114,5 +120,46 @@ describe('getBookableDates', () => {
   it('returns future dates and omits Sundays', () => {
     const dates = getBookableDates(new Date('2026-08-29T10:00:00'), 3);
     expect(dates).toEqual(['2026-08-31', '2026-09-01', '2026-09-02']);
+  });
+});
+
+describe('birth date keypad auto-formatting and validation', () => {
+  it('auto-inserts hyphens for 8-digit keypad entry without trapping Backspace', () => {
+    expect(formatBirthDateInput('1958')).toBe('1958');
+    expect(formatBirthDateInput('195804')).toBe('1958-04');
+    expect(formatBirthDateInput('19580419')).toBe('1958-04-19');
+    expect(formatBirthDateInput('1958/04/1999')).toBe('1958-04-19');
+    // Backspace from "1958-0" -> "1958-" cleanly collapses to "1958"
+    expect(formatBirthDateInput('1958-')).toBe('1958');
+  });
+
+  it('validates real calendar dates between 1900 and today matching backend rules', () => {
+    const fixedNow = new Date('2026-11-15T12:00:00Z');
+    expect(validateBirthDate('', fixedNow)).toBeNull();
+    expect(validateBirthDate('   ', fixedNow)).toBeNull();
+    expect(validateBirthDate('1958-04-19', fixedNow)).toBeNull();
+    expect(validateBirthDate('2024-02-29', fixedNow)).toBeNull();
+    expect(validateBirthDate('1900-01-01', fixedNow)).toBeNull();
+    expect(validateBirthDate('2026-11-15', fixedNow)).toBeNull();
+
+    expect(validateBirthDate('1958-04', fixedNow)).toContain('8 digits');
+    expect(validateBirthDate('2023-02-29', fixedNow)).toContain('real calendar date');
+    expect(validateBirthDate('2026-04-31', fixedNow)).toContain('real calendar date');
+    expect(validateBirthDate('1899-12-31', fixedNow)).toContain('1900');
+    expect(validateBirthDate('2026-11-16', fixedNow)).toContain('future');
+  });
+});
+
+describe('sacrament-specific participant configuration', () => {
+  it('requests both engaged partners on wedding bookings and sacrament-matched roles elsewhere', () => {
+    const wedding = getParticipantFields('wedding');
+    expect(wedding.primaryType).toBe('principal');
+    expect(wedding.secondaryType).toBe('partner');
+    expect(wedding.secondaryLabel).toBeTruthy();
+
+    expect(getParticipantFields('funeral').primaryType).toBe('deceased');
+    expect(getParticipantFields('baptism').primaryType).toBe('candidate');
+    expect(getParticipantFields('confirmation').primaryType).toBe('candidate');
+    expect(getParticipantFields('first_communion').primaryType).toBe('candidate');
   });
 });

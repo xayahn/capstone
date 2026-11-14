@@ -3,7 +3,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MobileApiError } from '../src/api/mobileApiClient';
 vi.mock('react-native', () => ({
-  View: 'View', Text: 'Text', TextInput: 'TextInput',
+  View: 'View', Text: 'Text', TextInput: 'TextInput', Pressable: 'Pressable',
   StyleSheet: { create: <T,>(styles: T) => styles },
   Platform: { select: (values: Record<string, unknown>) => values.default },
 }));
@@ -49,6 +49,15 @@ describe('account email forms', () => {
     expect(renderer!.root.findAll(node => typeof node.type === 'string' && node.props.secureTextEntry)).toHaveLength(0);
     await press('Return to sign in');
     expect(close).toHaveBeenCalledExactlyOnceWith(true);
+  });
+  it('allows revealing and re-hiding recovery password fields and shows live checklist feedback', async () => {
+    await recovery(); await press('Request reset code');
+    expect(input('New recovery password').props.secureTextEntry).toBe(true);
+    await act(async () => { input('Show New recovery password').props.onPress(); });
+    expect(input('New recovery password').props.secureTextEntry).toBe(false);
+    await act(async () => { input('Hide New recovery password').props.onPress(); });
+    expect(input('New recovery password').props.secureTextEntry).toBe(true);
+    expect(renderer!.root.findByProps({ accessibilityLabel: 'Recovery password requirements' })).toBeDefined();
   });
   it('cancels a pending request and wipes the visible email before closing', async () => {
     let release!: () => void;

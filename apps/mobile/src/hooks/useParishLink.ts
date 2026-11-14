@@ -34,6 +34,7 @@ export const useParishLink = () => {
   const generation = useRef(0);
   const readGeneration = useRef(0);
   const pendingOperations = useRef(0);
+  const manualRefreshing = useRef(false);
   const activeUser = useRef(false);
   const invalidatePush = useRef<() => void>(() => undefined);
   const [initializationError, setInitializationError] = useState(false);
@@ -44,6 +45,8 @@ export const useParishLink = () => {
   const [snapshot, setSnapshot] = useState<RepositorySnapshot>();
   const [initializing, setInitializing] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [catalogVersion, setCatalogVersion] = useState(0);
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
 
@@ -65,10 +68,12 @@ export const useParishLink = () => {
         generation.current += 1;
         readGeneration.current += 1;
         pendingOperations.current = 0;
+        manualRefreshing.current = false;
         activeUser.current = false;
         setSession(undefined);
         setSnapshot(undefined);
         setLoading(false);
+        setRefreshing(false);
         void repository.signOut().catch(() => undefined);
       }
       setError(message);
@@ -94,16 +99,57 @@ export const useParishLink = () => {
         generation.current += 1;
         readGeneration.current += 1;
         pendingOperations.current = 0;
+        manualRefreshing.current = false;
         activeUser.current = false;
         setSession(undefined);
         setSnapshot(undefined);
         setLoading(false);
+        setRefreshing(false);
         setError('Your session has expired. Sign in again.');
         void repository.signOut().catch(() => undefined);
       }
       throw cause;
     }
   }, [repository]);
+
+  const pullToRefresh = useCallback(async () => {
+    if (!activeUser.current || manualRefreshing.current) return;
+    const startedGeneration = generation.current;
+    manualRefreshing.current = true;
+    setRefreshing(true);
+    setError('');
+    setWarning('');
+    try {
+      await Promise.all([
+        repository
+          .loadCatalog()
+          .then(() => {
+            if (startedGeneration === generation.current) {
+              setCatalogVersion((version) => version + 1);
+            }
+          })
+          .catch(() => undefined),
+        refresh(),
+      ]);
+    } catch (cause) {
+      if (
+        startedGeneration === generation.current &&
+        activeUser.current &&
+        !(cause instanceof MobileApiError && cause.status === 401)
+      ) {
+        setWarning(
+          cause instanceof Error
+            ? cause.message
+            : 'Updates are temporarily unavailable. Check your connection and pull down again.',
+        );
+      }
+    } finally {
+      manualRefreshing.current = false;
+      if (startedGeneration === generation.current) {
+        setRefreshing(false);
+      }
+    }
+  }, [refresh, repository]);
 
   const push = usePushNotifications(repository, session, refresh);
   invalidatePush.current = push.invalidate;
@@ -156,14 +202,14 @@ export const useParishLink = () => {
   const canRefreshInBackground = Boolean(session && snapshot) && !loading;
   useEffect(() => {
     if (!canRefreshInBackground) return;
-    let cancelled = false, refreshing = false;
+    let cancelled = false, backgroundRefreshing = false;
     const update = async () => {
-      if (cancelled || refreshing || AppState.currentState !== 'active') return;
-      refreshing = true;
+      if (cancelled || backgroundRefreshing || manualRefreshing.current || AppState.currentState !== 'active') return;
+      backgroundRefreshing = true;
       try { await refresh(); }
       catch {
         if (!cancelled && activeUser.current) setWarning('Updates are temporarily unavailable. Reconnect and refresh for the latest queue and request status.');
-      } finally { refreshing = false; }
+      } finally { backgroundRefreshing = false; }
     };
     const timer = setInterval(() => { void update(); }, 30_000);
     const listener = AppState.addEventListener('change', state => { if (state === 'active') void update(); });
@@ -341,8 +387,8 @@ export const useParishLink = () => {
     if (started !== generation.current || initial?.profile.id !== current?.profile.id || initial?.accessToken !== current?.accessToken) return;
     if (initial) {
       push.invalidate(); generation.current += 1; readGeneration.current += 1;
-      pendingOperations.current = 0; activeUser.current = false;
-      setSession(undefined); setSnapshot(undefined); setLoading(false);
+      pendingOperations.current = 0; manualRefreshing.current = false; activeUser.current = false;
+      setSession(undefined); setSnapshot(undefined); setLoading(false); setRefreshing(false);
     }
     setError(''); setWarning('');
   }, [repository, push.invalidate]);
@@ -383,6 +429,8 @@ export const useParishLink = () => {
     session,
     snapshot,
     loading,
+    refreshing,
+    catalogVersion,
     error,
     warning,
     pushState: push.state,
@@ -399,17 +447,20 @@ export const useParishLink = () => {
       generation.current += 1;
       readGeneration.current += 1;
       pendingOperations.current = 0;
+      manualRefreshing.current = false;
       activeUser.current = false;
       setSession(undefined);
       setSnapshot(undefined);
       setInitializationError(false);
       setLoading(false);
+      setRefreshing(false);
       setError('');
       setWarning('');
       try { await repository.signOut(); }
       catch (cause) { setError(cause instanceof LocalSignOutError ? cause.message : 'Signed out on this device. The server could not confirm revocation; change your password after reconnecting to revoke other sessions.'); }
     },
     refresh: () => run(refresh),
+    pullToRefresh,
     searchAvailability,
     createAppointment,
     uploadAppointmentDocument,

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   getAppointmentTimeline,
+  isQueueTicketAtCounter,
+  queueStatusLabel,
+  queueStatusTone,
   statusAfterUserFileSelection,
   summarizeDocuments,
 } from '../src/lib/status';
@@ -41,5 +44,19 @@ describe('appointment status helpers', () => {
       requiredReady: 2,
       requiredTotal: 3,
     });
+  });
+
+  it('maps walk-in queue ticket statuses to clear counter labels and positive tones', () => {
+    expect(isQueueTicketAtCounter('waiting')).toBe(false);
+    expect(queueStatusTone.waiting).toBe('warning');
+    expect(queueStatusLabel.waiting).toBe('Waiting in line');
+
+    expect(isQueueTicketAtCounter('called')).toBe(true);
+    expect(queueStatusTone.called).toBe('positive');
+    expect(queueStatusLabel.called).toContain('Window');
+
+    expect(isQueueTicketAtCounter('serving')).toBe(true);
+    expect(queueStatusTone.serving).toBe('positive');
+    expect(queueStatusLabel.serving).toContain('Counter');
   });
 });

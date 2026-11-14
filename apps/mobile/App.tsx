@@ -11,7 +11,14 @@ import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AppHeader } from './src/components/navigation/AppHeader';
 import { BottomNavigation, type MainNavTab } from './src/components/navigation/BottomNavigation';
-import { AppButton, BrandMark, EmptyState, LoadingScreen, Notice } from './src/components/ui';
+import {
+  AppButton,
+  BrandMark,
+  EmptyState,
+  LoadingScreen,
+  Notice,
+  ScreenRefreshProvider,
+} from './src/components/ui';
 import { useParishLink } from './src/hooks/useParishLink';
 import { AnnouncementsScreen } from './src/screens/AnnouncementsScreen';
 import { AppointmentDetailScreen } from './src/screens/AppointmentDetailScreen';
@@ -220,126 +227,139 @@ const AppContent = () => {
       ) : null}
       {parishLink.warning ? (
         <View style={styles.globalNotice}>
-          <Notice title="Request saved—documents need attention" body={parishLink.warning} tone="warning" icon="cloud-upload-outline" />
+          <Notice title="Attention" body={parishLink.warning} tone="warning" icon="cloud-upload-outline" />
           <AppButton label="Dismiss" variant="ghost" onPress={parishLink.clearWarning} />
         </View>
       ) : null}
 
-      <View style={styles.screenHost}>
-        {route === 'home' ? (
-          <HomeScreen
-            snapshot={snapshot}
-            onBook={openBooking}
-            onServices={() => openServices()}
-            onAppointment={openAppointment}
-            onAnnouncements={() => navigate('announcements')}
-            onParishes={() => navigate('parishes')}
-            onQueue={() => navigate('queue')}
-            onAssistant={() => navigate('assistant')}
-          />
-        ) : null}
-        {route === 'services' ? <ServicesScreen focusedServiceId={focusedServiceId} onBook={openBooking} /> : null}
-        {route === 'appointments' ? (
-          <AppointmentsScreen appointments={snapshot.appointments} onOpen={openAppointment} />
-        ) : null}
-        {route === 'more' ? (
-          <MoreScreen snapshot={snapshot} mode={parishLink.repositoryMode} onNavigate={navigate} />
-        ) : null}
-        {route === 'booking' ? (
-          <BookingScreen
-            initialServiceId={bookingServiceId}
-            profile={snapshot.profile}
-            loading={parishLink.loading}
-            onSearchAvailability={parishLink.searchAvailability}
-            onCancel={goBack}
-            onSubmit={async (input) => {
-              const appointment = await parishLink.createAppointment(input);
-              openAppointment(appointment.id);
-            }}
-          />
-        ) : null}
-        {route === 'appointment-detail' ? (
-          selectedAppointment ? (
-            <AppointmentDetailScreen
-              appointment={selectedAppointment}
-              onUpload={parishLink.uploadAppointmentDocument}
+      <ScreenRefreshProvider
+        refreshing={parishLink.refreshing}
+        onRefresh={() => void parishLink.pullToRefresh()}
+      >
+        <View style={styles.screenHost}>
+          {route === 'home' ? (
+            <HomeScreen
+              snapshot={snapshot}
+              onBook={openBooking}
+              onServices={() => openServices()}
+              onAppointment={openAppointment}
+              onAnnouncements={() => navigate('announcements')}
+              onParishes={() => navigate('parishes')}
+              onQueue={() => navigate('queue')}
+              onAssistant={() => navigate('assistant')}
+            />
+          ) : null}
+          {route === 'services' ? (
+            <ServicesScreen
+              focusedServiceId={focusedServiceId}
+              catalogVersion={parishLink.catalogVersion}
+              onBook={openBooking}
+            />
+          ) : null}
+          {route === 'appointments' ? (
+            <AppointmentsScreen appointments={snapshot.appointments} onOpen={openAppointment} />
+          ) : null}
+          {route === 'more' ? (
+            <MoreScreen snapshot={snapshot} mode={parishLink.repositoryMode} onNavigate={navigate} />
+          ) : null}
+          {route === 'booking' ? (
+            <BookingScreen
+              initialServiceId={bookingServiceId}
+              profile={snapshot.profile}
+              loading={parishLink.loading}
+              catalogVersion={parishLink.catalogVersion}
               onSearchAvailability={parishLink.searchAvailability}
-              onCancel={parishLink.cancelAppointment}
-              onReschedule={parishLink.requestReschedule}
-              onWithdraw={parishLink.withdrawChangeRequest}
+              onCancel={goBack}
+              onSubmit={async (input) => {
+                const appointment = await parishLink.createAppointment(input);
+                openAppointment(appointment.id);
+              }}
             />
-          ) : (
-            <EmptyState
-              icon="calendar-outline"
-              title="Appointment not found"
-              body="Return to your appointments and select a request."
-              action={<AppButton label="View appointments" onPress={() => navigate('appointments')} />}
+          ) : null}
+          {route === 'appointment-detail' ? (
+            selectedAppointment ? (
+              <AppointmentDetailScreen
+                appointment={selectedAppointment}
+                onUpload={parishLink.uploadAppointmentDocument}
+                onSearchAvailability={parishLink.searchAvailability}
+                onCancel={parishLink.cancelAppointment}
+                onReschedule={parishLink.requestReschedule}
+                onWithdraw={parishLink.withdrawChangeRequest}
+              />
+            ) : (
+              <EmptyState
+                icon="calendar-outline"
+                title="Appointment not found"
+                body="Return to your appointments and select a request."
+                action={<AppButton label="View appointments" onPress={() => navigate('appointments')} />}
+              />
+            )
+          ) : null}
+          {route === 'notifications' ? (
+            <NotificationsScreen
+              notifications={snapshot.notifications}
+              onOpen={async (notification) => {
+                if (!notification.readAt) await parishLink.markNotificationRead(notification.id);
+                if (notification.target.kind === 'appointment') openAppointment(notification.target.appointmentId);
+                else if (notification.target.kind === 'queue') navigate('queue');
+                else if (notification.target.kind === 'assistant') navigate('assistant');
+                else navigateMain('home');
+              }}
             />
-          )
-        ) : null}
-        {route === 'notifications' ? (
-          <NotificationsScreen
-            notifications={snapshot.notifications}
-            onOpen={async (notification) => {
-              if (!notification.readAt) await parishLink.markNotificationRead(notification.id);
-              if (notification.target.kind === 'appointment') openAppointment(notification.target.appointmentId);
-              else if (notification.target.kind === 'queue') navigate('queue');
-              else if (notification.target.kind === 'assistant') navigate('assistant');
-              else navigateMain('home');
-            }}
-          />
-        ) : null}
-        {route === 'announcements' ? (
-          <AnnouncementsScreen
-            announcements={snapshot.announcements ?? []}
-            homeParishId={snapshot.profile.homeParishId}
-          />
-        ) : null}
-        {route === 'parishes' ? (
-          <ParishesScreen
-            homeParishId={snapshot.profile.homeParishId}
-            onExploreServices={() => openServices()}
-          />
-        ) : null}
-        {route === 'queue' ? (
-          <QueueScreen
-            profile={snapshot.profile}
-            ticket={snapshot.activeQueueTicket}
-            loading={parishLink.loading}
-            onJoin={parishLink.joinQueue}
-            onLeave={parishLink.leaveQueue}
-          />
-        ) : null}
-        {route === 'assistant' ? (
-          <AssistantScreen
-            key={parishLink.session.profile.id}
-            messages={assistantMessages}
-            setMessages={setAssistantMessages}
-            onAsk={parishLink.askAssistant}
-            onAction={handleAssistantAction}
-            allowExternalAI={allowExternalAI}
-            onToggleExternalAI={setAllowExternalAI}
-            canUseGemini={parishLink.repositoryMode === 'api'}
-          />
-        ) : null}
-        {route === 'profile' ? (
-          <ProfileScreen
-            profile={snapshot.profile}
-            mode={parishLink.repositoryMode}
-            loading={parishLink.loading}
-            onSave={parishLink.updateProfile}
-            onChangePassword={parishLink.changePassword}
-            onSignOut={parishLink.signOut}
-            onReset={parishLink.resetDemo}
-            pushState={parishLink.pushState}
-            onEnablePush={parishLink.enablePush}
-            onRetryPush={parishLink.retryPush}
-            onNotificationSettings={parishLink.openNotificationSettings}
-            onRequestEmailVerification={parishLink.requestEmailVerification}
-            onConfirmEmailVerification={parishLink.confirmEmailVerification}
-          />
-        ) : null}
-      </View>
+          ) : null}
+          {route === 'announcements' ? (
+            <AnnouncementsScreen
+              announcements={snapshot.announcements ?? []}
+              homeParishId={snapshot.profile.homeParishId}
+            />
+          ) : null}
+          {route === 'parishes' ? (
+            <ParishesScreen
+              homeParishId={snapshot.profile.homeParishId}
+              catalogVersion={parishLink.catalogVersion}
+              onExploreServices={() => openServices()}
+            />
+          ) : null}
+          {route === 'queue' ? (
+            <QueueScreen
+              profile={snapshot.profile}
+              ticket={snapshot.activeQueueTicket}
+              loading={parishLink.loading}
+              onJoin={parishLink.joinQueue}
+              onLeave={parishLink.leaveQueue}
+            />
+          ) : null}
+          {route === 'assistant' ? (
+            <AssistantScreen
+              key={parishLink.session.profile.id}
+              messages={assistantMessages}
+              setMessages={setAssistantMessages}
+              onAsk={parishLink.askAssistant}
+              onAction={handleAssistantAction}
+              allowExternalAI={allowExternalAI}
+              onToggleExternalAI={setAllowExternalAI}
+              canUseGemini={parishLink.repositoryMode === 'api'}
+            />
+          ) : null}
+          {route === 'profile' ? (
+            <ProfileScreen
+              profile={snapshot.profile}
+              mode={parishLink.repositoryMode}
+              loading={parishLink.loading}
+              onSave={parishLink.updateProfile}
+              onChangePassword={parishLink.changePassword}
+              onSignOut={parishLink.signOut}
+              onReset={parishLink.resetDemo}
+              pushState={parishLink.pushState}
+              onEnablePush={parishLink.enablePush}
+              onRetryPush={parishLink.retryPush}
+              onNotificationSettings={parishLink.openNotificationSettings}
+              onRequestEmailVerification={parishLink.requestEmailVerification}
+              onConfirmEmailVerification={parishLink.confirmEmailVerification}
+            />
+          ) : null}
+        </View>
+      </ScreenRefreshProvider>
       {mainRoutes.has(route) ? <BottomNavigation active={route} onNavigate={navigateMain} /> : null}
     </SafeAreaView>
   );

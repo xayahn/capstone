@@ -17,6 +17,7 @@ import {
 import { getService } from '../data/catalog';
 import { appointmentStart } from '../lib/changePolicy';
 import { formatDate } from '../lib/scheduling';
+import { isQueueTicketAtCounter, queueStatusLabel, queueStatusTone } from '../lib/status';
 import { colors, fonts, radii, shadow, spacing } from '../theme';
 import type { RepositorySnapshot, SacramentId } from '../types/domain';
 
@@ -113,6 +114,8 @@ export const HomeScreen = ({
   const nextAppointment = snapshot.appointments.find((item) => !['completed', 'cancelled', 'rejected'].includes(item.status));
   const reminders = buildHomeReminders(snapshot);
   const recentAnnouncements = (snapshot.announcements ?? []).slice(0, 2);
+  const activeTicket = snapshot.activeQueueTicket;
+  const ticketAtCounter = activeTicket ? isQueueTicketAtCounter(activeTicket.status) : false;
 
   return (
     <Screen>
@@ -148,21 +151,26 @@ export const HomeScreen = ({
         <EmptyCard title="No active requests" body="Choose a sacramental service when you are ready to begin." />
       )}
 
-      {snapshot.activeQueueTicket ? (
+      {activeTicket ? (
         <>
           <SectionTitle>Walk-in ticket</SectionTitle>
           <Card>
             <View style={styles.rowBetween}>
               <View>
-                <Eyebrow>Now waiting</Eyebrow>
-                <Text style={styles.ticketNumber}>{snapshot.activeQueueTicket.number}</Text>
+                <Eyebrow>{ticketAtCounter ? 'Proceed to counter' : 'Now waiting'}</Eyebrow>
+                <Text style={styles.ticketNumber}>{activeTicket.number}</Text>
               </View>
-              <StatusBadge label={`${snapshot.activeQueueTicket.ahead} ahead`} tone="warning" />
+              <StatusBadge
+                label={ticketAtCounter ? queueStatusLabel[activeTicket.status] : `${activeTicket.ahead} ahead`}
+                tone={queueStatusTone[activeTicket.status]}
+              />
             </View>
             <Text style={styles.mutedText}>
-              {snapshot.activeQueueTicket.estimatedWaitMinutes === null
-                ? 'A wait estimate will appear after this parish has enough recent completed tickets.'
-                : `Measured wait: about ${snapshot.activeQueueTicket.estimatedWaitMinutes} minutes. This estimate can change as staff serve visitors.`}
+              {ticketAtCounter
+                ? `Parish staff are ready for ticket ${activeTicket.number} (${activeTicket.service}). Please proceed to the parish office window.`
+                : activeTicket.estimatedWaitMinutes === null
+                  ? 'A wait estimate will appear after this parish has enough recent completed tickets.'
+                  : `Measured wait: about ${activeTicket.estimatedWaitMinutes} minutes. This estimate can change as staff serve visitors.`}
             </Text>
             <AppButton label="View ticket" variant="secondary" onPress={onQueue} />
           </Card>
@@ -247,13 +255,13 @@ const styles = StyleSheet.create({
   heroTitle: { color: colors.card, fontFamily: fonts.displayBold, fontSize: 34, lineHeight: 38 },
   heroBody: { color: colors.paperLight, fontFamily: fonts.body, fontSize: 16, lineHeight: 24, marginBottom: spacing.sm },
   actionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  rowBetween: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  rowBetween: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm },
   reminderCard: { alignItems: 'center', flexDirection: 'row', gap: spacing.md, marginBottom: spacing.xs },
   announcementPreview: { gap: spacing.xs, marginBottom: spacing.xs },
   sectionAction: { alignItems: 'center', flexDirection: 'row', gap: 2, paddingVertical: spacing.xxs },
   itemTitle: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 16.5, lineHeight: 23 },
   reference: { color: colors.oxblood, fontFamily: fonts.bodyBold, fontSize: 13.5, letterSpacing: 0.5 },
   mutedText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 15, lineHeight: 22 },
-  ticketNumber: { color: colors.oxblood, fontFamily: fonts.displayBold, fontSize: 24, lineHeight: 32, flexShrink: 1, maxWidth: '100%' },
+  ticketNumber: { color: colors.oxblood, fontFamily: fonts.displayBold, fontSize: 30, lineHeight: 36, flexShrink: 1, maxWidth: '100%' },
   inlineLinkText: { color: colors.oxblood, fontFamily: fonts.bodyBold, fontSize: 15 },
 });

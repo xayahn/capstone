@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
 import { AppButton, Card, Eyebrow, Notice, StatusBadge } from './ui';
 import { useAccountCodeFlow } from '../hooks/useAccountCodeFlow';
+import { evaluatePasswordRules } from '../lib/auth';
 import { colors, fonts, radii, spacing, type } from '../theme';
 import type { PasswordResetInput } from '../types/domain';
 
@@ -10,16 +11,72 @@ export type PasswordRecoveryActions = {
   confirm: (input: PasswordResetInput, signal?: AbortSignal) => Promise<void>;
 };
 
-function CodeField({ label, ...props }: TextInputProps & { label: string }) {
-  return <View style={styles.field}>
-    <Text style={styles.label}>{label}</Text>
-    <TextInput {...props} accessibilityLabel={label} style={styles.input}
-      placeholderTextColor={colors.inkSoft} />
-  </View>;
+function CodeField({ label, secureTextEntry, ...props }: TextInputProps & { label: string }) {
+  const [revealed, setRevealed] = useState(false);
+
+  if (secureTextEntry) {
+    return (
+      <View style={styles.field}>
+        <Text style={styles.label}>{label}</Text>
+        <View style={styles.passwordRow}>
+          <TextInput
+            {...props}
+            accessibilityLabel={label}
+            secureTextEntry={!revealed}
+            style={[styles.input, styles.passwordInput]}
+            placeholderTextColor={colors.inkSoft}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={revealed ? `Hide ${label}` : `Show ${label}`}
+            onPress={() => setRevealed((current) => !current)}
+            style={styles.passwordToggle}
+          >
+            <Text style={styles.passwordToggleText}>{revealed ? 'Hide' : 'Show'}</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.field}>
+      <Text style={styles.label}>{label}</Text>
+      <TextInput
+        {...props}
+        accessibilityLabel={label}
+        style={styles.input}
+        placeholderTextColor={colors.inkSoft}
+      />
+    </View>
+  );
 }
+
+function RecoveryPasswordChecklist({ password, confirmPassword }: { password: string; confirmPassword: string }) {
+  const rules = evaluatePasswordRules(password, confirmPassword);
+  const items = [
+    { label: 'At least 12 characters (up to 128)', met: rules.lengthOk },
+    { label: 'Uppercase and lowercase letters (A–Z, a–z)', met: rules.upperLowerOk },
+    { label: 'At least one number (0–9)', met: rules.numberOk },
+    { label: 'Both passwords match', met: Boolean(rules.matchOk) },
+  ];
+
+  return (
+    <View style={styles.checklistBox} accessibilityLabel="Recovery password requirements">
+      {items.map((item) => (
+        <Text key={item.label} style={[styles.checklistItem, item.met && styles.checklistItemMet]}>
+          {item.met ? '✓ ' : '○ '}
+          {item.label}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
 function CodeNotice() {
   return <Text style={styles.hint}>Only the newest code works, and it expires after 15 minutes. An accepted request does not confirm inbox delivery. Check your inbox and spam folder; request a new code if none arrives.</Text>;
 }
+
 function FlowError({ error }: { error: string }) {
   return error ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.error}>{error}</Text> : null;
 }
@@ -53,10 +110,10 @@ export function PasswordRecoveryForm({ initialEmail = '', actions, onClose }: {
       <CodeField label="New recovery password" value={state.newPassword} onChangeText={value => flow.setField('newPassword', value)}
         editable={!state.busy} secureTextEntry autoCapitalize="none" autoCorrect={false}
         autoComplete="new-password" textContentType="newPassword" maxLength={128} />
-      <Text style={styles.hint}>Use 12–128 characters with uppercase and lowercase letters plus a number.</Text>
       <CodeField label="Confirm recovery password" value={state.confirmPassword} onChangeText={value => flow.setField('confirmPassword', value)}
         editable={!state.busy} secureTextEntry autoCapitalize="none" autoCorrect={false}
         autoComplete="new-password" textContentType="newPassword" maxLength={128} />
+      <RecoveryPasswordChecklist password={state.newPassword} confirmPassword={state.confirmPassword} />
     </> : null}
     <FlowError error={state.error} />
     <AppButton label={state.phase === 'request' ? 'Request reset code' : 'Reset password'}
@@ -112,11 +169,65 @@ export function EmailVerificationCard({ email, emailVerified, mode, request, con
 }
 
 const styles = StyleSheet.create({
-  form: { gap: spacing.sm }, field: { gap: spacing.xs },
+  form: { gap: spacing.sm },
+  field: { gap: spacing.xs },
   label: { fontFamily: fonts.bodySemibold, fontSize: 16, color: colors.ink },
-  input: { ...type.body, minHeight: 54, borderWidth: 1, borderColor: colors.line, borderRadius: radii.sm,
-    backgroundColor: colors.card, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  copy: { ...type.body, color: colors.inkSoft }, hint: { ...type.body, fontSize: 14.5, lineHeight: 21, color: colors.inkSoft },
-  error: { ...type.body, color: colors.red }, email: { ...type.body, fontFamily: fonts.bodySemibold },
-  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, flex: { flex: 1 },
+  input: {
+    ...type.body,
+    minHeight: 54,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: radii.sm,
+    backgroundColor: colors.card,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  passwordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  passwordInput: {
+    flex: 1,
+  },
+  passwordToggle: {
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderColor: colors.line,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 54,
+    minWidth: 74,
+    paddingHorizontal: spacing.sm,
+  },
+  passwordToggleText: {
+    color: colors.oxblood,
+    fontFamily: fonts.bodyBold,
+    fontSize: 15,
+  },
+  checklistBox: {
+    backgroundColor: colors.paperLight,
+    borderColor: colors.line,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    gap: 4,
+    padding: spacing.sm,
+  },
+  checklistItem: {
+    color: colors.inkSoft,
+    fontFamily: fonts.body,
+    fontSize: 14.5,
+    lineHeight: 21,
+  },
+  checklistItemMet: {
+    color: colors.green,
+    fontFamily: fonts.bodySemibold,
+  },
+  copy: { ...type.body, color: colors.inkSoft },
+  hint: { ...type.body, fontSize: 14.5, lineHeight: 21, color: colors.inkSoft },
+  error: { ...type.body, color: colors.red },
+  email: { ...type.body, fontFamily: fonts.bodySemibold },
+  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  flex: { flex: 1 },
 });

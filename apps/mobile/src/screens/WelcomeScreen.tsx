@@ -14,8 +14,10 @@ import {
   Feature,
   Field,
   Notice,
+  PasswordChecklist,
 } from '../components/ui';
 import { PARISHES } from '../data/catalog';
+import { evaluatePasswordRules } from '../lib/auth';
 import { colors, fonts, radii, spacing } from '../theme';
 import type { ParishId } from '../types/domain';
 
@@ -81,11 +83,13 @@ export const WelcomeScreen = ({
     onClearError();
   };
 
-  const submitDisabled = loading || !email.trim() || !password || (
-    authMode === 'signup' && (
-      !displayName.trim() || !mobileNumber.trim() || !confirmPassword || !acceptPrivacyNotice
-    )
-  );
+  const passwordRules = evaluatePasswordRules(password, confirmPassword);
+  const submitDisabled =
+    loading ||
+    !email.trim() ||
+    !password ||
+    (authMode === 'signup' &&
+      (!displayName.trim() || !mobileNumber.trim() || !passwordRules.allValid || !acceptPrivacyNotice));
 
   return (
     <LinearGradient colors={[colors.leatherDark, colors.oxbloodDark, colors.leather]} style={styles.welcomeBackground}>
@@ -156,11 +160,11 @@ export const WelcomeScreen = ({
                   </>
                 ) : null}
                 <Field label="Email address" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email" textContentType="emailAddress" />
-                <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} textContentType={authMode === 'signup' ? 'newPassword' : 'password'} />
+                <Field key={authMode} label="Password" value={password} onChangeText={setPassword} secureTextEntry autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} textContentType={authMode === 'signup' ? 'newPassword' : 'password'} />
                 {authMode === 'signup' ? (
                   <>
-                    <Text style={styles.fieldHint}>12–128 characters with uppercase and lowercase letters plus a number.</Text>
                     <Field label="Confirm password" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry autoComplete="new-password" textContentType="newPassword" />
+                    <PasswordChecklist password={password} confirmPassword={confirmPassword} />
                     <View style={styles.authSection}>
                       <Text style={styles.authSectionLabel}>Home parish</Text>
                       <View style={styles.chipWrap}>
@@ -268,7 +272,6 @@ const styles = StyleSheet.create({
   authModeTextActive: { color: colors.paperLight },
   authSection: { gap: spacing.sm, marginTop: spacing.sm },
   authSectionLabel: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 16 },
-  fieldHint: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 13.5, lineHeight: 19, marginTop: -spacing.xs },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   privacyConsent: {
     alignItems: 'flex-start',

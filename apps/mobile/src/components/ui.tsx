@@ -1,10 +1,11 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { ComponentProps, ReactNode } from 'react';
+import { createContext, useContext, useState, type ComponentProps, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,10 +17,32 @@ import {
   type TextInputProps,
   type ViewStyle,
 } from 'react-native';
-import { colors, fonts, radii, shadow, spacing, type } from '../theme';
+import { evaluatePasswordRules } from '../lib/auth';
 import type { StatusTone } from '../lib/status';
+import { colors, fonts, radii, shadow, spacing, type } from '../theme';
 
 export type IconName = ComponentProps<typeof Ionicons>['name'];
+
+const ScreenRefreshContext = createContext<{
+  refreshing: boolean;
+  onRefresh?: () => void;
+}>({ refreshing: false });
+
+export const ScreenRefreshProvider = ({
+  refreshing,
+  onRefresh,
+  children,
+}: {
+  refreshing: boolean;
+  onRefresh?: () => void;
+  children: ReactNode;
+}) => (
+  <ScreenRefreshContext.Provider value={{ refreshing, ...(onRefresh ? { onRefresh } : {}) }}>
+    {children}
+  </ScreenRefreshContext.Provider>
+);
+
+export const useScreenRefresh = () => useContext(ScreenRefreshContext);
 
 export const BrandMark = ({ compact = false }: { compact?: boolean }) => (
   <View style={[styles.brandMark, compact && styles.brandMarkCompact]} accessible accessibilityLabel="ParishLink cross emblem">
@@ -187,12 +210,85 @@ export const IconTile = ({ name, color = colors.oxblood }: { name: IconName; col
 
 export const Divider = () => <View style={styles.divider} />;
 
-export const Field = ({ label, ...props }: TextInputProps & { label: string }) => (
-  <View style={styles.field}>
-    <Text style={styles.fieldLabel}>{label}</Text>
-    <TextInput accessibilityLabel={label} placeholderTextColor={colors.inkSoft} style={styles.input} {...props} />
-  </View>
-);
+export const Field = ({ label, secureTextEntry, style, ...props }: TextInputProps & { label: string }) => {
+  const [revealed, setRevealed] = useState(false);
+
+  if (secureTextEntry) {
+    return (
+      <View style={styles.field}>
+        <Text style={styles.fieldLabel}>{label}</Text>
+        <View style={styles.passwordRow}>
+          <TextInput
+            accessibilityLabel={label}
+            placeholderTextColor={colors.inkSoft}
+            {...props}
+            secureTextEntry={!revealed}
+            style={[styles.input, styles.passwordInput, style]}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={revealed ? `Hide ${label}` : `Show ${label}`}
+            onPress={() => setRevealed((current) => !current)}
+            style={({ pressed }) => [styles.passwordToggle, pressed && styles.pressed]}
+          >
+            <Ionicons
+              name={revealed ? 'eye-off-outline' : 'eye-outline'}
+              size={20}
+              color={colors.oxblood}
+            />
+            <Text style={styles.passwordToggleText}>{revealed ? 'Hide' : 'Show'}</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TextInput
+        accessibilityLabel={label}
+        placeholderTextColor={colors.inkSoft}
+        style={[styles.input, style]}
+        {...props}
+      />
+    </View>
+  );
+};
+
+export const PasswordChecklist = ({
+  password,
+  confirmPassword,
+  currentPassword,
+}: {
+  password: string;
+  confirmPassword?: string;
+  currentPassword?: string;
+}) => {
+  const rules = evaluatePasswordRules(password, confirmPassword, currentPassword);
+  const items = [
+    { label: 'At least 12 characters (up to 128)', met: rules.lengthOk },
+    { label: 'Uppercase and lowercase letters (A–Z, a–z)', met: rules.upperLowerOk },
+    { label: 'At least one number (0–9)', met: rules.numberOk },
+    ...(rules.differentOk === null ? [] : [{ label: 'Different from current password', met: rules.differentOk }]),
+    ...(rules.matchOk === null ? [] : [{ label: 'Both passwords match', met: rules.matchOk }]),
+  ];
+
+  return (
+    <View style={styles.checklistBox} accessibilityLabel="Password requirements">
+      {items.map((item) => (
+        <View key={item.label} style={styles.checklistRow}>
+          <Ionicons
+            name={item.met ? 'checkmark-circle' : 'ellipse-outline'}
+            size={19}
+            color={item.met ? colors.green : colors.inkSoft}
+          />
+          <Text style={[styles.checklistText, item.met && styles.checklistTextMet]}>{item.label}</Text>
+        </View>
+      ))}
+    </View>
+  );
+};
 
 export const Feature = ({ icon, title, body }: { icon: IconName; title: string; body: string }) => (
   <View style={styles.feature}>
@@ -300,13 +396,34 @@ export const LoadingScreen = ({ label }: { label: string }) => (
   </View>
 );
 
-export const Screen = ({ children, keyboard = false }: { children: ReactNode; keyboard?: boolean }) => {
+export const Screen = ({
+  children,
+  keyboard = false,
+  disableRefresh = false,
+}: {
+  children: ReactNode;
+  keyboard?: boolean;
+  disableRefresh?: boolean;
+}) => {
   const { width } = useWindowDimensions();
+  const { refreshing, onRefresh } = useScreenRefresh();
   const content = (
     <ScrollView
       contentContainerStyle={[styles.screenScroll, width > 720 && styles.screenScrollWide]}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
+      {...(onRefresh && !disableRefresh
+        ? {
+            refreshControl: (
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={colors.oxblood}
+                colors={[colors.oxblood]}
+              />
+            ),
+          }
+        : {})}
     >
       {children}
     </ScrollView>
@@ -417,6 +534,57 @@ const styles = StyleSheet.create({
     minHeight: 54,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+  },
+  passwordRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  passwordInput: {
+    flex: 1,
+  },
+  passwordToggle: {
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderColor: colors.line,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    minHeight: 54,
+    minWidth: 88,
+    paddingHorizontal: spacing.sm,
+  },
+  passwordToggleText: {
+    color: colors.oxblood,
+    fontFamily: fonts.bodyBold,
+    fontSize: 15,
+  },
+  checklistBox: {
+    backgroundColor: colors.paperLight,
+    borderColor: colors.line,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+    padding: spacing.sm,
+  },
+  checklistRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  checklistText: {
+    color: colors.inkSoft,
+    flex: 1,
+    fontFamily: fonts.body,
+    fontSize: 14.5,
+    lineHeight: 21,
+  },
+  checklistTextMet: {
+    color: colors.green,
+    fontFamily: fonts.bodySemibold,
   },
   feature: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
   itemTitle: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 16.5, lineHeight: 23 },

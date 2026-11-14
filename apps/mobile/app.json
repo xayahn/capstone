@@ -59,6 +59,14 @@
       "expo-status-bar",
       "expo-document-picker",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow ParishLink to attach photos of your sacramental requirement documents.",
+          "cameraPermission": "Allow ParishLink to photograph paper certificates for parish staff review.",
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-notifications",
         {
           "color": "#7B3028",

@@ -395,3 +395,14 @@ td code { padding: 2px 6px; border-radius: 6px; background: var(--paper-2); colo
   body.printing-queue-slip .print-queue-slip p { margin: 6pt 0; font-size: 11pt; line-height: 1.45; }
   body.printing-queue-slip .print-queue-slip small { display: block; margin-top: 8pt; font-size: 9.5pt; }
 }
+
+
+/* Password visibility toggles and live policy checklists */
+.field-group { display: grid; gap: 7px; }
+.field-group > label { display: block; color: var(--ink-soft); font-size: 13px; font-weight: 750; }
+.password-input-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.password-toggle { min-width: 72px; min-height: 46px; padding: 0 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper-2); color: var(--leather); font-size: 13px; font-weight: 800; cursor: pointer; }
+.password-toggle:hover, .password-toggle:focus-visible { border-color: var(--leather); background: #fffdf5; outline: 3px solid rgb(168 124 51 / 16%); }
+.password-checklist { display: grid; gap: 5px; margin: 2px 0 0; padding: 11px 13px; list-style: none; border: 1px solid rgb(203 184 138 / 72%); border-radius: 11px; background: var(--paper-2); font-size: 13px; line-height: 1.45; color: var(--ink-soft); }
+.password-checklist li { display: flex; align-items: center; gap: 8px; }
+.password-checklist li.met { color: var(--green); font-weight: 700; }

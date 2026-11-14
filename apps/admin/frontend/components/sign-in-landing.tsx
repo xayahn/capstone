@@ -14,6 +14,7 @@ type SignInLandingProps = {
 export function SignInLanding({ demoAccounts, demoPassword }: SignInLandingProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,6 +29,7 @@ export function SignInLanding({ demoAccounts, demoPassword }: SignInLandingProps
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Sign-in failed. Please try again.');
       setPassword('');
+      setShowPassword(false);
       setBusy(false);
     }
   }
@@ -43,16 +45,41 @@ export function SignInLanding({ demoAccounts, demoPassword }: SignInLandingProps
           clergy schedules, and walk-in services.
         </p>
         <form className="stack-form signin-form" onSubmit={(event) => void submit(event)} noValidate>
-          <label>
-            <span>Email address</span>
-            <input type="email" autoComplete="username" value={email} maxLength={254} required
-              onChange={(event) => setEmail(event.target.value)} />
-          </label>
-          <label>
-            <span>Password</span>
-            <input type="password" autoComplete="current-password" value={password} maxLength={128} required
-              onChange={(event) => setPassword(event.target.value)} />
-          </label>
+          <div className="field-group">
+            <label htmlFor="signin-email">Email address</label>
+            <input
+              id="signin-email"
+              type="email"
+              autoComplete="username"
+              value={email}
+              maxLength={254}
+              required
+              onChange={(event) => setEmail(event.target.value)}
+            />
+          </div>
+          <div className="field-group">
+            <label htmlFor="signin-password">Password</label>
+            <div className="password-input-row">
+              <input
+                id="signin-password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                value={password}
+                maxLength={128}
+                required
+                onChange={(event) => setPassword(event.target.value)}
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showPassword}
+                onClick={() => setShowPassword((value) => !value)}
+              >
+                {showPassword ? 'Hide' : 'Show'}
+              </button>
+            </div>
+          </div>
           {error && <div className="alert error" role="alert"><span>{error}</span></div>}
           <button className="primary-button signin-button" disabled={busy || !email.includes('@') || password.length === 0}>
             {busy ? 'Signing in…' : 'Sign in to the internal portal'}

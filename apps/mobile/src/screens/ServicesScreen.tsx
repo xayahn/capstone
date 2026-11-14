@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import {
   AppButton,
   Card,
@@ -8,6 +8,7 @@ import {
   IconTile,
   Notice,
   StatusBadge,
+  useScreenRefresh,
 } from '../components/ui';
 import { SACRAMENT_SERVICES, getService } from '../data/catalog';
 import { colors, fonts, spacing, type } from '../theme';
@@ -23,12 +24,15 @@ const serviceIcons: Record<SacramentId, keyof typeof Ionicons.glyphMap> = {
 
 export const ServicesScreen = ({
   focusedServiceId,
+  catalogVersion: _catalogVersion,
   onBook,
 }: {
   focusedServiceId: SacramentId | undefined;
+  catalogVersion?: number;
   onBook: (id: SacramentId) => void;
 }) => {
   const { width } = useWindowDimensions();
+  const { refreshing, onRefresh } = useScreenRefresh();
   const focusedService = focusedServiceId ? getService(focusedServiceId) : undefined;
   const orderedServices = focusedService
     ? [focusedService, ...SACRAMENT_SERVICES.filter((service) => service.id !== focusedService.id)]
@@ -39,6 +43,18 @@ export const ServicesScreen = ({
       contentContainerStyle={[styles.screenScroll, width > 720 && styles.screenScrollWide]}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
+      {...(onRefresh
+        ? {
+            refreshControl: (
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={colors.oxblood}
+                colors={[colors.oxblood]}
+              />
+            ),
+          }
+        : {})}
     >
       <Eyebrow>Parish services</Eyebrow>
       <Text style={type.title}>Prepare with confidence</Text>
