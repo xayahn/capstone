@@ -289,7 +289,7 @@ export function ReportsModule({ data, busy, onAccessLost }: Props) {
               </small>
             </article>
             <article className="kpi-card">
-              <span>Human-verified documents</span>
+              <span>Verified documents</span>
               <strong>{report.totals.verifiedDocuments ?? '—'}</strong>
               <small>
                 {report.totals.verifiedDocuments === null
@@ -465,7 +465,7 @@ export function ReportsModule({ data, busy, onAccessLost }: Props) {
                   <span>
                     {report.totals.verifiedDocuments === null
                       ? 'document count restricted to parish staff'
-                      : 'human-verified submissions in filter'}
+                      : 'verified submissions in filter'}
                   </span>
                 </div>
                 <div>

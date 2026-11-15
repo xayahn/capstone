@@ -45,7 +45,7 @@ function CodeField({ label, secureTextEntry, ...props }: TextInputProps & { labe
       <TextInput
         {...props}
         accessibilityLabel={label}
-        style={styles.input}
+        style={[styles.input, props.editable === false && styles.inputReadOnly]}
         placeholderTextColor={colors.inkSoft}
       />
     </View>
@@ -74,7 +74,7 @@ function RecoveryPasswordChecklist({ password, confirmPassword }: { password: st
 }
 
 function CodeNotice() {
-  return <Text style={styles.hint}>Only the newest code works, and it expires after 15 minutes. An accepted request does not confirm inbox delivery. Check your inbox and spam folder; request a new code if none arrives.</Text>;
+  return <Text style={styles.hint}>Codes expire after 15 minutes, and only the newest code works. Please check your inbox and spam folder, or request a new code if none arrives.</Text>;
 }
 
 function FlowError({ error }: { error: string }) {
@@ -97,8 +97,8 @@ export function PasswordRecoveryForm({ initialEmail = '', actions, onClose }: {
     <Eyebrow>Account recovery</Eyebrow>
     <Text accessibilityRole="header" style={type.heading}>{state.phase === 'request' ? 'Forgot your password?' : 'Enter your reset code'}</Text>
     <Text style={styles.copy}>{state.phase === 'request'
-      ? 'Request a code for your sign-in email. ParishLink gives the same response whether an eligible account exists or not.'
-      : 'If an eligible account exists, a reset code will be sent. Enter the code from your email to choose a new password.'}</Text>
+      ? 'Enter your sign-in email address to request a 12-character password reset code.'
+      : 'If your email is registered, we sent a 12-character reset code. Enter the code from your email to choose a new password.'}</Text>
     <CodeField label="Recovery email address" value={state.email} onChangeText={value => flow.setField('email', value)}
       editable={!state.busy && state.phase === 'request'} keyboardType="email-address"
       autoCapitalize="none" autoCorrect={false} autoComplete="email" textContentType="emailAddress" maxLength={254} />
@@ -181,6 +181,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+  },
+  inputReadOnly: {
+    backgroundColor: colors.paperLight,
+    color: colors.inkSoft,
   },
   passwordRow: {
     flexDirection: 'row',

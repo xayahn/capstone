@@ -93,6 +93,66 @@ export const normalizeApiBaseUrl = (value: string): string => {
   return `${parsed.origin}${pathname}`;
 };
 
+const isRfc1918Ipv4 = (value: string): boolean => {
+  const octets = value.split('.').map(Number);
+  if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) {
+    return false;
+  }
+  const [first = -1, second = -1] = octets;
+  return first === 10
+    || (first === 172 && second >= 16 && second <= 31)
+    || (first === 192 && second === 168);
+};
+
+const isLoopbackHostname = (value: string): boolean => {
+  const normalized = value.toLowerCase();
+  return normalized === 'localhost' || normalized === '127.0.0.1';
+};
+
+const extractHostFromUriOrHostname = (raw: string): string | undefined => {
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  const withoutScheme = trimmed.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '');
+  const authority = withoutScheme.split(/[/?#]/)[0]?.trim() ?? '';
+  if (!authority || authority.includes('@') || authority.startsWith('[')) return undefined;
+  const host = authority.replace(/:\d+$/, '').toLowerCase();
+  return host || undefined;
+};
+
+export const resolveDevelopmentLanApiBaseUrl = (
+  configuredBaseUrl: string,
+  environment: AppEnvironment,
+  hostHint?: { hostname: string; allowLoopback: boolean },
+): string => {
+  if (environment !== 'development' || !configuredBaseUrl || !hostHint) {
+    return configuredBaseUrl;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(configuredBaseUrl);
+  } catch {
+    return configuredBaseUrl;
+  }
+  if (parsed.protocol !== 'http:') {
+    return configuredBaseUrl;
+  }
+  if (!isLoopbackHostname(parsed.hostname) && !isRfc1918Ipv4(parsed.hostname)) {
+    return configuredBaseUrl;
+  }
+  const candidateHost = extractHostFromUriOrHostname(hostHint.hostname);
+  if (!candidateHost) {
+    return configuredBaseUrl;
+  }
+  const validCandidate = isRfc1918Ipv4(candidateHost)
+    || (hostHint.allowLoopback && isLoopbackHostname(candidateHost));
+  if (!validCandidate || candidateHost === parsed.hostname.toLowerCase()) {
+    return configuredBaseUrl;
+  }
+  parsed.hostname = candidateHost;
+  const pathname = parsed.pathname.replace(/\/+$/, '');
+  return `${parsed.origin}${pathname}`;
+};
+
 export const resolveRuntimeConfiguration = (input: RuntimeEnvironmentInput): RuntimeConfiguration => {
   const environment = parseAppEnvironment(input.appEnvironment);
   const demoMode = parseDemoMode(input.demoMode, environment);

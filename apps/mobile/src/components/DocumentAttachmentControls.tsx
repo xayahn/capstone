@@ -19,6 +19,8 @@ export interface DocumentAttachmentControlsProps {
   onError: (message: string) => void;
 }
 
+type PickingSource = 'camera' | 'library' | 'file' | null;
+
 export const DocumentAttachmentControls = ({
   triggerLabel,
   requirementLabel,
@@ -28,12 +30,13 @@ export const DocumentAttachmentControls = ({
   onError,
 }: DocumentAttachmentControlsProps) => {
   const [expanded, setExpanded] = useState(false);
-  const [picking, setPicking] = useState(false);
+  const [pickingSource, setPickingSource] = useState<PickingSource>(null);
+  const busy = pickingSource !== null;
 
-  const handlePick = async (runner: () => Promise<DocumentPickOutcome>) => {
-    if (picking || disabled || loading) return;
+  const handlePick = async (source: Exclude<PickingSource, null>, runner: () => Promise<DocumentPickOutcome>) => {
+    if (busy || disabled || loading) return;
     onError('');
-    setPicking(true);
+    setPickingSource(source);
     try {
       const outcome = await runner();
       if (outcome.status === 'error') {
@@ -45,7 +48,7 @@ export const DocumentAttachmentControls = ({
         await onPicked(outcome.file);
       }
     } finally {
-      setPicking(false);
+      setPickingSource(null);
     }
   };
 
@@ -56,7 +59,7 @@ export const DocumentAttachmentControls = ({
         icon="cloud-upload-outline"
         variant="secondary"
         loading={loading}
-        disabled={disabled || picking}
+        disabled={disabled || busy}
         accessibilityLabel={`${triggerLabel} for ${requirementLabel}`}
         onPress={() => {
           onError('');
@@ -69,36 +72,47 @@ export const DocumentAttachmentControls = ({
   return (
     <View style={styles.sheet} accessibilityLabel={`Attachment options for ${requirementLabel}`}>
       <Text style={styles.sheetTitle}>How would you like to attach this document?</Text>
-      {Platform.OS !== 'web' ? (
+      {Platform.OS === 'web' ? (
         <AppButton
-          label="Take photo with camera"
-          icon="camera-outline"
+          label="Choose PDF, JPG, or PNG file"
+          icon="document-attach-outline"
           variant="primary"
-          loading={picking}
-          disabled={disabled || loading}
-          onPress={() => void handlePick(() => pickFromCamera(requirementLabel))}
+          loading={pickingSource === 'file'}
+          disabled={disabled || loading || busy}
+          onPress={() => void handlePick('file', pickFromDocumentFiles)}
         />
-      ) : null}
-      <AppButton
-        label="Choose from photo library"
-        icon="images-outline"
-        variant="secondary"
-        loading={picking}
-        disabled={disabled || loading}
-        onPress={() => void handlePick(() => pickFromPhotoLibrary(requirementLabel))}
-      />
-      <AppButton
-        label="Browse PDF or file"
-        icon="document-attach-outline"
-        variant="secondary"
-        loading={picking}
-        disabled={disabled || loading}
-        onPress={() => void handlePick(pickFromDocumentFiles)}
-      />
+      ) : (
+        <>
+          <AppButton
+            label="Take photo with camera"
+            icon="camera-outline"
+            variant="primary"
+            loading={pickingSource === 'camera'}
+            disabled={disabled || loading || busy}
+            onPress={() => void handlePick('camera', () => pickFromCamera(requirementLabel))}
+          />
+          <AppButton
+            label="Choose from photo library"
+            icon="images-outline"
+            variant="secondary"
+            loading={pickingSource === 'library'}
+            disabled={disabled || loading || busy}
+            onPress={() => void handlePick('library', () => pickFromPhotoLibrary(requirementLabel))}
+          />
+          <AppButton
+            label="Browse PDF or file"
+            icon="document-attach-outline"
+            variant="secondary"
+            loading={pickingSource === 'file'}
+            disabled={disabled || loading || busy}
+            onPress={() => void handlePick('file', pickFromDocumentFiles)}
+          />
+        </>
+      )}
       <AppButton
         label="Cancel"
         variant="ghost"
-        disabled={picking || loading}
+        disabled={busy || loading}
         onPress={() => setExpanded(false)}
       />
     </View>

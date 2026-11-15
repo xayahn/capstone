@@ -2,13 +2,11 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import type { Actor, AssignmentCursor, AssignmentPage } from '@/shared/domain';
+import { formatDateTime } from '@/frontend/components/modules/portal-shared';
 import { adminRequest, AdminAccessError } from '@/frontend/lib/admin-request';
 import { privatePageState, type PrivatePageResult } from '@/frontend/lib/private-page-state';
 
 type Props = { actor: Actor; refreshKey: string; busy: boolean; total: number; onCancel: (id: string) => Promise<boolean>; onAccessLost: (error: AdminAccessError) => void };
-const formatDateTime = (value: string) => new Intl.DateTimeFormat('en-PH', {
-  timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
-}).format(new Date(value));
 
 export function AssignmentBrowser({ actor, refreshKey, busy, total, onCancel, onAccessLost }: Props) {
   const [draft, setDraft] = useState('');
@@ -50,7 +48,7 @@ export function AssignmentBrowser({ actor, refreshKey, busy, total, onCancel, on
       <label><span>Show</span><select value={period} onChange={event => { setPeriod(event.target.value); setCursor(null); setHistory([]); setConfirmCancelId(null); }}><option value="upcoming">Upcoming and in progress</option><option value="past">Past assignments</option><option value="all">All dates</option></select></label>
       <button className="primary-button compact" disabled={busy}>Search</button>
     </form>
-    <p className="records-help">Times are shown in Philippine time. Browse 25 assignments per page, including schedules beyond the former 100-item limit.</p>
+    <p className="records-help">Times are shown in Philippine time (Asia/Manila). Browse 25 confirmed assignments per page.</p>
     {loading && <div className="empty-state" role="status">Loading clergy schedule…</div>}
     {refreshing && <p className="records-help" role="status">Refreshing schedule… Actions will resume when the latest details arrive.</p>}
     {error && <div className="alert danger" role="alert"><span>{error}</span><button className="secondary-button compact" onClick={() => setRetry(value => value + 1)}>Retry schedule</button></div>}

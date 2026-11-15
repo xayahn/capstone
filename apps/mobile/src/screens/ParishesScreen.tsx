@@ -21,7 +21,7 @@ import {
   useScreenRefresh,
 } from '../components/ui';
 import { PARISHES } from '../data/catalog';
-import { dialablePhoneUri, mailtoUri } from '../lib/contactLinks';
+import { dialablePhoneUri, isPlaceholderPhone, mailtoUri } from '../lib/contactLinks';
 import { colors, fonts, spacing, type } from '../theme';
 import type { Parish, ParishId } from '../types/domain';
 
@@ -127,7 +127,7 @@ export const ParishesScreen = ({
       {orderedParishes.map((parish) => {
         const isHome = parish.id === homeParishId;
         const contact = parish.contact;
-        const phoneHref = dialablePhoneUri(contact?.phone);
+        const phoneHref = isPlaceholderPhone(contact?.phone) ? null : dialablePhoneUri(contact?.phone);
         const emailHref = mailtoUri(contact?.email);
 
         return (
@@ -246,7 +246,7 @@ const styles = StyleSheet.create({
   descriptionText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 14.5, lineHeight: 21, marginTop: 3 },
   contactRow: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.sm, paddingVertical: 2 },
   contactIcon: { marginTop: 2 },
-  contactLabel: { color: colors.inkSoft, fontFamily: fonts.bodyBold, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' },
+  contactLabel: { color: colors.inkSoft, fontFamily: fonts.bodyBold, fontSize: 14, letterSpacing: 0.5, textTransform: 'uppercase' },
   contactValue: { color: colors.ink, fontFamily: fonts.body, fontSize: 15.5, lineHeight: 23 },
   contactLink: { color: colors.oxblood, fontFamily: fonts.bodySemibold, textDecorationLine: 'underline' },
   contactMissing: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 15, fontStyle: 'italic', lineHeight: 23 },

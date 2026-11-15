@@ -3,13 +3,18 @@ import { createHash } from 'node:crypto';
 import { PendingSubmissionKeys } from '../src/api/pendingSubmissionKeys';
 
 function fixture() {
-  const values = new Map<string,string>();
+  const values = new Map<string, string>();
   let now = 100000000;
+  let uuidCounter = 0;
   const deps = {
     read: async (key: string) => values.get(key) ?? null,
-    write: async (key: string, value: string) => { values.set(key,value); },
+    write: async (key: string, value: string) => { values.set(key, value); },
+    remove: async (key: string) => { values.delete(key); },
     digest: async (value: string) => createHash('sha256').update(value).digest('hex'),
-    randomUUID: vi.fn(() => '123e4567-e89b-42d3-a456-426614174000'),
+    randomUUID: vi.fn(() => {
+      uuidCounter += 1;
+      return `123e4567-e89b-42d3-a456-42661417400${uuidCounter}`;
+    }),
     now: () => now,
   };
   return { values, deps, advance: () => { now += 7 * 86400000; } };
@@ -37,6 +42,14 @@ describe('persistent booking retry identity', () => {
     await keys.get('same'); advance();
     await expect(keys.get('same')).rejects.toThrow('too old');
     expect(deps.randomUUID).toHaveBeenCalledOnce();
+  });
+  it('clears a completed submission key so a later request with the same details gets a fresh key', async () => {
+    const { deps, values } = fixture(), keys = new PendingSubmissionKeys(deps);
+    const first = await keys.get('user-one:booking');
+    await keys.clear('user-one:booking');
+    expect(values.size).toBe(0);
+    const second = await keys.get('user-one:booking');
+    expect(second).not.toBe(first);
   });
   it('does not send a submission if persistence fails', async () => {
     const { deps } = fixture();

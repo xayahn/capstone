@@ -23,6 +23,10 @@ describe('consented, bounded Gemini public guidance', () => {
     'How does the walk-in queue differ from online booking?',
     'Why can the wait estimate change while people are waiting in the queue?',
     'How do I use ParishLink to start a request?',
+    'How do I prepare for a Catholic wedding at the Cathedral?',
+    'What happens during a Pre-Cana seminar before marriage?',
+    "How do parents request a child's baptism at Sto. Niño Parish?",
+    'How does binyag or kasal scheduling work in ParishLink?',
   ])('accepts an ordinary public question: %s', value => {
     expect(publicGeminiEligibility(value, true, config)).toBeNull();
   });

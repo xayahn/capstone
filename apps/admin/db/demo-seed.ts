@@ -20,7 +20,7 @@ type Parish = { id: string; key: string; code: string; staffId: string; staffNam
 const PARISH_DETAILS: Record<string, Omit<Parish, 'id'>> = {
   'metropolitan-cathedral': { key: 'cathedral', code: 'MCSF', staffId: 'user-staff-cathedral', staffName: 'Maria Santos',
     contact: {
-      address: 'Consunji St., Brgy. Sto. Rosario, City of San Fernando, Pampanga (sample directory)',
+      address: 'Consunji St., Brgy. Sto. Rosario, City of San Fernando, Pampanga',
       officeHours: 'Tue–Sat 8:00 AM – 12:00 NN, 1:30 PM – 5:00 PM; Sun 8:00 AM – 11:30 AM',
       phone: '+63 (045) 555-0101',
       email: 'office.cathedral@parishlink.test',
@@ -30,7 +30,7 @@ const PARISH_DETAILS: Record<string, Omit<Parish, 'id'>> = {
     venues: [{ id: 'venue-cathedral-main', name: 'Main church' }, { id: 'venue-cathedral-chapel', name: 'Blessed Sacrament Chapel' }] },
   'san-guillermo': { key: 'sanguillermo', code: 'SGP', staffId: 'user-staff-sanguillermo', staffName: 'Jose Bautista',
     contact: {
-      address: 'Cabambangan, Bacolor, Pampanga (sample directory)',
+      address: 'Cabambangan, Bacolor, Pampanga',
       officeHours: 'Tue–Sun 8:00 AM – 12:00 NN, 1:30 PM – 4:30 PM',
       phone: '+63 (045) 555-0102',
       email: 'office.sanguillermo@parishlink.test',
@@ -40,7 +40,7 @@ const PARISH_DETAILS: Record<string, Omit<Parish, 'id'>> = {
     venues: [{ id: 'venue-sg-main', name: 'Main church' }, { id: 'venue-sg-baptistry', name: 'Baptistry' }] },
   'sanctuario-san-jose': { key: 'sanctuario', code: 'SSJ', staffId: 'user-staff-sanctuario', staffName: 'Ramon Lingat',
     contact: {
-      address: 'Brgy. San Jose, City of San Fernando, Pampanga (sample directory)',
+      address: 'Brgy. San Jose, City of San Fernando, Pampanga',
       officeHours: 'Tue–Sat 8:30 AM – 12:00 NN, 1:30 PM – 5:00 PM',
       phone: '+63 (045) 555-0103',
       email: 'office.sanctuario@parishlink.test',
@@ -49,7 +49,7 @@ const PARISH_DETAILS: Record<string, Omit<Parish, 'id'>> = {
     clergy: [{ id: 'fr-j-cruz', userId: 'user-clergy-cruz', name: 'Fr. J. Cruz' }], venues: [{ id: 'venue-sanctuario-san-jose', name: 'Main church' }] },
   'sta-lucia': { key: 'stalucia', code: 'SLP', staffId: 'user-staff-stalucia', staffName: 'Elena Pamintuan',
     contact: {
-      address: 'Brgy. Sta. Lucia, City of San Fernando, Pampanga (sample directory)',
+      address: 'Brgy. Sta. Lucia, City of San Fernando, Pampanga',
       officeHours: 'Tue–Sat 8:00 AM – 12:00 NN, 1:00 PM – 4:30 PM',
       phone: '+63 (045) 555-0104',
       email: 'office.stalucia@parishlink.test',
@@ -58,7 +58,7 @@ const PARISH_DETAILS: Record<string, Omit<Parish, 'id'>> = {
     clergy: [{ id: 'clergy-pineda', userId: 'user-clergy-pineda', name: 'Fr. M. Pineda' }], venues: [{ id: 'venue-sl-main', name: 'Main church' }] },
   'sto-nino': { key: 'stonino', code: 'SNP', staffId: 'user-staff-stonino', staffName: 'Carmela Dayrit',
     contact: {
-      address: 'Brgy. Sto. Niño, City of San Fernando, Pampanga (sample directory)',
+      address: 'Brgy. Sto. Niño, City of San Fernando, Pampanga',
       officeHours: 'Tue–Sat 8:00 AM – 12:00 NN, 1:30 PM – 5:00 PM',
       phone: '+63 (045) 555-0105',
       email: 'office.stonino@parishlink.test',
@@ -67,7 +67,7 @@ const PARISH_DETAILS: Record<string, Omit<Parish, 'id'>> = {
     clergy: [{ id: 'fr-b-tolentino', userId: 'user-clergy-tolentino', name: 'Fr. B. Tolentino' }], venues: [{ id: 'venue-sto-nino', name: 'Main church' }] },
   'san-isidro-labrador': { key: 'sanisidro', code: 'SILP', staffId: 'user-staff-sanisidro', staffName: 'Noel Guevarra',
     contact: {
-      address: 'Brgy. San Isidro, Bacolor / San Fernando boundary, Pampanga (sample directory)',
+      address: 'Brgy. San Isidro, Bacolor / San Fernando boundary, Pampanga',
       officeHours: 'Tue–Sat 8:30 AM – 12:00 NN, 1:30 PM – 4:30 PM',
       phone: '+63 (045) 555-0106',
       email: 'office.sanisidro@parishlink.test',
@@ -76,7 +76,7 @@ const PARISH_DETAILS: Record<string, Omit<Parish, 'id'>> = {
     clergy: [{ id: 'fr-c-reyes', userId: 'user-clergy-reyes', name: 'Fr. C. Reyes' }], venues: [{ id: 'venue-san-isidro-labrador', name: 'Main church' }] },
   'st-joseph': { key: 'stjoseph', code: 'SJP', staffId: 'user-staff-stjoseph', staffName: 'Lourdes Manansala',
     contact: {
-      address: 'City of San Fernando, Pampanga (sample directory)',
+      address: 'City of San Fernando, Pampanga',
       officeHours: 'Tue–Sat 8:00 AM – 12:00 NN, 1:30 PM – 5:00 PM',
       phone: '+63 (045) 555-0107',
       email: 'office.stjoseph@parishlink.test',
@@ -85,7 +85,7 @@ const PARISH_DETAILS: Record<string, Omit<Parish, 'id'>> = {
     clergy: [{ id: 'fr-d-lopez', userId: 'user-clergy-lopez', name: 'Fr. D. Lopez' }], venues: [{ id: 'venue-st-joseph', name: 'Main church' }] },
   'our-lady-of-lourdes': { key: 'lourdes', code: 'OLL', staffId: 'user-staff-lourdes', staffName: 'Victor Sangalang',
     contact: {
-      address: 'Cabetican, Bacolor, Pampanga (sample directory)',
+      address: 'Cabetican, Bacolor, Pampanga',
       officeHours: 'Tue–Sun 8:00 AM – 12:00 NN, 1:30 PM – 5:00 PM',
       phone: '+63 (045) 555-0108',
       email: 'office.lourdes@parishlink.test',
@@ -111,8 +111,16 @@ const CLERGY_EMAILS: Record<string, string> = {
 };
 
 const CHILD_NAMES = ['Gabriel', 'Sofia', 'Miguel', 'Isabel', 'Rafael', 'Andrea', 'Lucas', 'Mikaela', 'Nathan', 'Bianca', 'Elijah'];
-const PARTNER_NAMES = ['Jerome', 'Clarisse', 'Adrian', 'Danica', 'Kevin', 'Patricia', 'Bryan', 'Nicole'];
+const MALE_FIRST_NAMES = new Set(['Paolo', 'Ronald', 'Mark', 'Carlo', 'Joseph', 'Arnel', 'Dennis', 'Michael', 'Francis', 'Romeo', 'Vincent']);
+const BRIDE_FIRST_NAMES = ['Clarisse', 'Danica', 'Patricia', 'Nicole', 'Camille', 'Alyssa', 'Katrina', 'Regina'];
+const GROOM_FIRST_NAMES = ['Jerome', 'Adrian', 'Kevin', 'Bryan', 'Christian', 'Marco', 'Daniel', 'Joshua'];
 const DECEASED_NAMES = ['Lolo Ernesto', 'Lola Remedios', 'Lolo Benigno', 'Lola Felicidad', 'Lolo Conrado', 'Lola Natividad', 'Lolo Severino', 'Lola Purita'];
+
+const partnerFirstName = (requesterFirst: string, index: number): string => (
+  MALE_FIRST_NAMES.has(requesterFirst)
+    ? BRIDE_FIRST_NAMES[index % BRIDE_FIRST_NAMES.length]
+    : GROOM_FIRST_NAMES[index % GROOM_FIRST_NAMES.length]
+);
 
 type Status = 'completed' | 'cancelled' | 'no_show' | 'rejected' | 'approved' | 'ready_to_approve' | 'under_review' | 'documents_pending' | 'needs_changes' | 'submitted';
 type Template = { offset: number; time: string; service: string; status: Status | 'no_show_or_rejected' };
@@ -190,13 +198,51 @@ function demoPdf(label: string): Uint8Array<ArrayBuffer> {
 
 export type DemoSeedSummary = { seeded: boolean; parishioners: number; appointments: number; documents: number; files: number };
 
+async function backfillMissingDemoFiles(db: D1Database, files: R2Bucket): Promise<number> {
+  const rows = await db.prepare(`
+    SELECT ds.storage_key AS storageKey, ds.original_file_name AS fileName,
+           ds.requirement_name AS requirementName, a.reference AS reference
+    FROM document_submissions ds
+    JOIN appointments a ON a.id = ds.appointment_id
+    WHERE ds.id LIKE 'demo-appt-%' AND ds.storage_key IS NOT NULL
+    ORDER BY ds.id ASC
+  `).all<{ storageKey: string; fileName: string | null; requirementName: string; reference: string }>();
+  if (!rows.results.length) return 0;
+
+  const probe = await files.get(rows.results[0].storageKey);
+  if (probe) {
+    const body = (probe as { body?: { cancel?: () => Promise<void> } }).body;
+    if (body && typeof body.cancel === 'function') await body.cancel().catch(() => undefined);
+    return 0;
+  }
+
+  const updates: D1PreparedStatement[] = [];
+  let restored = 0;
+  for (const row of rows.results) {
+    const bytes = demoPdf(`${row.requirementName} for ${row.reference}`);
+    const digest = hex(await crypto.subtle.digest('SHA-256', bytes));
+    const fileName = row.fileName ?? 'document.pdf';
+    await files.put(row.storageKey, bytes, {
+      httpMetadata: { contentType: 'application/pdf', contentDisposition: `attachment; filename="${fileName}"` },
+    });
+    updates.push(db.prepare('UPDATE document_submissions SET sha256 = ?, size_bytes = ? WHERE storage_key = ?').bind(digest, bytes.byteLength, row.storageKey));
+    restored += 1;
+  }
+  for (let index = 0; index < updates.length; index += 50) await db.batch(updates.slice(index, index + 50));
+  return restored;
+}
+
 /**
  * Seed the synthetic demonstration dataset into an empty development database.
- * Does nothing when the demo administrator already exists.
+ * If D1 was already seeded while local R2 storage was reset or switched to a
+ * new bucket name, backfills any missing synthetic demo PDFs automatically.
  */
 export async function seedDemoData(db: D1Database, files: R2Bucket | undefined, now: Date = new Date()): Promise<DemoSeedSummary> {
   const existing = await db.prepare("SELECT 1 AS present FROM users WHERE id = 'user-admin-demo'").first<{ present: number }>();
-  if (existing) return { seeded: false, parishioners: 0, appointments: 0, documents: 0, files: 0 };
+  if (existing) {
+    const restored = files ? await backfillMissingDemoFiles(db, files) : 0;
+    return { seeded: false, parishioners: 0, appointments: 0, documents: 0, files: restored };
+  }
 
   const statements: D1PreparedStatement[] = [];
   const add = (sql: string, ...values: unknown[]) => statements.push(db.prepare(sql).bind(...values));
@@ -279,7 +325,7 @@ export async function seedDemoData(db: D1Database, files: R2Bucket | undefined, 
 
       // Participants
       add(`INSERT INTO appointment_participants (id, appointment_id, participant_type, full_name) VALUES (?, ?, 'requester', ?)`, crypto.randomUUID(), id, person.name);
-      const subject = template.service === 'wedding' ? ['partner', `${PARTNER_NAMES[(parishIndex + templateIndex) % PARTNER_NAMES.length]} ${parishioners[(parishIndex * 3 + 5) % parishioners.length].last}`]
+      const subject = template.service === 'wedding' ? ['partner', `${partnerFirstName(person.first, parishIndex + templateIndex)} ${parishioners[(parishIndex * 3 + 5) % parishioners.length].last}`]
         : template.service === 'funeral-mass' ? ['deceased', `${DECEASED_NAMES[parishIndex % DECEASED_NAMES.length]} ${person.last}`]
           : ['candidate', `${CHILD_NAMES[(parishIndex + templateIndex) % CHILD_NAMES.length]} ${person.last}`];
       add(`INSERT INTO appointment_participants (id, appointment_id, participant_type, full_name) VALUES (?, ?, ?, ?)`, crypto.randomUUID(), id, subject[0], subject[1]);
@@ -385,11 +431,12 @@ export async function seedDemoData(db: D1Database, files: R2Bucket | undefined, 
     ['san-guillermo', 1, 'Leonora Dabu', 'Certificate request', 'waiting', 25],
     ['san-guillermo', 2, 'Ernesto Mallari', 'Funeral Mass inquiry', 'waiting', 12],
   ];
+  const startOfToday = atManila(manilaDate(now, 0), '00:05');
   for (const [parishId, number, name, service, status, minutesAgo] of queue) {
-    const issued = new Date(now.getTime() - minutesAgo * SLOT);
+    const issued = new Date(Math.max(startOfToday.getTime(), now.getTime() - minutesAgo * SLOT));
     add(`INSERT INTO queue_tickets (id, ticket_number, parish_id, parishioner_user_id, parishioner_name, service, status, counter, issued_at, called_at, served_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, `demo-queue-${parishId}-${number}`, `${today}-${String(number).padStart(3, '0')}`, parishId,
-      name === 'Paolo Garcia' ? 'parishioner-02' : null, name, service === 'Funeral Mass inquiry' ? 'General inquiry' : service, status,
+      name === 'Paolo Garcia' ? 'parishioner-02' : null, name, service, status,
       status === 'waiting' ? null : 'Window 1', sqlTime(issued), status === 'waiting' ? null : sqlTime(new Date(issued.getTime() + 15 * SLOT)),
       status === 'served' ? sqlTime(new Date(issued.getTime() + 30 * SLOT)) : null);
   }
@@ -417,7 +464,7 @@ export async function seedDemoData(db: D1Database, files: R2Bucket | undefined, 
   for (const [parishIndex, parish] of parishes.entries()) {
     const records: [string, string, string, string][] = [
       ['Baptismal', `${CHILD_NAMES[parishIndex % CHILD_NAMES.length]} ${parishioners[parishIndex * 3].last}`, `${2015 + parishIndex}-0${(parishIndex % 8) + 1}-1${parishIndex % 9}`, 'BAP'],
-      ['Marriage', `${parishioners[parishIndex * 3 + 1].name} & ${PARTNER_NAMES[parishIndex % PARTNER_NAMES.length]} ${parishioners[(parishIndex * 3 + 7) % 24].last}`, `${2018 + (parishIndex % 6)}-1${parishIndex % 3}-0${(parishIndex % 8) + 1}`, 'MAR'],
+      ['Marriage', `${parishioners[parishIndex * 3 + 1].name} & ${partnerFirstName(parishioners[parishIndex * 3 + 1].first, parishIndex)} ${parishioners[(parishIndex * 3 + 7) % 24].last}`, `${2018 + (parishIndex % 6)}-1${parishIndex % 3}-0${(parishIndex % 8) + 1}`, 'MAR'],
       ['Confirmation', `${parishioners[parishIndex * 3 + 2].name}`, `${2010 + parishIndex}-0${(parishIndex % 6) + 3}-2${parishIndex % 8}`, 'CON'],
     ];
     records.forEach(([type, subject, date, prefix], index) => {

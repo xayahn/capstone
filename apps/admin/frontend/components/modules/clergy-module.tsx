@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react';
 import type { AdminMutation, DashboardState } from '@/shared/domain';
 import { AssignmentBrowser } from '@/frontend/components/assignment-browser';
+import { parseManilaLocalDateTime } from '@/frontend/components/modules/portal-shared';
 import type { AdminAccessError } from '@/frontend/lib/admin-request';
 
 type Props = {
@@ -59,6 +60,9 @@ export function ClergyModule({ data, busy, onAccessLost, runMutation }: Props) {
             className="stack-form"
             onSubmit={(event: FormEvent) => {
               event.preventDefault();
+              const parsedStart = parseManilaLocalDateTime(assignmentStartsAt);
+              const parsedEnd = parseManilaLocalDateTime(assignmentEndsAt);
+              if (!parsedStart || !parsedEnd) return;
               void runMutation(
                 {
                   action: 'clergy.assignment.create',
@@ -66,11 +70,17 @@ export function ClergyModule({ data, busy, onAccessLost, runMutation }: Props) {
                   clergyId: effectiveClergyId,
                   venueId: effectiveVenueId,
                   service: assignmentService,
-                  startsAt: new Date(assignmentStartsAt).toISOString(),
-                  endsAt: new Date(assignmentEndsAt).toISOString(),
+                  startsAt: parsedStart.toISOString(),
+                  endsAt: parsedEnd.toISOString(),
                 },
                 'Clergy assignment created.',
-              );
+              ).then((saved) => {
+                if (saved) {
+                  setAssignmentService('');
+                  setAssignmentStartsAt('');
+                  setAssignmentEndsAt('');
+                }
+              });
             }}
           >
             <label>
@@ -119,11 +129,11 @@ export function ClergyModule({ data, busy, onAccessLost, runMutation }: Props) {
                 value={assignmentService}
                 maxLength={100}
                 onChange={(event) => setAssignmentService(event.target.value)}
-                placeholder="e.g. Daily Mass"
+                placeholder="e.g. Daily Mass (at least 3 characters)"
               />
             </label>
             <label>
-              <span>Starts</span>
+              <span>Starts (Philippine time)</span>
               <input
                 type="datetime-local"
                 value={assignmentStartsAt}
@@ -131,7 +141,7 @@ export function ClergyModule({ data, busy, onAccessLost, runMutation }: Props) {
               />
             </label>
             <label>
-              <span>Ends</span>
+              <span>Ends (Philippine time)</span>
               <input
                 type="datetime-local"
                 value={assignmentEndsAt}

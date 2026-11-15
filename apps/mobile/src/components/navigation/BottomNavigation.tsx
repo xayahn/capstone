@@ -27,7 +27,7 @@ const NavItem = ({ icon, activeIcon, label, active, onPress }: NavItemProps) => 
     style={styles.navItem}
   >
     <Ionicons name={active ? activeIcon : icon} size={25} color={active ? colors.oxblood : colors.inkSoft} />
-    <Text style={[styles.navLabel, active && styles.navLabelActive]}>{label}</Text>
+    <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85} style={[styles.navLabel, active && styles.navLabelActive]}>{label}</Text>
   </Pressable>
 );
 
@@ -47,6 +47,6 @@ const styles = StyleSheet.create({
   bottomSafe: { backgroundColor: colors.card },
   bottomNav: { borderTopColor: colors.line, borderTopWidth: 1, flexDirection: 'row', minHeight: 68 },
   navItem: { alignItems: 'center', flex: 1, gap: 3, justifyContent: 'center', minHeight: 64 },
-  navLabel: { color: colors.inkSoft, fontFamily: fonts.bodyMedium, fontSize: 13, lineHeight: 17 },
+  navLabel: { color: colors.inkSoft, fontFamily: fonts.bodyMedium, fontSize: 13.5, lineHeight: 18 },
   navLabelActive: { color: colors.oxblood, fontFamily: fonts.bodyBold },
 });

@@ -1,5 +1,7 @@
-import { SACRAMENT_SERVICES, getParish, getService } from '../data/catalog';
-import type { AssistantAction, AssistantMessage, RepositorySnapshot, SacramentId } from '../types/domain';
+import { PARISHES, SACRAMENT_SERVICES, getParish, getService } from '../data/catalog';
+import { formatDate } from './scheduling';
+import { appointmentStatusLabel, queueStatusLabel } from './status';
+import type { AssistantAction, AssistantMessage, Parish, ParishId, RepositorySnapshot, SacramentId } from '../types/domain';
 
 export const ASSISTANT_DISCLAIMER =
   'ParishLink provides general parish guidance only. Parish staff make all official decisions and sacramental determinations.';
@@ -38,10 +40,30 @@ const SERVICE_TERMS: Record<SacramentId, RegExp> = {
   funeral: /funeral|burial|libing/i,
 };
 
+const PARISH_TERMS: Array<[ParishId, RegExp]> = [
+  ['metropolitan-cathedral', /cathedral|sto\.?\s*rosario/i],
+  ['san-guillermo', /san guillermo|cabambangan/i],
+  ['sanctuario-san-jose', /sanctuario|san jose/i],
+  ['sta-lucia', /sta\.?\s*lucia|santa lucia/i],
+  ['sto-nino', /sto\.?\s*ni[nñ]o|santo ni[nñ]o/i],
+  ['san-isidro-labrador', /san isidro/i],
+  ['st-joseph', /st\.?\s*joseph|saint joseph/i],
+  ['our-lady-of-lourdes', /lourdes|cabetican/i],
+];
+
 const detectService = (prompt: string): SacramentId | undefined => (
   (Object.entries(SERVICE_TERMS) as Array<[SacramentId, RegExp]>)
     .find(([, pattern]) => pattern.test(prompt))?.[0]
 );
+
+const detectParish = (prompt: string, snapshot?: RepositorySnapshot): Parish | undefined => {
+  const matchedId = PARISH_TERMS.find(([, pattern]) => pattern.test(prompt))?.[0];
+  if (matchedId) return getParish(matchedId);
+  if (/home parish|my parish/i.test(prompt) && snapshot?.profile.homeParishId) {
+    return getParish(snapshot.profile.homeParishId);
+  }
+  return undefined;
+};
 
 const serviceActions = (serviceId: SacramentId): AssistantAction[] => [
   { id: `view-${serviceId}`, label: 'View service details', kind: 'service', serviceId },
@@ -73,6 +95,7 @@ export const getDemoGuidance = (prompt: string, snapshot?: RepositorySnapshot): 
 
   const serviceId = detectService(question);
   const service = serviceId ? getService(serviceId) : undefined;
+  const namedParish = detectParish(question, snapshot);
 
   if (/status|pending|track|next step|my appointment|my request/i.test(question)) {
     const appointment = snapshot?.appointments.find((item) => (
@@ -96,12 +119,15 @@ export const getDemoGuidance = (prompt: string, snapshot?: RepositorySnapshot): 
     return {
       title: `${activeService?.name ?? 'Appointment'} · ${appointment.reference}`,
       text: needsAction.length
-        ? `Your request needs attention before parish staff can complete their review.`
+        ? 'Your request needs attention before parish staff can complete their review.'
         : 'Your request is recorded and waiting for the next parish review step.',
       escalation: false,
       bullets: needsAction.length
         ? needsAction.map((item) => `${item.label}: ${item.note ?? 'Action required'}`)
-        : [`Current status: ${appointment.status.replaceAll('_', ' ')}`, `Scheduled request: ${appointment.date} at ${appointment.time}`],
+        : [
+            `Current status: ${appointmentStatusLabel[appointment.status]}`,
+            `Requested schedule: ${formatDate(appointment.date)} at ${appointment.time}`,
+          ],
       sources: [{ label: `Your appointment ${appointment.reference}`, kind: 'appointment', updatedAt: appointment.updatedAt }],
       actions: [{ id: 'open-appointment', label: 'View appointment', kind: 'appointment', appointmentId: appointment.id }],
       followUpPrompts: [`Why is my ${activeService?.name ?? 'appointment'} still pending?`, 'How does document verification work?'],
@@ -117,8 +143,13 @@ export const getDemoGuidance = (prompt: string, snapshot?: RepositorySnapshot): 
           ? 'Parish staff are currently serving your ticket.'
           : `Your ticket is active at ${getParish(ticket.parishId)?.name ?? 'your selected parish'}. Wait estimates can change as staff serve visitors.`;
       const queueDetails = ticket.status === 'waiting'
-        ? [`${ticket.ahead} people ahead`, `About ${ticket.estimatedWaitMinutes} minutes estimated`]
-        : [`Current status: ${ticket.status}`];
+        ? [
+            `${ticket.ahead} ${ticket.ahead === 1 ? 'person' : 'people'} ahead`,
+            ticket.estimatedWaitMinutes === null
+              ? 'Wait estimate will appear once recent tickets are completed'
+              : `About ${ticket.estimatedWaitMinutes} minutes estimated`,
+          ]
+        : [`Current status: ${queueStatusLabel[ticket.status]}`];
       return {
         title: `Queue ticket ${ticket.number}`,
         text: statusText,
@@ -167,13 +198,37 @@ export const getDemoGuidance = (prompt: string, snapshot?: RepositorySnapshot): 
     };
   }
 
+  if (namedParish || /office hours|parish address|where is|contact|telephone|phone|clergy|priest|parishes/i.test(question)) {
+    const targetParish = namedParish ?? (snapshot?.profile.homeParishId ? getParish(snapshot.profile.homeParishId) : PARISHES[0]);
+    if (targetParish) {
+      const bullets = [
+        `Address: ${targetParish.contact?.address ?? 'Check the parish directory for published address'}`,
+        `Office hours: ${targetParish.contact?.officeHours ?? 'Contact the parish office directly'}`,
+        ...(targetParish.clergy.length
+          ? [`Assigned clergy: ${targetParish.clergy.map((member) => member.name).join(', ')}`]
+          : []),
+      ];
+      return {
+        title: targetParish.name,
+        text: namedParish
+          ? `Here are the published ParishLink directory details for ${targetParish.name}.`
+          : `Here are the published directory details for ${targetParish.name}. Open Parishes & office hours to view all ${PARISHES.length} Vicariate parishes.`,
+        escalation: false,
+        bullets,
+        sources: [{ label: `${targetParish.name} directory`, kind: 'parish_directory' }],
+        actions: [{ id: 'open-parishes', label: 'View parishes & office hours', kind: 'contact_parish' }],
+        followUpPrompts: ['What documents do I need?', 'How does the walk-in queue work?'],
+      };
+    }
+  }
+
   if (/reschedule|rescheduling|cancel|cancellation|withdraw|postpone/i.test(question)) {
     return {
       title: 'Rescheduling and cancellation',
-      text: 'Before parish approval, you can withdraw a submitted request directly in My Appointments. Once a request is approved, cancellation requests and reschedule requests (for dates at least 24 hours ahead) are reviewed by authorized parish staff.',
+      text: 'Before parish approval, you can cancel a submitted request directly in My Appointments. Once a request is approved, cancellation requests and reschedule requests (for dates at least 24 hours ahead) are reviewed by authorized parish staff.',
       escalation: false,
       bullets: [
-        'Submitted requests: withdraw directly or request a new slot at least 24 hours ahead',
+        'Submitted requests: cancel directly or request a new slot at least 24 hours ahead',
         'Approved requests: submit a reschedule or cancellation request with your reason for staff review',
       ],
       actions: [{ id: 'open-appointments', label: 'My appointments', kind: 'appointment' }],
@@ -184,7 +239,7 @@ export const getDemoGuidance = (prompt: string, snapshot?: RepositorySnapshot): 
   if (/announcement|announcements|bulletin|notice|notices/i.test(question)) {
     return {
       title: 'Parish and Vicariate announcements',
-      text: 'Published parish and Vicariate notices appear on the Home screen and under More -> Announcements. Contact your parish office to confirm urgent schedule adjustments.',
+      text: 'Published parish and Vicariate notices appear on the Home screen and under More › Announcements. Contact your parish office to confirm urgent schedule adjustments.',
       escalation: false,
       actions: [{ id: 'go-home', label: 'Open home screen', kind: 'home' }],
       followUpPrompts: ['How does the walk-in queue work?', 'What documents do I need?'],
@@ -194,7 +249,7 @@ export const getDemoGuidance = (prompt: string, snapshot?: RepositorySnapshot): 
   if (/schedule|appointment|book|available|time/i.test(question)) {
     return {
       title: service ? `Request ${service.name}` : 'Request an appointment',
-      text: 'Choose a service, parish, clergy member, venue, date, and available time. ParishLink checks the full service interval plus preparation buffers, but parish staff still confirm the request.',
+      text: 'Choose a service, parish, clergy member, date, and available time. ParishLink checks the full service interval plus preparation buffers, and parish staff review and confirm every request.',
       escalation: false,
       actions: service ? serviceActions(service.id) : [{ id: 'browse-services', label: 'Explore services', kind: 'service' }],
       followUpPrompts: ['Why can a time become unavailable?', 'What happens after I submit?'],
@@ -215,7 +270,7 @@ export const getDemoGuidance = (prompt: string, snapshot?: RepositorySnapshot): 
 
   return {
     title: 'What would you like to prepare?',
-    text: 'I can use current ParishLink information to explain service requirements, booking, your request status, and the walk-in queue. Choose a topic or ask a more specific question.',
+    text: 'I can use current ParishLink information to explain service requirements, parish office hours, booking, your request status, and the walk-in queue. Choose a topic or ask a more specific question.',
     escalation: false,
     followUpPrompts: ['What documents do I need?', 'What is my next appointment step?', 'How does the walk-in queue work?'],
   };

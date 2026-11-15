@@ -8,7 +8,7 @@ import {
   type ChangeRequest,
   type DashboardState,
 } from '@/shared/domain';
-import { allowedAppointmentTransitions } from '@/shared/workflow';
+import { allowedAppointmentTransitions, TERMINAL_APPOINTMENT_STATUSES } from '@/shared/workflow';
 import {
   AppointmentTable,
   formatDateTime,
@@ -85,6 +85,12 @@ export function AppointmentsModule({
   const permittedTransitions = selectedAppointment
     ? allowedAppointmentTransitions(selectedAppointment.status, data.actor.role)
     : [];
+  const documentsIncomplete = selectedAppointment
+    ? selectedAppointment.verifiedDocuments < selectedAppointment.requiredDocuments
+    : false;
+  const approvalGateApplies = permittedTransitions.some(
+    (status) => status === 'ready_to_approve' || status === 'approved',
+  );
 
   function changeRequestTable(items: ChangeRequest[]) {
     if (!items.length) {
@@ -222,6 +228,7 @@ export function AppointmentsModule({
               selectedId={selectedAppointment?.id ?? null}
               onReview={(id) => {
                 onSelectAppointment(id);
+                setAppointmentReason('');
                 setAppointmentView('list');
               }}
             />
@@ -305,7 +312,7 @@ export function AppointmentsModule({
                 <div>
                   <dt>Documents</dt>
                   <dd>
-                    {selectedAppointment.verifiedDocuments} of {selectedAppointment.requiredDocuments} human-verified
+                    {selectedAppointment.verifiedDocuments} of {selectedAppointment.requiredDocuments} verified
                   </dd>
                 </div>
               </dl>
@@ -342,6 +349,16 @@ export function AppointmentsModule({
                   <span>This interval overlaps another clergy or venue assignment.</span>
                 </div>
               )}
+              {approvalGateApplies && documentsIncomplete && (
+                <div className="alert warning">
+                  <strong>Documents pending verification</strong>
+                  <span>
+                    Verify all mandatory documents ({selectedAppointment.verifiedDocuments} of{' '}
+                    {selectedAppointment.requiredDocuments} verified) in Document review before marking ready or
+                    approving.
+                  </span>
+                </div>
+              )}
               {selectedAppointment.reviewNote && (
                 <div className="note-box">
                   <strong>Review note</strong>
@@ -355,41 +372,63 @@ export function AppointmentsModule({
                     <textarea
                       value={appointmentReason}
                       onChange={(event) => setAppointmentReason(event.target.value)}
-                      placeholder="Required for changes, rejection, or cancellation"
+                      placeholder="Required (at least 4 characters) when requesting changes, rejecting, or cancelling"
                     />
                   </label>
                   <div className="decision-buttons">
-                    {permittedTransitions.map((status) => (
-                      <button
-                        key={status}
-                        disabled={busy || (REASON_REQUIRED.has(status) && appointmentReason.trim().length < 4)}
-                        className={
-                          status === 'approved'
-                            ? 'primary-button compact'
-                            : status === 'rejected' || status === 'cancelled'
-                              ? 'danger-button'
-                              : 'secondary-button compact'
-                        }
-                        onClick={() =>
-                          void runMutation(
-                            {
-                              action: 'appointment.transition',
-                              appointmentId: selectedAppointment.id,
-                              status,
-                              expectedVersion: selectedAppointment.version,
-                              reason: appointmentReason,
-                            },
-                            `Appointment moved to ${humanizeStatus(status)}.`,
-                          )
-                        }
-                      >
-                        {TRANSITION_LABELS[status] ?? humanizeStatus(status)}
-                      </button>
-                    ))}
+                    {permittedTransitions.map((status) => {
+                      const gatedByApprovalCheck =
+                        (status === 'ready_to_approve' || status === 'approved') &&
+                        (selectedAppointment.conflict || documentsIncomplete);
+                      return (
+                        <button
+                          key={status}
+                          disabled={
+                            busy ||
+                            gatedByApprovalCheck ||
+                            (REASON_REQUIRED.has(status) && appointmentReason.trim().length < 4)
+                          }
+                          className={
+                            status === 'approved'
+                              ? 'primary-button compact'
+                              : status === 'rejected' || status === 'cancelled'
+                                ? 'danger-button'
+                                : 'secondary-button compact'
+                          }
+                          onClick={() =>
+                            void runMutation(
+                              {
+                                action: 'appointment.transition',
+                                appointmentId: selectedAppointment.id,
+                                status,
+                                expectedVersion: selectedAppointment.version,
+                                reason: appointmentReason,
+                              },
+                              `Appointment moved to ${humanizeStatus(status)}.`,
+                            ).then((saved) => {
+                              if (saved) setAppointmentReason('');
+                            })
+                          }
+                        >
+                          {TRANSITION_LABELS[status] ?? humanizeStatus(status)}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
-              ) : (
+              ) : TERMINAL_APPOINTMENT_STATUSES.has(selectedAppointment.status) ? (
                 <div className="empty-mini">No further actions are available for this status.</div>
+              ) : (
+                <div className="alert info">
+                  <strong>Read-only access</strong>
+                  <span>
+                    {data.actor.role === 'system_admin'
+                      ? 'System administrators oversee configuration; parish staff and assigned clergy perform sacramental workflow transitions.'
+                      : data.actor.role === 'clergy'
+                        ? 'Parish staff complete initial documentary verification before priest approval.'
+                        : 'The assigned priest approves or declines requests marked ready to approve.'}
+                  </span>
+                </div>
               )}
             </>
           ) : (
@@ -566,6 +605,7 @@ export function AppointmentsModule({
                   className="secondary-button"
                   onClick={() => {
                     onSelectAppointment(selectedChangeRequest.appointmentId);
+                    setAppointmentReason('');
                     setAppointmentView('list');
                   }}
                 >

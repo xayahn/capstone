@@ -60,7 +60,7 @@ export const ServicesScreen = ({
       <Text style={type.title}>Prepare with confidence</Text>
       <Text style={styles.lead}>Review the usual documents before sending a schedule request. The selected parish will confirm final requirements.</Text>
       {focusedService ? (
-        <Notice title={`${focusedService.name} is shown first`} body="This is the service you selected from Parish guide. Review its checklist below or begin a request." tone="info" icon="navigate-circle-outline" />
+        <Notice title={`${focusedService.name} is shown first`} body="This is the service you selected. Review its checklist below or begin a request." tone="info" icon="navigate-circle-outline" />
       ) : null}
       {orderedServices.map((service) => (
         <Card key={service.id} style={styles.serviceCard}>
@@ -86,7 +86,7 @@ export const ServicesScreen = ({
           <AppButton label={`Request ${service.name}`} icon="arrow-forward" onPress={() => onBook(service.id)} />
         </Card>
       ))}
-      <Notice title="Requirements may vary" body="The capstone catalog guides preparation. The parish office may request additional documents after human review." tone="info" />
+      <Notice title="Requirements may vary" body="Checklist items guide your preparation. Your selected parish office will confirm any additional requirements during staff review." tone="info" />
     </ScrollView>
   );
 };
@@ -100,7 +100,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   serviceTitle: { color: colors.ink, fontFamily: fonts.displayBold, fontSize: 24 },
   mutedText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 15, lineHeight: 22 },
-  requirementsLabel: { color: colors.inkSoft, fontFamily: fonts.bodyBold, fontSize: 13, letterSpacing: 0.7, textTransform: 'uppercase' },
+  requirementsLabel: { color: colors.inkSoft, fontFamily: fonts.bodyBold, fontSize: 14, letterSpacing: 0.7, textTransform: 'uppercase' },
   requirementRow: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.xs },
   requirementText: { color: colors.ink, flex: 1, fontFamily: fonts.body, fontSize: 15.5, lineHeight: 22 },
   moreRequirements: { color: colors.oxblood, fontFamily: fonts.bodySemibold, fontSize: 14 },

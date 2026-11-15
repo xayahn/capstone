@@ -54,9 +54,10 @@ export const AppointmentDetailScreen = ({
   onReschedule,
   onWithdraw,
 }: AppointmentDetailScreenProps) => {
-  const service = getService(appointment.serviceId)!;
-  const parish = getParish(appointment.parishId)!;
-  const clergy = parish.clergy.find((item) => item.id === appointment.clergyId);
+  const service = getService(appointment.serviceId);
+  const parish = getParish(appointment.parishId);
+  const clergy = parish?.clergy.find((item) => item.id === appointment.clergyId);
+  const canUploadDocuments = ['submitted', 'pending_verification', 'needs_action'].includes(appointment.status);
   const summary = summarizeDocuments(appointment.documents);
   const timeline = getAppointmentTimeline(appointment.status);
   const [uploadingDocumentId, setUploadingDocumentId] = useState('');
@@ -79,20 +80,20 @@ export const AppointmentDetailScreen = ({
   };
 
   return (
-    <Screen>
+    <Screen keyboard>
       <Card style={styles.detailHero}>
         <View style={styles.rowBetweenTop}>
-          <IconTile name={serviceIcons[appointment.serviceId]} />
+          <IconTile name={serviceIcons[appointment.serviceId] ?? 'calendar-outline'} />
           <StatusBadge
             label={appointmentStatusLabel[appointment.status]}
             tone={appointmentStatusTone[appointment.status]}
           />
         </View>
-        <Text style={styles.detailTitle}>{service.name}</Text>
+        <Text style={styles.detailTitle}>{service?.name ?? 'Sacramental request'}</Text>
         <Text style={styles.reference}>{appointment.reference}</Text>
         <Divider />
         <InfoRow icon="calendar-outline" text={`${formatDate(appointment.date)} • ${appointment.time}`} />
-        <InfoRow icon="location-outline" text={parish.name} />
+        <InfoRow icon="location-outline" text={parish?.name ?? 'Parish office'} />
         <InfoRow icon="person-outline" text={clergy?.name ?? 'Assigned clergy'} />
         {namedParticipants.length > 0 ? (
           <InfoRow icon="people-outline" text={`Participants: ${namedParticipants.join(' • ')}`} />
@@ -160,7 +161,7 @@ export const AppointmentDetailScreen = ({
               </View>
               <StatusBadge label={documentStatusLabel[document.status]} tone={documentStatusTone[document.status]} />
             </View>
-            {['missing', 'needs_action'].includes(document.status) ? (
+            {canUploadDocuments && ['missing', 'needs_action'].includes(document.status) ? (
               <DocumentAttachmentControls
                 triggerLabel={document.status === 'needs_action' ? 'Replace document' : 'Upload document'}
                 requirementLabel={document.label}
@@ -187,7 +188,7 @@ const styles = StyleSheet.create({
   rowBetweenTop: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.sm, justifyContent: 'space-between' },
   detailHero: { gap: spacing.xs },
   detailTitle: { color: colors.ink, fontFamily: fonts.displayBold, fontSize: 32, marginTop: spacing.sm },
-  reference: { color: colors.oxblood, fontFamily: fonts.bodyBold, fontSize: 13.5, letterSpacing: 0.5 },
+  reference: { color: colors.oxblood, fontFamily: fonts.bodyBold, fontSize: 14, letterSpacing: 0.5 },
   timelineRow: { flexDirection: 'row', gap: spacing.sm },
   timelineTrack: { alignItems: 'center', width: 28 },
   timelineDot: { alignItems: 'center', backgroundColor: colors.line, borderRadius: 14, height: 28, justifyContent: 'center', width: 28 },
@@ -200,7 +201,7 @@ const styles = StyleSheet.create({
   itemTitle: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 16.5, lineHeight: 23 },
   mutedText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 15, lineHeight: 22 },
   detailDocumentBlock: { borderBottomColor: colors.line, borderBottomWidth: StyleSheet.hairlineWidth, gap: spacing.xs, paddingBottom: spacing.md },
-  detailDocumentRow: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.sm, paddingTop: spacing.md },
-  documentNote: { color: colors.oxblood, fontFamily: fonts.bodyMedium, fontSize: 13.5, lineHeight: 19 },
-  errorText: { color: colors.red, fontFamily: fonts.bodySemibold, fontSize: 14.5, lineHeight: 21 },
+  detailDocumentRow: { alignItems: 'flex-start', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, paddingTop: spacing.md },
+  documentNote: { color: colors.oxblood, fontFamily: fonts.bodyMedium, fontSize: 14, lineHeight: 20 },
+  errorText: { color: colors.red, fontFamily: fonts.bodySemibold, fontSize: 15, lineHeight: 22 },
 });

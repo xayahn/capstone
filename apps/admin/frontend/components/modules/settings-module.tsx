@@ -2,14 +2,13 @@
 
 import { useState, type FormEvent } from 'react';
 import {
-  humanizeStatus,
   type AdminMutation,
   type DashboardState,
   type ParishProfile,
   type RequirementSetting,
   type ServiceSetting,
 } from '@/shared/domain';
-import { StatusPill } from '@/frontend/components/modules/portal-shared';
+import { roleLabel, StatusPill } from '@/frontend/components/modules/portal-shared';
 
 type SettingsSection = 'parish' | 'sacraments' | 'venues' | 'access';
 
@@ -539,7 +538,7 @@ export function SettingsModule({ data, busy, runMutation, onIssueTemporaryPasswo
             <h2>Where this appears</h2>
             <p className="body-copy">
               Published office hours, address, telephone number, and email appear in the ParishLink mobile
-              directory and are cited by the grounded parish inquiry assistant when answering general questions.
+              directory and are used by the parish inquiry assistant when answering general questions.
             </p>
             <div className="note-box">
               <strong>Privacy safeguard</strong>
@@ -564,7 +563,11 @@ export function SettingsModule({ data, busy, runMutation, onIssueTemporaryPasswo
                 <span className="sr-only">Select sacrament</span>
                 <select
                   value={selectedService?.id ?? ''}
-                  onChange={(event) => setSelectedServiceId(event.target.value)}
+                  onChange={(event) => {
+                    setSelectedServiceId(event.target.value);
+                    setNewReqName('');
+                    setNewReqInstructions('');
+                  }}
                 >
                   {data.serviceSettings.map((service) => (
                     <option key={service.id} value={service.id}>
@@ -920,7 +923,7 @@ export function SettingsModule({ data, busy, runMutation, onIssueTemporaryPasswo
                       <div>
                         <strong>{user.name}</strong>
                         <span>
-                          {user.email} · {humanizeStatus(user.role)} · {user.parish}
+                          {user.email} · {roleLabel(user.role)} · {user.parish}
                         </span>
                       </div>
                       <div className="access-actions">

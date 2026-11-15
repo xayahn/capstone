@@ -45,10 +45,16 @@ export async function readDocumentForm(request: Request): Promise<FormData> {
 export function validDocumentSignature(bytes: Uint8Array, mime: string): boolean {
   if (mime === 'application/pdf') {
     const text = new TextDecoder('latin1').decode(bytes);
+    const tail = text.slice(-2048);
+    const hasCatalogOrObjStm =
+      /\/Type\s*\/Catalog\b/.test(text)
+      || (/\/Type\s*\/(?:XRef|ObjStm)\b/.test(text) && /\/Root\b/.test(text));
     // Structural prefilter only: production additionally requires the safety scanner.
-    return /^%PDF-1\.[0-7]/.test(text) && /\d+\s+\d+\s+obj\b/.test(text)
-      && /\/Type\s*\/Catalog\b/.test(text) && /startxref\s+\d+\s+%%EOF\s*$/.test(text)
-      && !/\/(?:JavaScript|JS|Launch|EmbeddedFile|OpenAction|AA)\b/.test(text);
+    return /^%PDF-(?:1\.[0-7]|2\.0)/.test(text)
+      && /\d+\s+\d+\s+obj\b/.test(text)
+      && hasCatalogOrObjStm
+      && /startxref\s+\d+[\s\r\n]+%%EOF[\s\r\n\u0000]*$/.test(tail)
+      && !/\/(?:JavaScript|JS|Launch|EmbeddedFile|OpenAction|AA|RichMedia|XFA)\b/.test(text);
   }
   if (mime === 'image/jpeg') return bytes.length > 32 && bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255 && bytes.at(-2) === 255 && bytes.at(-1) === 217;
   if (mime === 'image/png') return bytes.length > 44 && [137,80,78,71,13,10,26,10].every((x,i) => bytes[i] === x)

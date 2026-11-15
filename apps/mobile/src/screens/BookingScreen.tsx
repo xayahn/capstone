@@ -19,7 +19,7 @@ import {
   getParticipantFields,
   validateBirthDate,
 } from '../lib/scheduling';
-import { colors, fonts, spacing } from '../theme';
+import { colors, fonts, radii, spacing } from '../theme';
 import type {
   AppointmentDocument,
   AppointmentParticipant,
@@ -43,7 +43,7 @@ export interface BookingScreenProps {
 }
 
 export const makeChecklist = (serviceId: SacramentId): AppointmentDocument[] => {
-  const service = getService(serviceId)!;
+  const service = getService(serviceId) ?? SACRAMENT_SERVICES[0]!;
   return service.requirements.map((label, index) => {
     const configured = service.requirementDetails?.find((item) => item.name === label);
     const required = configured?.required ?? true;
@@ -61,7 +61,7 @@ export const BookingScreen = ({
   initialServiceId,
   profile,
   loading,
-  catalogVersion: _catalogVersion,
+  catalogVersion,
   onSearchAvailability,
   onCancel,
   onSubmit,
@@ -76,7 +76,7 @@ export const BookingScreen = ({
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [documents, setDocuments] = useState<AppointmentDocument[]>(() => makeChecklist(initialServiceId));
-  const [participantName, setParticipantName] = useState(profile.displayName);
+  const [participantName, setParticipantName] = useState('');
   const [participantDateOfBirth, setParticipantDateOfBirth] = useState('');
   const [partnerName, setPartnerName] = useState('');
   const [partnerDateOfBirth, setPartnerDateOfBirth] = useState('');
@@ -85,13 +85,38 @@ export const BookingScreen = ({
   const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
 
-  const service = getService(serviceId)!;
+  useEffect(() => {
+    setServiceId(initialServiceId);
+    setDocuments(makeChecklist(initialServiceId));
+    setDate('');
+    setTime('');
+    setParticipantName('');
+    setParticipantDateOfBirth('');
+    setPartnerName('');
+    setPartnerDateOfBirth('');
+    setLocalError('');
+  }, [initialServiceId]);
+
+  useEffect(() => {
+    if (catalogVersion === undefined) return;
+    setDocuments((current) => {
+      const fresh = makeChecklist(serviceId);
+      return fresh.map((item) => {
+        const existing = current.find((doc) => doc.id === item.id || doc.label === item.label);
+        return existing && existing.status === 'selected' ? { ...item, ...existing, id: item.id, required: item.required } : item;
+      });
+    });
+  }, [catalogVersion, serviceId]);
+
+  const service = getService(serviceId) ?? SACRAMENT_SERVICES[0]!;
   const parish = getParish(parishId);
   const participantFields = getParticipantFields(serviceId);
   const dates = useMemo(() => getBookableDates(new Date(), 10), []);
-  const requiredComplete = documents
-    .filter((document) => document.required)
-    .every((document) => ['selected', 'submitted', 'under_review', 'verified'].includes(document.status));
+  const requiredDocs = documents.filter((document) => document.required);
+  const attachedRequiredCount = requiredDocs.filter((document) =>
+    ['selected', 'submitted', 'under_review', 'verified'].includes(document.status),
+  ).length;
+  const requiredComplete = attachedRequiredCount === requiredDocs.length;
 
   const primaryBirthError = validateBirthDate(participantDateOfBirth);
   const secondaryBirthError = participantFields.secondaryType
@@ -100,14 +125,28 @@ export const BookingScreen = ({
   const secondaryValid =
     !participantFields.secondaryType ||
     (partnerName.trim().length >= 2 && secondaryBirthError === null);
+  const slotValid = Boolean(time && slots.some((slot) => slot.time === time && slot.available));
+
+  const missingSteps: string[] = [];
+  if (!clergyId) missingSteps.push('Choose a preferred clergy member in Step 2.');
+  if (!date || !slotValid) missingSteps.push('Choose a date and available time slot in Step 3.');
+  if (participantName.trim().length < 2) missingSteps.push(`Enter ${participantFields.primaryLabel.toLowerCase()} in Step 4.`);
+  if (primaryBirthError) missingSteps.push('Correct the birth date format in Step 4.');
+  if (participantFields.secondaryType && partnerName.trim().length < 2) {
+    missingSteps.push(`Enter ${(participantFields.secondaryLabel ?? 'second partner name').toLowerCase()} in Step 4.`);
+  }
+  if (secondaryBirthError) missingSteps.push('Correct the second partner birth date format in Step 4.');
+  if (!requiredComplete) {
+    const remaining = requiredDocs.length - attachedRequiredCount;
+    missingSteps.push(`Attach ${remaining} remaining required ${remaining === 1 ? 'document' : 'documents'} in Step 5.`);
+  }
 
   const complete = Boolean(
     serviceId &&
       parish &&
       clergyId &&
       date &&
-      time &&
-      slots.some((slot) => slot.time === time && slot.available) &&
+      slotValid &&
       participantName.trim().length >= 2 &&
       primaryBirthError === null &&
       secondaryValid &&
@@ -139,10 +178,16 @@ export const BookingScreen = ({
   }, [clergyId, date, onSearchAvailability, parish, parishId, serviceId]);
 
   const chooseService = (id: SacramentId) => {
+    if (id === serviceId) return;
     setServiceId(id);
     setDocuments(makeChecklist(id));
     setDate('');
     setTime('');
+    setParticipantName('');
+    setParticipantDateOfBirth('');
+    setPartnerName('');
+    setPartnerDateOfBirth('');
+    setLocalError('');
   };
 
   const chooseParish = (id: ParishId) => {
@@ -163,7 +208,7 @@ export const BookingScreen = ({
               fileUri: file.fileUri,
               mimeType: file.mimeType,
               ...(file.sizeBytes === undefined ? {} : { sizeBytes: file.sizeBytes }),
-              note: 'Selected on this device. Parish staff have not verified this file.',
+              note: 'Attached on this device. Parish staff verify every file after submission.',
             }
           : item,
       ),
@@ -227,10 +272,10 @@ export const BookingScreen = ({
   }
 
   return (
-    <Screen>
+    <Screen keyboard>
       <Notice
         title="Request, not automatic approval"
-        body="Submitting sends the preferred schedule and documents for parish staff review. It does not confirm the sacrament or replace official records."
+        body="Submitting sends your preferred schedule and documents for parish staff review. It does not confirm the sacrament or replace official records."
         tone="warning"
         icon="shield-checkmark-outline"
       />
@@ -266,7 +311,7 @@ export const BookingScreen = ({
 
       <FormSection number="3" title="Preferred schedule">
         {!clergyId ? (
-          <Text style={styles.helperText}>Choose a clergy member before viewing availability.</Text>
+          <Text style={styles.helperText}>Choose a clergy member in Step 2 before viewing available dates and times.</Text>
         ) : (
           <>
             <Text style={styles.fieldLabel}>Date</Text>
@@ -296,7 +341,7 @@ export const BookingScreen = ({
                 </View>
               )
             ) : (
-              <Text style={styles.helperText}>Choose a date to see time slots.</Text>
+              <Text style={styles.helperText}>Choose a date above to see available time slots.</Text>
             )}
             {availabilityError ? <Text style={styles.errorText}>{availabilityError}</Text> : null}
           </>
@@ -315,6 +360,7 @@ export const BookingScreen = ({
           value={participantName}
           maxLength={160}
           autoCapitalize="words"
+          placeholder="Enter complete name"
           onChangeText={setParticipantName}
         />
         <Field
@@ -336,6 +382,7 @@ export const BookingScreen = ({
               value={partnerName}
               maxLength={160}
               autoCapitalize="words"
+              placeholder="Enter complete name"
               onChangeText={setPartnerName}
             />
             {participantFields.secondaryBirthLabel ? (
@@ -358,8 +405,8 @@ export const BookingScreen = ({
 
       <FormSection number="5" title="Document checklist">
         <Notice
-          title="Human verification"
-          body="Take a clear photo of your certificate, pick from your photo library, or attach a PDF. Authorized parish staff verify every file after submission."
+          title="Staff verification"
+          body="Take a clear photo of your certificate, choose from your photo library, or attach a PDF. Authorized parish staff verify every file after submission."
           tone="info"
           icon="person-outline"
         />
@@ -371,10 +418,10 @@ export const BookingScreen = ({
               <StatusBadge label={document.required ? 'Required' : 'Optional'} tone={document.required ? 'warning' : 'neutral'} />
             </View>
             <Text style={styles.mutedText}>
-              {document.fileName ?? (document.required ? 'No file selected' : 'You may provide this if available.')}
+              {document.fileName ?? (document.required ? 'No file attached yet' : 'Optional — attach if available')}
             </Text>
             {document.status === 'selected' ? (
-              <Text style={styles.selectedFileNote}>Selected locally • not staff verified</Text>
+              <Text style={styles.selectedFileNote}>Attached on this device • awaiting submission</Text>
             ) : null}
             <DocumentAttachmentControls
               triggerLabel={document.status === 'selected' ? 'Replace document' : 'Attach document'}
@@ -399,8 +446,16 @@ export const BookingScreen = ({
         <ReviewRow label="Schedule" value={date && time ? `${formatDate(date)} at ${time}` : 'Not selected'} />
         <ReviewRow
           label="Documents"
-          value={`${documents.filter((item) => item.status === 'selected').length} selected • ${documents.filter((item) => item.status === 'verified').length} verified`}
+          value={`${attachedRequiredCount} of ${requiredDocs.length} required attached`}
         />
+        {!complete && missingSteps.length > 0 ? (
+          <View style={styles.missingStepsBox} accessibilityRole="summary">
+            <Text style={styles.missingStepsTitle}>Still needed before submitting:</Text>
+            {missingSteps.map((step) => (
+              <Text key={step} style={styles.missingStepText}>• {step}</Text>
+            ))}
+          </View>
+        ) : null}
         {localError ? <Text style={styles.errorText}>{localError}</Text> : null}
         <AppButton
           label="Submit request for review"
@@ -419,8 +474,8 @@ const styles = StyleSheet.create({
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   horizontalChips: { gap: spacing.xs, paddingVertical: spacing.xxs },
   fieldLabel: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 16, marginBottom: spacing.xs, marginTop: spacing.md },
-  helperText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 14.5, lineHeight: 21, marginTop: spacing.sm },
-  dateHint: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 13.5, lineHeight: 19, marginTop: 4 },
+  helperText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 15, lineHeight: 22, marginTop: spacing.xs },
+  dateHint: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 14, lineHeight: 20, marginTop: 4 },
   loadingRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm, paddingVertical: spacing.md },
   documentBlock: {
     borderBottomColor: colors.line,
@@ -429,8 +484,19 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   documentHeading: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, justifyContent: 'space-between' },
-  itemTitle: { color: colors.ink, flex: 1, fontFamily: fonts.bodyBold, fontSize: 16.5, lineHeight: 23 },
-  mutedText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 15, lineHeight: 22 },
-  selectedFileNote: { color: colors.oxblood, fontFamily: fonts.bodySemibold, fontSize: 13.5, lineHeight: 19 },
-  errorText: { color: colors.red, fontFamily: fonts.bodySemibold, fontSize: 14.5, lineHeight: 21, marginTop: 4 },
+  itemTitle: { color: colors.ink, flex: 1, fontFamily: fonts.bodyBold, fontSize: 16.5, lineHeight: 23, minWidth: 180 },
+  mutedText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 15.5, lineHeight: 22 },
+  selectedFileNote: { color: colors.oxblood, fontFamily: fonts.bodySemibold, fontSize: 14, lineHeight: 20 },
+  missingStepsBox: {
+    backgroundColor: colors.paperLight,
+    borderColor: colors.gold,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: 4,
+    marginTop: spacing.xs,
+    padding: spacing.md,
+  },
+  missingStepsTitle: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 15.5, lineHeight: 22 },
+  missingStepText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 15, lineHeight: 22 },
+  errorText: { color: colors.red, fontFamily: fonts.bodySemibold, fontSize: 15, lineHeight: 22, marginTop: 4 },
 });

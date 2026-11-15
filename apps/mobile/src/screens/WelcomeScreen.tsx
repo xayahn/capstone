@@ -218,7 +218,7 @@ export const WelcomeScreen = ({
                 ) : null}
                 <AppButton label="Back to introduction" variant="ghost" onPress={closeAuth} />
                 <Text style={styles.privacyNote}>
-                  Passwords are never included in uploaded documents or assistant messages. Production mode stores the session token in the device’s protected credential storage.
+                  Passwords are never included in uploaded documents or assistant questions, and your sign-in session stays protected on this device.
                 </Text>
               </>
             ) : (
@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
   welcomeTitle: { color: colors.card, fontFamily: fonts.displayBold, fontSize: 48, lineHeight: 52 },
   welcomeSubtitle: { color: colors.paperLight, fontFamily: fonts.body, fontSize: 16.5, lineHeight: 24, maxWidth: 340, textAlign: 'center' },
   welcomeCard: { gap: spacing.md, maxWidth: 520, width: '100%' },
-  welcomeFooter: { color: colors.paperLight, fontFamily: fonts.body, fontSize: 13, lineHeight: 19, maxWidth: 500, opacity: 0.92, textAlign: 'center' },
+  welcomeFooter: { color: colors.paperLight, fontFamily: fonts.body, fontSize: 14, lineHeight: 20, maxWidth: 500, opacity: 0.94, textAlign: 'center' },
   cardHeadline: { color: colors.ink, fontFamily: fonts.displayBold, fontSize: 28, lineHeight: 33 },
   authModeSwitch: {
     backgroundColor: colors.paperLight,
@@ -294,7 +294,7 @@ const styles = StyleSheet.create({
     width: 28,
   },
   checkboxChecked: { backgroundColor: colors.oxblood },
-  privacyConsentText: { color: colors.ink, flex: 1, fontFamily: fonts.body, fontSize: 14.5, lineHeight: 21 },
-  privacyNote: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 13.5, lineHeight: 20, textAlign: 'center' },
+  privacyConsentText: { color: colors.ink, flex: 1, fontFamily: fonts.body, fontSize: 15, lineHeight: 22 },
+  privacyNote: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 14, lineHeight: 20, textAlign: 'center' },
   errorText: { color: colors.red, fontFamily: fonts.bodySemibold, fontSize: 14.5, lineHeight: 21 },
 });

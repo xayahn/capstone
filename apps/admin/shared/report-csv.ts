@@ -37,7 +37,7 @@ export function formatReportCsv(report: AdminReport): string {
   lines.push(csvRow(['Generated At', report.generatedAt]));
   lines.push(csvRow(['Date From', report.filters.from ?? 'All dates']));
   lines.push(csvRow(['Date To', report.filters.to ?? 'All dates']));
-  lines.push(csvRow(['Sacrament Filter', report.filters.serviceTypeId ?? 'All sacraments']));
+  lines.push(csvRow(['Sacrament Filter', report.filters.serviceTypeId ? humanizeStatus(report.filters.serviceTypeId.replaceAll('-', '_')) : 'All sacraments']));
   lines.push(csvRow(['Status Filter', report.filters.status === 'all' ? 'All statuses' : humanizeStatus(report.filters.status)]));
   lines.push('');
 
@@ -49,7 +49,7 @@ export function formatReportCsv(report: AdminReport): string {
   lines.push(csvRow(['Cancelled or Rejected Appointments', report.totals.cancelledOrRejected]));
   lines.push(csvRow(['No-Show Appointments', report.totals.noShow]));
   lines.push(csvRow(['Documents Awaiting Review', metricCell(report.totals.awaitingDocumentReview)]));
-  lines.push(csvRow(['Human-Verified Documents', metricCell(report.totals.verifiedDocuments)]));
+  lines.push(csvRow(['Verified Documents', metricCell(report.totals.verifiedDocuments)]));
   lines.push(csvRow(['Average Document Review Turnaround (hours)', metricCell(report.totals.avgDocumentReviewHours)]));
   lines.push(csvRow(['Archive-Verified Sacramental Records', metricCell(report.totals.verifiedRecords)]));
   lines.push(csvRow(['Walk-In Tickets Served', metricCell(report.totals.queueServed)]));

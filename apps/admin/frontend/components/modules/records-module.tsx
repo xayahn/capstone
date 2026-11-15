@@ -93,6 +93,7 @@ export function RecordsModule({ data, busy, onAccessLost, runMutation }: Props) 
               <input
                 value={recordSubject}
                 maxLength={160}
+                placeholder="Full name on parish register (at least 3 characters)"
                 onChange={(event) => setRecordSubject(event.target.value)}
               />
             </label>
@@ -110,7 +111,7 @@ export function RecordsModule({ data, busy, onAccessLost, runMutation }: Props) 
                 value={recordReference}
                 maxLength={50}
                 onChange={(event) => setRecordReference(event.target.value.toUpperCase())}
-                placeholder="BAP-SGP-2026-0001"
+                placeholder="BAP-SGP-2026-0001 (6–50 chars: A-Z, 0-9, /, -)"
               />
             </label>
             <button

@@ -39,7 +39,7 @@ export const AppointmentCard = ({ appointment, onPress }: AppointmentCardProps) 
       <Card style={styles.appointmentCard}>
         <View style={styles.rowBetweenTop}>
           <View style={styles.serviceHeaderCompact}>
-            <IconTile name={serviceIcons[appointment.serviceId]} />
+            <IconTile name={serviceIcons[appointment.serviceId] ?? 'calendar-outline'} />
             <View style={styles.flex}>
               <Text style={styles.itemTitle}>{service?.name}</Text>
               <Text style={styles.reference}>{appointment.reference}</Text>
@@ -78,7 +78,7 @@ const styles = StyleSheet.create({
   rowBetweenTop: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.sm, justifyContent: 'space-between' },
   serviceHeaderCompact: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: spacing.sm },
   itemTitle: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 16.5, lineHeight: 23 },
-  reference: { color: colors.oxblood, fontFamily: fonts.bodyBold, fontSize: 13.5, letterSpacing: 0.5 },
+  reference: { color: colors.oxblood, fontFamily: fonts.bodyBold, fontSize: 14, letterSpacing: 0.5 },
   inlineLink: { alignItems: 'center', alignSelf: 'flex-end', flexDirection: 'row', gap: spacing.xxs, marginTop: spacing.xs },
   inlineLinkText: { color: colors.oxblood, fontFamily: fonts.bodyBold, fontSize: 15 },
 });

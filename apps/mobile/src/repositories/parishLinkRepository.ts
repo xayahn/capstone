@@ -8,7 +8,8 @@ import { LocalSignOutError } from '../api/sessionErrors';
 import { PendingSubmissionKeys } from '../api/pendingSubmissionKeys';
 import { MobileApiClient, MobileApiError } from '../api/mobileApiClient';
 import { clearMobileApiToken, getMobileApiToken, setMobileApiToken } from '../api/tokenStore';
-import { apiBaseUrl, demoMode } from '../config/environment';
+import { getDevelopmentHostHint } from '../config/devHostHint';
+import { apiBaseUrl, appEnvironment, demoMode, resolveDevelopmentLanApiBaseUrl } from '../config/environment';
 import type { PushDeviceRegistration } from '../notifications/pushRegistration';
 import { PARISHES, QUEUE_SERVICES, SACRAMENT_SERVICES, applyCatalog } from '../data/catalog';
 import { getDemoGuidance } from '../lib/assistant';
@@ -99,45 +100,45 @@ const makeSeedSnapshot = (profile = DEMO_PROFILE, includeSamples = profile.id ==
   const dates = getBookableDates(new Date(), 10);
   const date = dates[3] ?? dates[0] ?? '2026-09-01';
   const now = new Date().toISOString();
+  const sampleAppointment: Appointment = {
+    id: 'apt-demo-1',
+    reference: 'PL-DEMO-1042',
+    parishionerId: profile.id,
+    serviceId: 'baptism',
+    parishId: 'metropolitan-cathedral',
+    clergyId: 'clergy-dizon',
+    venueId: 'venue-cathedral-main',
+    date,
+    time: '9:30 AM',
+    durationMinutes: 60,
+    bufferBeforeMinutes: 15,
+    bufferAfterMinutes: 15,
+    status: 'pending_verification',
+    documents: [
+      {
+        id: 'doc-demo-1',
+        label: "Child's PSA Birth Certificate",
+        required: true,
+        fileName: 'birth-certificate-demo.pdf',
+        status: 'under_review',
+        note: 'Waiting for parish staff verification.',
+      },
+      {
+        id: 'doc-demo-2',
+        label: 'Godparent qualification form',
+        required: true,
+        status: 'needs_action',
+        note: 'Please upload a clearer copy.',
+      },
+    ],
+    submittedAt: now,
+    updatedAt: now,
+  };
+  sampleAppointment.allowedChanges = localChangeOptions(sampleAppointment);
   return {
     source: 'demo',
     profile,
-    appointments: includeSamples ? [
-      {
-        id: 'apt-demo-1',
-        reference: 'PL-DEMO-1042',
-        parishionerId: profile.id,
-        serviceId: 'baptism',
-        parishId: 'metropolitan-cathedral',
-        clergyId: 'clergy-dizon',
-        venueId: 'venue-cathedral-main',
-        date,
-        time: '9:30 AM',
-        durationMinutes: 60,
-        bufferBeforeMinutes: 15,
-        bufferAfterMinutes: 15,
-        status: 'pending_verification',
-        documents: [
-          {
-            id: 'doc-demo-1',
-            label: "Child's PSA Birth Certificate",
-            required: true,
-            fileName: 'birth-certificate-demo.pdf',
-            status: 'under_review',
-            note: 'Waiting for parish staff verification.',
-          },
-          {
-            id: 'doc-demo-2',
-            label: 'Godparent qualification form',
-            required: true,
-            status: 'needs_action',
-            note: 'Please upload a clearer copy.',
-          },
-        ],
-        submittedAt: now,
-        updatedAt: now,
-      },
-    ] : [],
+    appointments: includeSamples ? [sampleAppointment] : [],
     notifications: includeSamples ? [
       {
         id: 'notice-demo-1',
@@ -428,7 +429,7 @@ export class DemoParishLinkRepository implements ParishLinkRepository {
       documents: input.documents.map((document) => {
         const note =
           document.status === 'selected'
-            ? 'Submitted for human verification by parish staff.'
+            ? 'Submitted for verification by parish staff.'
             : document.note;
         return {
           ...document,
@@ -440,6 +441,7 @@ export class DemoParishLinkRepository implements ParishLinkRepository {
       submittedAt: now,
       updatedAt: now,
     };
+    appointment.allowedChanges = localChangeOptions(appointment);
     const notification: AppNotification = {
       id: `notice-${Date.now()}`,
       title: 'Request submitted',
@@ -463,6 +465,9 @@ export class DemoParishLinkRepository implements ParishLinkRepository {
     const snapshot = await this.read();
     const appointment = snapshot.appointments.find((item) => item.id === appointmentId);
     if (!appointment) throw new Error('The saved request could not be found.');
+    if (!['submitted', 'pending_verification', 'needs_action'].includes(appointment.status)) {
+      throw new Error('Documents cannot be uploaded in the current appointment stage.');
+    }
     if (!appointment.documents.some((document) => document.id === documentId)) {
       throw new Error('The document requirement could not be found.');
     }
@@ -478,7 +483,7 @@ export class DemoParishLinkRepository implements ParishLinkRepository {
         mimeType: input.mimeType,
         ...(input.sizeBytes === undefined ? {} : { sizeBytes: input.sizeBytes }),
         status: 'submitted',
-        note: 'Submitted for human verification by parish staff.',
+        note: 'Submitted for verification by parish staff.',
         updatedAt: now,
       } : document),
       updatedAt: now,
@@ -557,21 +562,26 @@ export class DemoParishLinkRepository implements ParishLinkRepository {
       }
       return {
         appointment: { ...appointment, pendingChange: { kind: 'reschedule', proposedDate: input.date, proposedTime: input.time, reason: input.reason.trim(), requestedAt: now } },
-        notice: `Your request to move ${appointment.reference} to ${input.date} ${input.time} was sent to the parish office.`,
+        notice: `Your request to move ${appointment.reference} to ${formatDate(input.date, true)} at ${input.time} was sent to the parish office.`,
       };
     });
   }
 
   withdrawChangeRequest(appointmentId: string) {
-    return this.updateDemoAppointment(appointmentId, (appointment) => ({
-      appointment: { ...appointment, pendingChange: null },
-      notice: `Your request for ${appointment.reference} was withdrawn.`,
-    }));
+    return this.updateDemoAppointment(appointmentId, (appointment) => {
+      if (!appointment.pendingChange) {
+        throw new Error('There is no pending change request to withdraw.');
+      }
+      return {
+        appointment: { ...appointment, pendingChange: null },
+        notice: `Your request for ${appointment.reference} was withdrawn.`,
+      };
+    });
   }
 
   async joinQueue(parishId: ParishId, service: QueueService) {
     const snapshot = await this.read();
-    if (snapshot.activeQueueTicket && snapshot.activeQueueTicket.status !== 'cancelled') {
+    if (snapshot.activeQueueTicket && !['completed', 'cancelled'].includes(snapshot.activeQueueTicket.status)) {
       throw new Error('You already have an active walk-in ticket.');
     }
     const now = new Date().toISOString();
@@ -609,13 +619,18 @@ export class DemoParishLinkRepository implements ParishLinkRepository {
   }
 
   async updateProfile(profile: ParishionerProfile) {
+    const displayName = profile.displayName.trim().replace(/\s+/g, ' ');
+    const mobileNumber = profile.mobileNumber.trim();
+    if (displayName.length < 3) throw new Error('Enter your complete name.');
+    if (!/^\+?[0-9 ()-]{10,20}$/.test(mobileNumber)) throw new Error('Enter a valid mobile number.');
+    const normalized: ParishionerProfile = { ...profile, displayName, mobileNumber };
     const snapshot = await this.read();
-    await this.write({ ...snapshot, profile });
+    await this.write({ ...snapshot, profile: normalized });
     const accounts = await this.accounts();
     await AsyncStorage.setItem(DEMO_ACCOUNTS_KEY, JSON.stringify(
-      accounts.map((account) => account.id === this.currentUserId ? { ...account, profile } : account),
+      accounts.map((account) => account.id === this.currentUserId ? { ...account, profile: normalized } : account),
     ));
-    return profile;
+    return normalized;
   }
 
   async resetDemo() {
@@ -634,6 +649,9 @@ export class ApiParishLinkRepository implements ParishLinkRepository {
   private readonly submissions = new PendingSubmissionKeys({
     read: key => AsyncStorage.getItem(key),
     write: (key, value) => AsyncStorage.setItem(key, value),
+    remove: async key => {
+      if (typeof AsyncStorage.removeItem === 'function') await AsyncStorage.removeItem(key);
+    },
     digest: value => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, value),
     randomUUID: Crypto.randomUUID,
   });
@@ -800,11 +818,12 @@ export class ApiParishLinkRepository implements ParishLinkRepository {
     if (!this.currentUserId) throw new Error('Sign in before submitting a request.');
     const userId = this.currentUserId, generation = this.authGeneration;
     const { serviceId, parishId, clergyId, venueId, date, time, participants } = input;
-    const idempotencyKey = await this.submissions.get(JSON.stringify({
+    const fingerprint = JSON.stringify({
       userId, serviceId, parishId, clergyId, venueId, date, time, participants,
-    }));
+    });
+    const idempotencyKey = await this.submissions.get(fingerprint);
     if (generation !== this.authGeneration || userId !== this.currentUserId) throw new Error('The account changed before submission. Review the request after signing in.');
-    return submitAppointmentWithDocuments(input, {
+    const created = await submitAppointmentWithDocuments(input, {
       randomUUID: Crypto.randomUUID,
       idempotencyKey,
       create: (metadata, idempotencyKey) => this.request<Appointment>('/mobile/appointments', {
@@ -823,6 +842,8 @@ export class ApiParishLinkRepository implements ParishLinkRepository {
         },
       ),
     });
+    await this.submissions.clear(fingerprint).catch(() => undefined);
+    return created;
   }
 
   async uploadAppointmentDocument(
@@ -915,5 +936,6 @@ export const createParishLinkRepository = (): ParishLinkRepository => {
   if (!apiBaseUrl) {
     throw new Error('EXPO_PUBLIC_API_BASE_URL is required when demo mode is disabled.');
   }
-  return new ApiParishLinkRepository(apiBaseUrl);
+  const effectiveBaseUrl = resolveDevelopmentLanApiBaseUrl(apiBaseUrl, appEnvironment, getDevelopmentHostHint());
+  return new ApiParishLinkRepository(effectiveBaseUrl);
 };

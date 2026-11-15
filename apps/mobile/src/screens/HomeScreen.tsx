@@ -101,6 +101,15 @@ const buildHomeReminders = (snapshot: RepositorySnapshot, now: Date = new Date()
   return items;
 };
 
+const greetingFirstName = (displayName: string): string => {
+  const parts = displayName.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return 'friend';
+  if (parts.length >= 2 && /^(?:ma\.|dr\.|fr\.|msgr\.|sr\.|bro\.)$/i.test(parts[0]!)) {
+    return `${parts[0]} ${parts[1]}`;
+  }
+  return parts[0]!;
+};
+
 export const HomeScreen = ({
   snapshot,
   onBook,
@@ -114,7 +123,10 @@ export const HomeScreen = ({
   const nextAppointment = snapshot.appointments.find((item) => !['completed', 'cancelled', 'rejected'].includes(item.status));
   const reminders = buildHomeReminders(snapshot);
   const recentAnnouncements = (snapshot.announcements ?? []).slice(0, 2);
-  const activeTicket = snapshot.activeQueueTicket;
+  const activeTicket =
+    snapshot.activeQueueTicket && !['completed', 'cancelled'].includes(snapshot.activeQueueTicket.status)
+      ? snapshot.activeQueueTicket
+      : undefined;
   const ticketAtCounter = activeTicket ? isQueueTicketAtCounter(activeTicket.status) : false;
 
   return (
@@ -128,7 +140,7 @@ export const HomeScreen = ({
         />
       ) : null}
       <LinearGradient colors={[colors.oxblood, colors.leather]} style={styles.heroCard}>
-        <Eyebrow light>Good day, {snapshot.profile.displayName.split(' ')[0]}</Eyebrow>
+        <Eyebrow light>Good day, {greetingFirstName(snapshot.profile.displayName)}</Eyebrow>
         <Text style={styles.heroTitle}>How may your parish help?</Text>
         <Text style={styles.heroBody}>Prepare a sacramental service request, review its progress, or plan a parish office visit.</Text>
         <AppButton label="Explore services" icon="calendar-outline" variant="secondary" onPress={onServices} />
@@ -139,7 +151,7 @@ export const HomeScreen = ({
         <QuickAction icon="water-outline" label="Baptism" onPress={() => onBook('baptism')} />
         <QuickAction icon="heart-outline" label="Wedding" onPress={() => onBook('wedding')} />
         <QuickAction icon="people-outline" label="Walk-in queue" onPress={onQueue} />
-        <QuickAction icon="sparkles-outline" label="AI Assistant" onPress={onAssistant} />
+        <QuickAction icon="sparkles-outline" label="Parish Assistant" onPress={onAssistant} />
         <QuickAction icon="megaphone-outline" label="Announcements" onPress={onAnnouncements} />
         <QuickAction icon="business-outline" label="Parishes & hours" onPress={onParishes} />
       </View>
@@ -260,7 +272,7 @@ const styles = StyleSheet.create({
   announcementPreview: { gap: spacing.xs, marginBottom: spacing.xs },
   sectionAction: { alignItems: 'center', flexDirection: 'row', gap: 2, paddingVertical: spacing.xxs },
   itemTitle: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 16.5, lineHeight: 23 },
-  reference: { color: colors.oxblood, fontFamily: fonts.bodyBold, fontSize: 13.5, letterSpacing: 0.5 },
+  reference: { color: colors.oxblood, fontFamily: fonts.bodyBold, fontSize: 14, letterSpacing: 0.5 },
   mutedText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 15, lineHeight: 22 },
   ticketNumber: { color: colors.oxblood, fontFamily: fonts.displayBold, fontSize: 30, lineHeight: 36, flexShrink: 1, maxWidth: '100%' },
   inlineLinkText: { color: colors.oxblood, fontFamily: fonts.bodyBold, fontSize: 15 },

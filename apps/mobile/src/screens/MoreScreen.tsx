@@ -24,10 +24,18 @@ export interface MoreScreenProps {
   onNavigate: (route: RouteTarget) => void;
 }
 
-export const initials = (name: string) =>
-  name.split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join('');
+export const initials = (name: string) => {
+  const tokens = name.trim().split(/\s+/).filter((part) => !/^(?:ma\.|dr\.|fr\.|msgr\.|sr\.|bro\.)$/i.test(part));
+  const usable = tokens.length ? tokens : name.trim().split(/\s+/).filter(Boolean);
+  return usable.slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join('');
+};
 
-export const MoreScreen = ({ snapshot, mode, onNavigate }: MoreScreenProps) => (
+export const MoreScreen = ({ snapshot, mode, onNavigate }: MoreScreenProps) => {
+  const activeTicket =
+    snapshot.activeQueueTicket && !['completed', 'cancelled'].includes(snapshot.activeQueueTicket.status)
+      ? snapshot.activeQueueTicket
+      : undefined;
+  return (
   <Screen>
     <Card style={styles.profileSummary}>
       <View style={styles.avatar}>
@@ -60,13 +68,13 @@ export const MoreScreen = ({ snapshot, mode, onNavigate }: MoreScreenProps) => (
     <MoreLink
       icon="people-outline"
       title="Walk-in queue"
-      body={snapshot.activeQueueTicket ? `Active ticket ${snapshot.activeQueueTicket.number}` : 'Request a parish office ticket'}
+      body={activeTicket ? `Active ticket ${activeTicket.number}` : 'Request a parish office ticket'}
       onPress={() => onNavigate('queue')}
     />
     <MoreLink
       icon="sparkles-outline"
-      title="AI Assistant & guide"
-      body="Gemini-powered public guidance and local request help"
+      title="Parish Assistant & guide"
+      body="Answers on requirements, office hours, and your requests"
       onPress={() => onNavigate('assistant')}
     />
     <MoreLink
@@ -76,13 +84,14 @@ export const MoreScreen = ({ snapshot, mode, onNavigate }: MoreScreenProps) => (
       onPress={() => onNavigate('profile')}
     />
     <Notice
-      title="Parishioner-only mobile app"
-      body="Staff, clergy, and system-administration functions belong in the protected admin website, not this mobile interface."
+      title="Parishioner mobile app"
+      body="Sacramental approvals and official parish registers are managed directly by authorized parish personnel."
       tone="info"
       icon="lock-closed-outline"
     />
   </Screen>
-);
+  );
+};
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },

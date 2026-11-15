@@ -129,7 +129,7 @@ export const AssistantScreen = ({
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined}
       style={styles.flex}
-      keyboardVerticalOffset={0}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
     >
       <ScrollView
         ref={scrollRef}
@@ -140,9 +140,9 @@ export const AssistantScreen = ({
         <View style={styles.introCard}>
           <View style={styles.guideIcon}><Ionicons name="sparkles-outline" size={25} color={colors.goldSoft} /></View>
           <View style={styles.flex}>
-            <Text style={styles.introEyebrow}>ParishLink AI Assistant</Text>
+            <Text style={styles.introEyebrow}>ParishLink Assistant</Text>
             <Text style={styles.introTitle}>Clear answers. Helpful next steps.</Text>
-            <Text style={styles.introBody}>Ask about sacramental services, rescheduling, your own requests, documents, or a parish-office visit.</Text>
+            <Text style={styles.introBody}>Ask about sacramental requirements, parish office hours, rescheduling, your own requests, or the walk-in queue.</Text>
           </View>
         </View>
 
@@ -150,17 +150,17 @@ export const AssistantScreen = ({
         <View style={styles.introCard}>
           <View style={styles.flex}>
             <View style={styles.consentHeader}>
-              <Text style={styles.introEyebrow}>{canUseGemini ? (allowExternalAI ? 'GEMINI ON' : 'LOCAL MODE') : 'DEMO MODE'}</Text>
+              <Text style={styles.introEyebrow}>{canUseGemini ? (allowExternalAI ? 'EXTENDED GUIDANCE ON' : 'LOCAL GUIDANCE ONLY') : 'DEMO MODE'}</Text>
             </View>
-            <Text style={styles.introTitle}>Use Gemini for general questions</Text>
+            <Text style={styles.introTitle}>Extended answers for general questions</Text>
             <Text style={styles.introBody}>{canUseGemini
-              ? 'When enabled, general public questions use Google Gemini grounded on ParishLink directory and service rules. Exact document checklists and your personal requests stay strictly inside ParishLink.'
-              : 'This demonstration uses ParishLink local guidance only. Connect to the live ParishLink backend to enable Google Gemini.'}</Text>
+              ? 'Turn on to answer general parish preparation questions with extended guidance grounded on ParishLink rules. Your personal requests and parish checklists always stay private inside ParishLink.'
+              : 'This demonstration uses built-in ParishLink guidance on your device.'}</Text>
           </View>
           <Switch accessibilityLabel="Allow general questions to be sent to Google Gemini"
             value={canUseGemini && allowExternalAI} disabled={!canUseGemini || sending}
             onValueChange={onToggleExternalAI} trackColor={{ false: colors.line, true: colors.greenSoft }}
-            thumbColor={allowExternalAI ? colors.green : colors.inkSoft} />
+            thumbColor={canUseGemini && allowExternalAI ? colors.green : colors.paperLight} />
         </View>
 
         <View style={styles.promptSection}>
@@ -192,11 +192,11 @@ export const AssistantScreen = ({
                   accessibilityLiveRegion={user ? 'none' : 'polite'}
                   style={[styles.message, user ? styles.userMessage : styles.assistantMessage]}
                 >
-                  <Text style={[styles.messageAuthor, user && styles.userMessageAuthor]}>{user ? 'You' : message.provider === 'gemini' ? 'Gemini AI · public guidance' : 'ParishLink · local guidance'}</Text>
+                  <Text style={[styles.messageAuthor, user && styles.userMessageAuthor]}>{user ? 'You' : message.provider === 'gemini' ? 'ParishLink · extended public guidance' : 'ParishLink · parish guide'}</Text>
                   {!user && message.fallbackReason && ['disabled', 'unavailable', 'invalid_response'].includes(message.fallbackReason)
-                    ? <Text style={styles.localPrivacyNote}>Gemini is unavailable for this reply. Showing ParishLink local guidance.</Text> : null}
+                    ? <Text style={styles.localPrivacyNote}>Showing built-in ParishLink guidance for this question.</Text> : null}
                   {!user && canUseGemini && allowExternalAI && message.provider === 'parishlink' && message.fallbackReason === 'private_or_sensitive'
-                    ? <Text style={styles.localPrivacyNote}>Answered locally inside ParishLink to protect personal request data or exact parish checklists.</Text> : null}
+                    ? <Text style={styles.localPrivacyNote}>Answered privately inside ParishLink to protect your personal request details and exact parish checklists.</Text> : null}
                   {message.title ? <Text style={[styles.messageTitle, user && styles.userMessageText]}>{message.title}</Text> : null}
                   <Text style={[styles.messageText, user && styles.userMessageText]}>{message.text}</Text>
 
@@ -250,9 +250,7 @@ export const AssistantScreen = ({
                         <Pressable
                           key={action.id}
                           accessibilityRole="button"
-                          onPress={() => action.kind === 'contact_parish'
-                            ? void ask('Show my home parish office address and office hours.')
-                            : onAction(action)}
+                          onPress={() => onAction(action)}
                           style={({ pressed }) => [styles.actionButton, pressed && styles.pressed]}
                         >
                           <Ionicons name={actionIcon(action)} size={18} color={colors.oxblood} />
@@ -318,11 +316,11 @@ const styles = StyleSheet.create({
   scrollWide: { alignSelf: 'center', maxWidth: 760, width: '100%' },
   introCard: { alignItems: 'center', backgroundColor: colors.leatherDark, borderColor: colors.gold, borderRadius: radii.lg, borderWidth: 1, flexDirection: 'row', gap: spacing.md, padding: spacing.lg, ...shadow },
   guideIcon: { alignItems: 'center', backgroundColor: colors.oxblood, borderColor: colors.gold, borderRadius: radii.md, borderWidth: 1, height: 52, justifyContent: 'center', width: 52 },
-  introEyebrow: { color: colors.goldSoft, fontFamily: fonts.bodyBold, fontSize: 12, letterSpacing: 1, textTransform: 'uppercase' },
+  introEyebrow: { color: colors.goldSoft, fontFamily: fonts.bodyBold, fontSize: 13, letterSpacing: 0.9, textTransform: 'uppercase' },
   consentHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  introTitle: { color: colors.card, fontFamily: fonts.displayBold, fontSize: 26, lineHeight: 30, marginTop: 2 },
+  introTitle: { color: colors.card, fontFamily: fonts.displayBold, fontSize: 25, lineHeight: 30, marginTop: 2 },
   introBody: { color: colors.paperLight, fontFamily: fonts.body, fontSize: 15.5, lineHeight: 22, marginTop: 4 },
-  localPrivacyNote: { color: colors.inkSoft, fontFamily: fonts.bodyMedium, fontSize: 13, lineHeight: 19 },
+  localPrivacyNote: { color: colors.inkSoft, fontFamily: fonts.bodyMedium, fontSize: 14, lineHeight: 20 },
   promptSection: { gap: spacing.xs },
   promptLabel: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 15 },
   promptRow: { gap: spacing.xs, paddingRight: spacing.md },
@@ -335,7 +333,7 @@ const styles = StyleSheet.create({
   message: { borderRadius: radii.lg, gap: spacing.xs, maxWidth: '88%', padding: spacing.md },
   assistantMessage: { backgroundColor: colors.card, borderColor: colors.line, borderTopLeftRadius: 6, borderWidth: 1, ...shadow },
   userMessage: { backgroundColor: colors.oxblood, borderTopRightRadius: 6 },
-  messageAuthor: { color: colors.oxblood, fontFamily: fonts.bodyBold, fontSize: 12.5, letterSpacing: 0.8, textTransform: 'uppercase' },
+  messageAuthor: { color: colors.oxblood, fontFamily: fonts.bodyBold, fontSize: 13.5, letterSpacing: 0.7, textTransform: 'uppercase' },
   userMessageAuthor: { color: colors.goldSoft },
   messageTitle: { color: colors.ink, fontFamily: fonts.displayBold, fontSize: 23, lineHeight: 27 },
   messageText: { color: colors.ink, fontFamily: fonts.body, fontSize: 16.5, lineHeight: 24 },
@@ -351,19 +349,19 @@ const styles = StyleSheet.create({
   optionText: { color: colors.ink, flex: 1, fontFamily: fonts.bodySemibold, fontSize: 15.5 },
   sources: { borderTopColor: colors.line, borderTopWidth: StyleSheet.hairlineWidth, gap: 4, marginTop: spacing.xs, paddingTop: spacing.sm },
   sourceHeading: { alignItems: 'center', flexDirection: 'row', gap: 6 },
-  sourceHeadingText: { color: colors.green, fontFamily: fonts.bodyBold, fontSize: 13.5 },
-  sourceText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 13.5, lineHeight: 20 },
+  sourceHeadingText: { color: colors.green, fontFamily: fonts.bodyBold, fontSize: 14 },
+  sourceText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 14, lineHeight: 20 },
   actions: { gap: spacing.xs, marginTop: spacing.xs },
   actionButton: { alignItems: 'center', backgroundColor: colors.cardStrong, borderColor: colors.oxblood, borderRadius: radii.sm, borderWidth: 1, flexDirection: 'row', gap: spacing.xs, minHeight: 52, paddingHorizontal: spacing.sm },
   actionText: { color: colors.oxblood, flex: 1, fontFamily: fonts.bodyBold, fontSize: 15.5 },
   handoff: { alignItems: 'flex-start', backgroundColor: colors.redSoft, borderRadius: radii.sm, flexDirection: 'row', gap: spacing.xs, marginTop: spacing.xs, padding: spacing.sm },
-  handoffText: { color: colors.red, flex: 1, fontFamily: fonts.bodySemibold, fontSize: 13.5, lineHeight: 20 },
+  handoffText: { color: colors.red, flex: 1, fontFamily: fonts.bodySemibold, fontSize: 14, lineHeight: 20 },
   typing: { alignItems: 'center', alignSelf: 'flex-start', backgroundColor: colors.card, borderColor: colors.line, borderRadius: radii.pill, borderWidth: 1, flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   typingText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 14.5 },
   composer: { alignItems: 'flex-end', backgroundColor: colors.card, borderTopColor: colors.line, borderTopWidth: 1, flexDirection: 'row', gap: spacing.xs, padding: spacing.sm },
   composerField: { flex: 1 },
   composerInput: { backgroundColor: colors.paperLight, borderColor: colors.line, borderRadius: radii.md, borderWidth: 1, color: colors.ink, fontFamily: fonts.body, fontSize: 16.5, lineHeight: 23, maxHeight: 120, minHeight: 56, paddingBottom: 20, paddingHorizontal: spacing.md, paddingTop: spacing.sm },
-  characterCount: { bottom: 5, color: colors.inkSoft, fontFamily: fonts.bodyMedium, fontSize: 12, position: 'absolute', right: 10 },
+  characterCount: { bottom: 5, color: colors.inkSoft, fontFamily: fonts.bodyMedium, fontSize: 13, position: 'absolute', right: 10 },
   sendButton: { alignItems: 'center', backgroundColor: colors.oxblood, borderRadius: radii.md, height: 56, justifyContent: 'center', width: 56 },
   disabled: { opacity: 0.45 },
   pressed: { opacity: 0.72, transform: [{ scale: 0.99 }] },

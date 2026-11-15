@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type ChangeEvent } from 'react';
 import type { AdminMutation, AppointmentDocument, DashboardState } from '@/shared/domain';
-import { StatusPill } from '@/frontend/components/modules/portal-shared';
+import { formatDateTime, StatusPill } from '@/frontend/components/modules/portal-shared';
 
 type Props = {
   data: DashboardState;
@@ -68,11 +68,13 @@ export function DocumentsModule({ data, busy, onUploadDocument, runMutation }: P
     return Array.from(groups.values());
   }, [filteredDocuments]);
 
+  const permitted = data.actor.role === 'parish_staff' && Boolean(data.actor.parishId);
+
   return (
     <section className="panel">
       <div className="panel-heading">
         <div>
-          <span className="eyebrow">Human verification</span>
+          <span className="eyebrow">Staff verification</span>
           <h2>Document review</h2>
         </div>
         <span className="result-count">
@@ -81,150 +83,176 @@ export function DocumentsModule({ data, busy, onUploadDocument, runMutation }: P
             : `${data.metrics.awaitingDocumentReview} awaiting review`}
         </span>
       </div>
-      <div className="filter-bar">
-        <label>
-          <span>Review status</span>
-          <select
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value as DocumentStatusFilter)}
-          >
-            <option value="awaiting_review">Awaiting review (submitted / under review)</option>
-            <option value="needs_replacement">Needs replacement</option>
-            <option value="not_submitted">Not submitted</option>
-            <option value="verified">Human-verified</option>
-            <option value="all">All requirements</option>
-          </select>
-        </label>
-        <label>
-          <span>Search requirements</span>
-          <input
-            value={documentSearch}
-            onChange={(event) => setDocumentSearch(event.target.value)}
-            placeholder="Reference, parishioner, service, requirement…"
-          />
-        </label>
-      </div>
-      {documentGroups.length === 0 ? (
+      {!permitted ? (
         <div className="empty-state">
-          <strong>No document requirements match this filter</strong>
-          <span>Adjust the status filter or search query to inspect other appointment checklists.</span>
-          {(statusFilter !== 'all' || documentSearch.trim() !== '') && (
-            <button
-              type="button"
-              className="secondary-button compact"
-              onClick={() => {
-                setStatusFilter('all');
-                setDocumentSearch('');
-              }}
-            >
-              Show all requirements
-            </button>
-          )}
+          <strong>Restricted documentary access</strong>
+          <span>
+            Assigned parish staff access is required to inspect, upload, or verify parishioner documentary
+            submissions.
+          </span>
         </div>
       ) : (
-        <div className="document-groups">
-          {documentGroups.map((group) => (
-            <section className="document-group" key={group.appointmentId} aria-label={`Checklist for ${group.reference}`}>
-              <div className="document-group-header">
-                <div>
-                  <span className="eyebrow">
-                    {group.reference} · {group.service}
-                  </span>
-                  <h3>{group.parishioner}</h3>
-                </div>
-                <span className="result-count">
-                  {group.items.length} {group.items.length === 1 ? 'requirement' : 'requirements'}
-                </span>
-              </div>
-              <div className="document-grid">
-                {group.items.map((document) => (
-                  <article className="document-card" key={`${document.appointmentId}-${document.requirementId}`}>
-                    <div className="document-top">
-                      <div>
-                        <span className="eyebrow">
-                          {document.reference} · {document.service}
-                        </span>
-                        <h3>{document.requirement}</h3>
-                        <p>{document.parishioner}</p>
-                      </div>
-                      <StatusPill value={document.status} />
+        <>
+          <div className="filter-bar">
+            <label>
+              <span>Review status</span>
+              <select
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value as DocumentStatusFilter)}
+              >
+                <option value="awaiting_review">Awaiting review (submitted / under review)</option>
+                <option value="needs_replacement">Needs replacement</option>
+                <option value="not_submitted">Not submitted</option>
+                <option value="verified">Verified by staff</option>
+                <option value="all">All requirements</option>
+              </select>
+            </label>
+            <label>
+              <span>Search requirements</span>
+              <input
+                value={documentSearch}
+                onChange={(event) => setDocumentSearch(event.target.value)}
+                placeholder="Reference, parishioner, service, requirement…"
+              />
+            </label>
+          </div>
+          {documentGroups.length === 0 ? (
+            <div className="empty-state">
+              <strong>No document requirements match this filter</strong>
+              <span>Adjust the status filter or search query to inspect other appointment checklists.</span>
+              {(statusFilter !== 'all' || documentSearch.trim() !== '') && (
+                <button
+                  type="button"
+                  className="secondary-button compact"
+                  onClick={() => {
+                    setStatusFilter('all');
+                    setDocumentSearch('');
+                  }}
+                >
+                  Show all requirements
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="document-groups">
+              {documentGroups.map((group) => (
+                <section
+                  className="document-group"
+                  key={group.appointmentId}
+                  aria-label={`Checklist for ${group.reference}`}
+                >
+                  <div className="document-group-header">
+                    <div>
+                      <span className="eyebrow">
+                        {group.reference} · {group.service}
+                      </span>
+                      <h3>{group.parishioner}</h3>
                     </div>
-                    <div className="file-row">
-                      <span>{document.fileName ?? 'No file submitted'}</span>
-                      {document.fileName && document.sha256 && !document.id.startsWith('missing:') && (
-                        <a className="text-link" href={`/api/admin/documents/${encodeURIComponent(document.id)}`}>
-                          Download
-                        </a>
-                      )}
-                    </div>
-                    <label className="upload-button">
-                      <span>Upload {document.fileName ? 'replacement' : 'file'}</span>
-                      <input
-                        className="sr-only"
-                        type="file"
-                        accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-                        onChange={(event) => void onUploadDocument(document, event)}
-                        disabled={busy}
-                      />
-                    </label>
-                    {document.fileName && document.sha256 && !document.id.startsWith('missing:') && (
-                      <>
-                        <label className="note-input">
-                          <span>Reviewer note</span>
+                    <span className="result-count">
+                      {group.items.length} {group.items.length === 1 ? 'requirement' : 'requirements'}
+                    </span>
+                  </div>
+                  <div className="document-grid">
+                    {group.items.map((document) => (
+                      <article className="document-card" key={`${document.appointmentId}-${document.requirementId}`}>
+                        <div className="document-top">
+                          <div>
+                            <span className="eyebrow">
+                              {document.submittedAt
+                                ? `Submitted ${formatDateTime(document.submittedAt)}`
+                                : 'Awaiting file submission'}
+                            </span>
+                            <h3>{document.requirement}</h3>
+                            {document.reviewNote ? <p>{document.reviewNote}</p> : null}
+                          </div>
+                          <StatusPill value={document.status} />
+                        </div>
+                        <div className="file-row">
+                          <span>{document.fileName ?? 'No file submitted'}</span>
+                          {document.fileName && document.sha256 && !document.id.startsWith('missing:') && (
+                            <a className="text-link" href={`/api/admin/documents/${encodeURIComponent(document.id)}`}>
+                              Download
+                            </a>
+                          )}
+                        </div>
+                        <label className="upload-button">
+                          <span>Upload {document.fileName ? 'replacement' : 'file'}</span>
                           <input
-                            value={documentNotes[document.id] ?? ''}
-                            onChange={(event) =>
-                              setDocumentNotes((notes) => ({ ...notes, [document.id]: event.target.value }))
-                            }
-                            placeholder="Reason required when requesting replacement"
+                            className="sr-only"
+                            type="file"
+                            accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                            onChange={(event) => void onUploadDocument(document, event)}
+                            disabled={busy}
                           />
                         </label>
-                        <div className="document-actions">
-                          <button
-                            className="approve-button"
-                            disabled={busy}
-                            onClick={() =>
-                              void runMutation(
-                                {
-                                  action: 'document.review',
-                                  documentId: document.id,
-                                  expectedSha256: document.sha256 ?? '',
-                                  status: 'verified',
-                                  note: documentNotes[document.id],
-                                },
-                                'Document marked human-verified.',
-                              )
-                            }
-                          >
-                            Verify document
-                          </button>
-                          <button
-                            className="danger-button"
-                            disabled={busy || (documentNotes[document.id]?.trim().length ?? 0) < 4}
-                            onClick={() =>
-                              void runMutation(
-                                {
-                                  action: 'document.review',
-                                  documentId: document.id,
-                                  expectedSha256: document.sha256 ?? '',
-                                  status: 'needs_replacement',
-                                  note: documentNotes[document.id],
-                                },
-                                'Replacement requested from the parishioner.',
-                              )
-                            }
-                          >
-                            Request replacement
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </article>
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
+                        {document.fileName && document.sha256 && !document.id.startsWith('missing:') && (
+                          <>
+                            <label className="note-input">
+                              <span>Reviewer note</span>
+                              <input
+                                value={documentNotes[document.id] ?? ''}
+                                onChange={(event) =>
+                                  setDocumentNotes((notes) => ({ ...notes, [document.id]: event.target.value }))
+                                }
+                                placeholder="Reason required (at least 4 characters) when requesting replacement"
+                              />
+                            </label>
+                            <div className="document-actions">
+                              <button
+                                className="approve-button"
+                                disabled={busy}
+                                onClick={() =>
+                                  void runMutation(
+                                    {
+                                      action: 'document.review',
+                                      documentId: document.id,
+                                      expectedSha256: document.sha256 ?? '',
+                                      status: 'verified',
+                                      note: documentNotes[document.id],
+                                    },
+                                    'Document verified by parish staff.',
+                                  ).then((saved) => {
+                                    if (saved) {
+                                      setDocumentNotes((notes) => ({ ...notes, [document.id]: '' }));
+                                    }
+                                  })
+                                }
+                              >
+                                Verify document
+                              </button>
+                              <button
+                                className="danger-button"
+                                disabled={busy || (documentNotes[document.id]?.trim().length ?? 0) < 4}
+                                onClick={() =>
+                                  void runMutation(
+                                    {
+                                      action: 'document.review',
+                                      documentId: document.id,
+                                      expectedSha256: document.sha256 ?? '',
+                                      status: 'needs_replacement',
+                                      note: documentNotes[document.id],
+                                    },
+                                    'Replacement requested from the parishioner.',
+                                  ).then((saved) => {
+                                    if (saved) {
+                                      setDocumentNotes((notes) => ({ ...notes, [document.id]: '' }));
+                                    }
+                                  })
+                                }
+                              >
+                                Request replacement
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </section>
   );

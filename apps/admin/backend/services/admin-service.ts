@@ -22,8 +22,8 @@ import { occupiedStart, occupiedEnd, resourceConflict, NON_BLOCKING_APPOINTMENT_
 import { canDecideChangeRequest, loadChangeRequests } from '@/backend/services/change-requests';
 import { generateDueReminders } from '@/backend/services/reminders';
 import { recordServerFailure } from '@/backend/observability/server-log';
-import { validCalendarDate } from '@/shared/validation';
-import { nextParishQueueTicketNumber } from '@/shared/identifiers';
+import { utcTimestamp, validCalendarDate } from '@/shared/validation';
+import { expirePreviousDayQueueTickets, isUniqueConstraintError, nextParishQueueTicketNumber } from '@/shared/identifiers';
 import { cancelQueueTicket, createWalkInAppointment } from '@/backend/services/walkin-service';
 import { scoped } from '@/backend/services/admin-scope';
 import { loadDashboardMetrics } from '@/backend/services/dashboard-metrics';
@@ -219,9 +219,9 @@ export async function loadDashboardState(actor: Actor): Promise<DashboardState> 
     : db.prepare(`SELECT id, display_title AS name, home_parish_id AS parishId
         FROM clergy_profiles WHERE is_active = 1 AND EXISTS (SELECT 1 FROM users u WHERE u.id = clergy_profiles.user_id AND u.is_active = 1) AND home_parish_id = ? ORDER BY display_title`).bind(actor.parishId);
   const venueOptionQuery = actor.role === 'system_admin'
-    ? db.prepare(`SELECT id, name, parish_id AS parishId, capacity FROM venues WHERE is_active = 1 ORDER BY name`)
+    ? db.prepare(`SELECT id, name, parish_id AS parishId, capacity FROM venues WHERE is_active = 1 ORDER BY CASE WHEN LOWER(name) LIKE '%main church%' THEN 0 ELSE 1 END, COALESCE(capacity, 0) DESC, name ASC`)
     : db.prepare(`SELECT id, name, parish_id AS parishId, capacity FROM venues
-        WHERE is_active = 1 AND parish_id = ? ORDER BY name`).bind(actor.parishId);
+        WHERE is_active = 1 AND parish_id = ? ORDER BY CASE WHEN LOWER(name) LIKE '%main church%' THEN 0 ELSE 1 END, COALESCE(capacity, 0) DESC, name ASC`).bind(actor.parishId);
   const accessUserQuery = actor.role === 'system_admin'
     ? db.prepare(`SELECT u.id, u.full_name AS name, u.email, u.role,
         COALESCE(p.name, 'Vicariate-wide') AS parish, u.is_active AS isActive
@@ -231,6 +231,7 @@ export async function loadDashboardState(actor: Actor): Promise<DashboardState> 
         COALESCE(p.name, 'Vicariate-wide') AS parish, u.is_active AS isActive
       FROM users u LEFT JOIN parishes p ON p.id = u.home_parish_id WHERE 0 = 1`);
 
+  await expirePreviousDayQueueTickets(db).catch(() => undefined);
   // Portal loads also create any due parishioner reminders (local deployment has no scheduler).
   await generateDueReminders().catch((error) => {
     recordServerFailure('reminder-generation', error);
@@ -274,9 +275,20 @@ export async function loadDashboardState(actor: Actor): Promise<DashboardState> 
     })),
     accessUsers: accessUsersResult.results.map((item) => ({ ...item, isActive: Boolean(item.isActive) })),
     appointments,
-    documents: documentsResult.results,
-    queue: queueResult.results,
-    announcements: announcementsResult.results,
+    documents: documentsResult.results.map((doc) => ({
+      ...doc,
+      submittedAt: doc.submittedAt ? utcTimestamp(doc.submittedAt) : null,
+    })),
+    queue: queueResult.results.map((ticket) => ({
+      ...ticket,
+      ...(actor.role === 'system_admin' ? { parishioner: 'Restricted visitor' } : {}),
+      issuedAt: utcTimestamp(ticket.issuedAt),
+      calledAt: ticket.calledAt ? utcTimestamp(ticket.calledAt) : null,
+    })),
+    announcements: announcementsResult.results.map((ann) => ({
+      ...ann,
+      publishedAt: utcTimestamp(ann.publishedAt),
+    })),
     records: recordsResult.results,
     clergyAssignments: assignmentsResult.results,
     changeRequests,
@@ -483,7 +495,7 @@ async function transitionAppointment(
     if (replay?.requestHash === idempotency.requestHash) return;
     const fresh = await getAppointment(mutation.appointmentId);
     if (fresh.version !== mutation.expectedVersion) throw new AdminServiceError('This appointment changed in another session. Refresh and review it again.', 409);
-    if (gateRequired) throw new AdminServiceError('Approval is blocked until every required document is human-verified and the clergy, venue, and time interval are conflict-free.', 409);
+    if (gateRequired) throw new AdminServiceError('Approval is blocked until every required document is verified by parish staff and the clergy, venue, and time interval are conflict-free.', 409);
     throw new AdminServiceError('The appointment could not be updated.', 409);
   }
 
@@ -696,6 +708,9 @@ function canAccessParish(actor: Actor, parishId: string): boolean {
 const ADMIN_QUEUE_SERVICES = new Set([
   'Baptism inquiry',
   'Wedding inquiry',
+  'Confirmation inquiry',
+  'First Communion inquiry',
+  'Funeral Mass inquiry',
   'Document submission',
   'Certificate request',
   'General inquiry',
@@ -703,10 +718,6 @@ const ADMIN_QUEUE_SERVICES = new Set([
 
 async function nextQueueNumber(db: D1Database, parishId: string): Promise<string> {
   return nextParishQueueTicketNumber(db, parishId);
-
-
-
-
 }
 
 async function issueQueueTicket(
@@ -724,20 +735,33 @@ async function issueQueueTicket(
     .bind(mutation.parishId).first<{ id: string }>();
   if (!parish) throw new AdminServiceError('Choose an active parish.');
   const db = getRawDb();
-  const id = crypto.randomUUID();
-  const auditId = crypto.randomUUID();
-  const results = await db.batch([
-    db.prepare(`INSERT INTO queue_tickets
-      (id, ticket_number, parish_id, parishioner_name, service)
-      VALUES (?, ?, ?, ?, ?)`)
-      .bind(id, await nextQueueNumber(db, mutation.parishId), mutation.parishId, parishionerName, service),
-    db.prepare(`INSERT INTO audit_logs
-      (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-      SELECT ?, ?, 'queue.issue', 'queue_ticket', ?, ?, 'success', ? WHERE changes() = 1`)
-      .bind(auditId, actor.id, id, mutation.parishId, `${service}; accountless front-desk ticket`),
-    adminIdempotencyStatement(actor, idempotency, id, 'audit_logs', auditId),
-  ]);
-  if (Number(results[0]?.meta.changes ?? 0) !== 1) {
+  await expirePreviousDayQueueTickets(db).catch(() => undefined);
+  let results: Awaited<ReturnType<typeof db.batch>> | undefined;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const id = crypto.randomUUID();
+    const auditId = crypto.randomUUID();
+    const ticketNumber = await nextQueueNumber(db, mutation.parishId);
+    try {
+      results = await db.batch([
+        db.prepare(`INSERT INTO queue_tickets
+          (id, ticket_number, parish_id, parishioner_name, service)
+          VALUES (?, ?, ?, ?, ?)`)
+          .bind(id, ticketNumber, mutation.parishId, parishionerName, service),
+        db.prepare(`INSERT INTO audit_logs
+          (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+          SELECT ?, ?, 'queue.issue', 'queue_ticket', ?, ?, 'success', ? WHERE changes() = 1`)
+          .bind(auditId, actor.id, id, mutation.parishId, `${service}; accountless front-desk ticket`),
+        adminIdempotencyStatement(actor, idempotency, id, 'audit_logs', auditId),
+      ]);
+      break;
+    } catch (error) {
+      const replay = await existingAdminIdempotency(actor, idempotency);
+      if (replay?.requestHash === idempotency.requestHash) return;
+      if (attempt < 3 && isUniqueConstraintError(error)) continue;
+      throw error;
+    }
+  }
+  if (!results || Number(results[0]?.meta.changes ?? 0) !== 1) {
     const replay = await existingAdminIdempotency(actor, idempotency);
     if (replay?.requestHash === idempotency.requestHash) return;
     throw new AdminServiceError('The ticket could not be issued. Try again.', 409);
@@ -754,6 +778,7 @@ async function callNext(
   const counter = mutation.counter.trim();
   if (counter.length < 2 || counter.length > 40) throw new AdminServiceError('Enter a valid counter or window name.');
   const db = getRawDb();
+  await expirePreviousDayQueueTickets(db).catch(() => undefined);
   const active = await db.prepare(`SELECT id FROM queue_tickets
     WHERE parish_id = ? AND status = 'serving' AND counter = ? LIMIT 1`)
     .bind(mutation.parishId, counter).first<{ id: string }>();

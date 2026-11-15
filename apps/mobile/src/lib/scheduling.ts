@@ -122,6 +122,7 @@ export const getBookableDates = (now = new Date(), count = 8) => {
 
 export const formatDate = (date: string, compact = false) => {
   const parsed = new Date(`${date}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return date;
   return new Intl.DateTimeFormat('en-PH', {
     weekday: compact ? 'short' : 'long',
     month: 'short',

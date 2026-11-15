@@ -34,13 +34,14 @@ export const normalizeImagePickerAsset = (
   }
 
   const cleanUri = asset.uri.split(/[?#]/, 1)[0]?.toLowerCase() ?? '';
+  const cleanName = asset.fileName?.toLowerCase().trim() ?? '';
   const declaredMime = asset.mimeType?.toLowerCase().trim() ?? '';
 
   if (Platform.OS === 'web' && declaredMime && declaredMime !== 'image/jpeg' && declaredMime !== 'image/png') {
-    return { status: 'error', message: 'Choose a JPG, PNG, or PDF file without active content.' };
+    return { status: 'error', message: 'Please choose a clear JPG, PNG, or PDF file.' };
   }
 
-  const isPng = cleanUri.endsWith('.png') || (Platform.OS === 'web' && declaredMime === 'image/png');
+  const isPng = cleanUri.endsWith('.png') || cleanName.endsWith('.png') || declaredMime === 'image/png';
   const mimeType = isPng ? 'image/png' : 'image/jpeg';
   const extension = isPng ? '.png' : '.jpg';
   const stem = sanitizeStem(asset.fileName, fallbackStem);
@@ -111,6 +112,22 @@ export const pickFromPhotoLibrary = async (fallbackStem = 'certificate-photo'): 
   }
 };
 
+const inferDocumentMimeType = (name: string, declaredMime?: string | null): string | null => {
+  const normalizedMime = declaredMime?.toLowerCase().trim() ?? '';
+  if (normalizedMime === 'application/pdf' || normalizedMime === 'image/jpeg' || normalizedMime === 'image/png') {
+    return normalizedMime;
+  }
+  if (normalizedMime === 'image/jpg') return 'image/jpeg';
+  if (normalizedMime && normalizedMime !== 'application/octet-stream') {
+    return null;
+  }
+  const lowerName = name.toLowerCase().trim();
+  if (lowerName.endsWith('.pdf')) return 'application/pdf';
+  if (lowerName.endsWith('.png')) return 'image/png';
+  if (lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg')) return 'image/jpeg';
+  return null;
+};
+
 export const pickFromDocumentFiles = async (): Promise<DocumentPickOutcome> => {
   try {
     const result = await DocumentPicker.getDocumentAsync({
@@ -123,12 +140,16 @@ export const pickFromDocumentFiles = async (): Promise<DocumentPickOutcome> => {
     if ((asset.size ?? 0) > MAX_DOCUMENT_BYTES) {
       return { status: 'error', message: 'Choose a PDF, JPG, or PNG file no larger than 10 MB.' };
     }
+    const resolvedMime = inferDocumentMimeType(asset.name, asset.mimeType);
+    if (!resolvedMime) {
+      return { status: 'error', message: 'Please choose a PDF, JPG, or PNG file.' };
+    }
     return {
       status: 'picked',
       file: {
         fileUri: asset.uri,
         fileName: asset.name,
-        mimeType: asset.mimeType ?? 'application/octet-stream',
+        mimeType: resolvedMime,
         ...(asset.size === undefined ? {} : { sizeBytes: asset.size }),
       },
     };

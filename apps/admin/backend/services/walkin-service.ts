@@ -154,11 +154,11 @@ export async function createWalkInAppointment(
   }
 
   const db = getRawDb();
-  let linkedTicket: { id: string; number: string; parishId: string; parishionerUserId: string | null } | null = null;
+  let linkedTicket: { id: string; number: string; parishId: string; parishionerUserId: string | null; status: string } | null = null;
   if (mutation.ticketId) {
     linkedTicket = await db
       .prepare(`SELECT id, ticket_number AS number, parish_id AS parishId,
-          parishioner_user_id AS parishionerUserId
+          parishioner_user_id AS parishionerUserId, status
         FROM queue_tickets WHERE id = ?`)
       .bind(mutation.ticketId)
       .first<{
@@ -166,6 +166,7 @@ export async function createWalkInAppointment(
         number: string;
         parishId: string;
         parishionerUserId: string | null;
+        status: string;
       }>();
     if (!linkedTicket) throw new AdminServiceError('Linked queue ticket not found.', 404);
     if (linkedTicket.parishId !== mutation.parishId) {
@@ -313,6 +314,17 @@ export async function createWalkInAppointment(
           appointmentId,
         ),
     );
+
+    if (linkedTicket && (linkedTicket.status === 'waiting' || linkedTicket.status === 'serving')) {
+      statements.push(
+        db
+          .prepare(`UPDATE queue_tickets
+            SET status = 'served', served_at = COALESCE(served_at, datetime('now')), updated_at = datetime('now')
+            WHERE id = ? AND status IN ('waiting', 'serving')
+              AND EXISTS (SELECT 1 FROM appointment_events WHERE id = ?)`)
+          .bind(linkedTicket.id, eventId),
+      );
+    }
 
     if (existingParishionerId) {
       statements.push(

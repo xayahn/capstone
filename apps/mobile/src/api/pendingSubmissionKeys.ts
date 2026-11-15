@@ -1,6 +1,7 @@
 type Dependencies = {
   read: (key: string) => Promise<string | null>;
   write: (key: string, value: string) => Promise<void>;
+  remove?: (key: string) => Promise<void>;
   digest: (value: string) => Promise<string>;
   randomUUID: () => string;
   now?: () => number;
@@ -34,6 +35,16 @@ export class PendingSubmissionKeys {
       if (!/^appointment-[0-9a-f-]{36}$/i.test(key)) throw new Error('Could not prepare the submission.');
       await this.dependencies.write(storageKey, JSON.stringify({ key, createdAt: now }));
       return key;
+    });
+    this.serial = operation.catch(() => undefined);
+    return operation;
+  }
+
+  clear(fingerprint: string): Promise<void> {
+    const operation = this.serial.then(async () => {
+      if (!this.dependencies.remove) return;
+      const storageKey = '@parishlink/submission-v1:' + await this.dependencies.digest(fingerprint);
+      await this.dependencies.remove(storageKey);
     });
     this.serial = operation.catch(() => undefined);
     return operation;

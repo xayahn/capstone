@@ -123,5 +123,11 @@ describe('bounded parish guidance', () => {
     expect(announcementReply.title).toBe('Parish and Vicariate announcements');
     expect(announcementReply.actions?.[0]).toMatchObject({ kind: 'home' });
     expect(announcementReply.escalation).toBe(false);
+
+    const parishReply = getDemoGuidance('What are the office hours of San Guillermo Parish?');
+    expect(parishReply.title).toBe('San Guillermo Parish');
+    expect(parishReply.bullets?.some((line) => line.includes('Tue–Sun'))).toBe(true);
+    expect(parishReply.sources?.[0]?.kind).toBe('parish_directory');
+    expect(parishReply.actions?.[0]).toMatchObject({ kind: 'contact_parish' });
   });
 });

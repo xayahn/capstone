@@ -7,7 +7,7 @@ import { Inter_700Bold } from '@expo-google-fonts/inter/700Bold';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { BackHandler, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AppHeader } from './src/components/navigation/AppHeader';
 import { BottomNavigation, type MainNavTab } from './src/components/navigation/BottomNavigation';
@@ -66,7 +66,7 @@ const titleByRoute: Record<Route, string> = {
   announcements: 'Announcements',
   parishes: 'Parishes & office hours',
   queue: 'Walk-in queue',
-  assistant: 'AI Assistant',
+  assistant: 'Parish Assistant',
   profile: 'Profile & settings',
 };
 
@@ -98,11 +98,31 @@ const AppContent = () => {
       setRoute('appointment-detail');
     } else if (notification.target.kind === 'queue') {
       setRoute('queue');
+    } else if (notification.target.kind === 'assistant') {
+      setRoute('assistant');
     } else {
       setRoute('notifications');
     }
     if (!notification.readAt) void parishLink.markNotificationRead(notification.id).catch(() => undefined);
-  }, [parishLink.openedPushNotification, parishLink.session?.profile.id]);
+  }, [parishLink.openedPushNotification, parishLink.session?.profile.id, Boolean(parishLink.snapshot)]);
+
+  useEffect(() => {
+    if (!parishLink.session || !parishLink.snapshot) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      const previousRoute = routeHistory.at(-1);
+      if (previousRoute) {
+        setRouteHistory((current) => current.slice(0, -1));
+        setRoute(previousRoute);
+        return true;
+      }
+      if (!mainRoutes.has(route)) {
+        setRoute(backRoute[route]);
+        return true;
+      }
+      return false;
+    });
+    return () => subscription.remove();
+  }, [parishLink.session, parishLink.snapshot, route, routeHistory]);
 
   if (parishLink.initializing) {
     return <LoadingScreen label="Restoring your secure ParishLink session…" />;
@@ -115,7 +135,7 @@ const AppContent = () => {
         <Text style={styles.itemTitle}>Connection interrupted</Text>
         <Text style={styles.mutedCentered}>{parishLink.error}</Text>
         <AppButton label="Try again" onPress={parishLink.retryInitialization} />
-        <AppButton label="Sign out on this device" variant="secondary" onPress={() => void parishLink.signOut()} />
+        <AppButton label="Go to sign-in screen" variant="secondary" onPress={() => void parishLink.signOut()} />
       </SafeAreaView>
     );
   }
@@ -279,6 +299,7 @@ const AppContent = () => {
           {route === 'appointment-detail' ? (
             selectedAppointment ? (
               <AppointmentDetailScreen
+                key={selectedAppointment.id}
                 appointment={selectedAppointment}
                 onUpload={parishLink.uploadAppointmentDocument}
                 onSearchAvailability={parishLink.searchAvailability}
@@ -299,7 +320,7 @@ const AppContent = () => {
             <NotificationsScreen
               notifications={snapshot.notifications}
               onOpen={async (notification) => {
-                if (!notification.readAt) await parishLink.markNotificationRead(notification.id);
+                if (!notification.readAt) void parishLink.markNotificationRead(notification.id).catch(() => undefined);
                 if (notification.target.kind === 'appointment') openAppointment(notification.target.appointmentId);
                 else if (notification.target.kind === 'queue') navigate('queue');
                 else if (notification.target.kind === 'assistant') navigate('assistant');

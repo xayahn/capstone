@@ -14,7 +14,7 @@ export const AppointmentsScreen = ({ appointments, onOpen }: AppointmentsScreenP
     <Eyebrow>Request history</Eyebrow>
     <Text style={type.title}>Track every stage</Text>
     <Text style={styles.lead}>
-      Status changes are recorded separately from file selection. Only staff-reviewed files display as verified.
+      Open any request below to check its review stage, upload requested documents, or request a schedule change.
     </Text>
     {appointments.length ? (
       appointments.map((appointment) => (

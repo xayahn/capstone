@@ -145,7 +145,8 @@ async function createDueReminders(db: D1Database, now: number) {
     WHERE a.status='approved' AND c.notifications_enabled=1
       AND julianday(a.starts_at)>julianday(?,'unixepoch','+30 minutes')
       AND julianday(a.starts_at)<=julianday(?,'unixepoch','+24 hours')
-      AND NOT EXISTS(SELECT 1 FROM notifications n WHERE n.id='appointment-reminder:'||a.id||':'||a.starts_at)
+      AND NOT EXISTS(SELECT 1 FROM notifications n WHERE n.id='appointment-reminder:'||a.id||':'||a.starts_at
+        OR (n.entity_id=a.id AND n.dedupe_key='reminder:'||a.id||':1d'))
     ORDER BY a.starts_at,a.id LIMIT 100`).bind(now, now).run();
 }
 

@@ -26,6 +26,16 @@ import type {
   UploadAppointmentDocumentInput,
 } from '../types/domain';
 
+const formatActionError = (cause: unknown, fallback: string): string => {
+  if (
+    cause instanceof TypeError &&
+    /^(?:network request failed|failed to fetch|fetch failed|load failed)$/i.test(cause.message.trim())
+  ) {
+    return 'Could not reach the ParishLink server. Check your Wi-Fi or mobile data connection and try again.';
+  }
+  return cause instanceof Error ? cause.message : fallback;
+};
+
 export const useParishLink = () => {
   const repository = useMemo<ParishLinkRepository>(
     () => createParishLinkRepository(),
@@ -61,7 +71,7 @@ export const useParishLink = () => {
       return await operation(isCurrent);
     } catch (cause) {
       if (!isCurrent()) throw cause;
-      const message = cause instanceof Error ? cause.message : 'Something went wrong. Please try again.';
+      const message = formatActionError(cause, 'Something went wrong. Please try again.');
       if (cause instanceof Error && cause.name === 'AbortError') throw cause;
       if (cause instanceof MobileApiError && cause.status === 401 && activeUser.current) {
         invalidatePush.current();
@@ -86,12 +96,46 @@ export const useParishLink = () => {
     }
   }, [repository]);
 
+  const runScoped = useCallback(async <T,>(operation: (isCurrent: () => boolean) => Promise<T>) => {
+    const startedGeneration = generation.current;
+    const isCurrent = () => startedGeneration === generation.current;
+    try {
+      return await operation(isCurrent);
+    } catch (cause) {
+      if (!isCurrent()) throw cause;
+      if (cause instanceof Error && cause.name === 'AbortError') throw cause;
+      if (cause instanceof MobileApiError && cause.status === 401 && activeUser.current) {
+        invalidatePush.current();
+        generation.current += 1;
+        readGeneration.current += 1;
+        pendingOperations.current = 0;
+        manualRefreshing.current = false;
+        activeUser.current = false;
+        setSession(undefined);
+        setSnapshot(undefined);
+        setLoading(false);
+        setRefreshing(false);
+        setError(cause.message || 'Your session has expired. Sign in again.');
+        void repository.signOut().catch(() => undefined);
+      }
+      throw cause;
+    }
+  }, [repository]);
+
   const refresh = useCallback(async () => {
     const requestGeneration = generation.current;
     const read = ++readGeneration.current;
     try {
       const next = await repository.loadSnapshot();
-      if (requestGeneration === generation.current && read === readGeneration.current && activeUser.current) setSnapshot(next);
+      if (requestGeneration === generation.current && read === readGeneration.current && activeUser.current) {
+        const verified = next.profile.emailVerified ?? currentSession.current?.profile.emailVerified;
+        const merged = verified === undefined ? next : { ...next, profile: { ...next.profile, emailVerified: verified } };
+        setSnapshot(merged);
+        if (verified !== undefined) {
+          setSession((current) => current ? { ...current, profile: { ...current.profile, emailVerified: verified } } : current);
+        }
+        return merged;
+      }
       return next;
     } catch (cause) {
       if (requestGeneration === generation.current && cause instanceof MobileApiError && cause.status === 401) {
@@ -191,7 +235,7 @@ export const useParishLink = () => {
         await refresh();
       })
       .catch((cause) => {
-        if (active && startedGeneration === generation.current) { setInitializationError(true); setError(cause instanceof Error ? cause.message : 'Your saved session could not be restored.'); }
+        if (active && startedGeneration === generation.current) { setInitializationError(true); setError(formatActionError(cause, 'Your saved session could not be restored.')); }
       })
       .finally(() => {
         if (active) setInitializing(false);
@@ -255,8 +299,8 @@ export const useParishLink = () => {
   );
 
   const searchAvailability = useCallback(
-    (input: AvailabilitySearchInput) => run(() => repository.searchAvailability(input)),
-    [repository, run],
+    (input: AvailabilitySearchInput) => runScoped(() => repository.searchAvailability(input)),
+    [repository, runScoped],
   );
 
   const uploadAppointmentDocument = useCallback(
@@ -313,14 +357,14 @@ export const useParishLink = () => {
   );
 
   const markNotificationRead = useCallback(
-    (id: string) => run(async isCurrent => {
-      await repository.markNotificationRead(id);
-      if (!isCurrent()) return;
+    (id: string) => runScoped(async isCurrent => {
       setSnapshot(current => current ? { ...current, notifications: current.notifications.map(item =>
         item.id === id ? { ...item, readAt: item.readAt ?? new Date().toISOString() } : item) } : current);
+      await repository.markNotificationRead(id);
+      if (!isCurrent()) return;
       await refreshAfterSave();
     }),
-    [refreshAfterSave, repository, run],
+    [refreshAfterSave, repository, runScoped],
   );
 
   const joinQueue = useCallback(
@@ -351,8 +395,8 @@ export const useParishLink = () => {
   );
 
   const askAssistant = useCallback(
-    (prompt: string, allowExternalAI = false): Promise<AssistantMessage> => run(() => repository.askAssistant(prompt, allowExternalAI)),
-    [repository, run],
+    (prompt: string, allowExternalAI = false): Promise<AssistantMessage> => runScoped(() => repository.askAssistant(prompt, allowExternalAI)),
+    [repository, runScoped],
   );
 
   const updateProfile = useCallback(

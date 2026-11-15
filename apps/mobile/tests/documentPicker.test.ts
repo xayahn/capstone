@@ -68,6 +68,22 @@ describe('document attachment normalization and permissions', () => {
       },
     });
 
+    const androidContentPng = normalizeImagePickerAsset({
+      uri: 'content://media/external/images/media/4421',
+      fileName: 'certificate-scan',
+      mimeType: 'image/png',
+      fileSize: 310_000,
+    });
+    expect(androidContentPng).toEqual({
+      status: 'picked',
+      file: {
+        fileUri: 'content://media/external/images/media/4421',
+        fileName: 'certificate-scan.png',
+        mimeType: 'image/png',
+        sizeBytes: 310_000,
+      },
+    });
+
     const tooLarge = normalizeImagePickerAsset({
       uri: 'file:///cache/huge.jpg',
       fileName: 'huge.jpg',
@@ -126,6 +142,21 @@ describe('document attachment normalization and permissions', () => {
     });
     const oversizedDoc = await pickFromDocumentFiles();
     expect(oversizedDoc.status).toBe('error');
+
+    documentPicker.getDocumentAsync.mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ uri: 'content://downloads/1234', name: 'baptismal-certificate.pdf', mimeType: 'application/octet-stream', size: 220_000 }],
+    });
+    const inferredPdf = await pickFromDocumentFiles();
+    expect(inferredPdf).toEqual({
+      status: 'picked',
+      file: {
+        fileUri: 'content://downloads/1234',
+        fileName: 'baptismal-certificate.pdf',
+        mimeType: 'application/pdf',
+        sizeBytes: 220_000,
+      },
+    });
   });
 });
 
@@ -137,6 +168,7 @@ describe('parish directory contact link builders', () => {
     expect(dialablePhoneUri(null)).toBeNull();
 
     expect(mailtoUri(' cathedral.office@parishlink.org ')).toBe('mailto:cathedral.office@parishlink.org');
+    expect(mailtoUri('office.cathedral@parishlink.test')).toBeNull();
     expect(mailtoUri('not-an-email')).toBeNull();
     expect(mailtoUri(undefined)).toBeNull();
   });

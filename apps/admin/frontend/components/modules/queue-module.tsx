@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import type { AdminMutation, DashboardState, QueueTicket } from '@/shared/domain';
-import { formatDateTime, QUEUE_PURPOSES } from '@/frontend/components/modules/portal-shared';
+import { humanizeStatus, type AdminMutation, type DashboardState, type QueueTicket } from '@/shared/domain';
+import { formatDateTime, parseManilaLocalDateTime, QUEUE_PURPOSES } from '@/frontend/components/modules/portal-shared';
 
 type Props = {
   data: DashboardState;
@@ -12,7 +12,10 @@ type Props = {
 
 function serviceIdFromQueuePurpose(purpose: string, fallbackId: string): string {
   if (/baptism/i.test(purpose)) return 'baptism';
-  if (/wedding/i.test(purpose)) return 'wedding';
+  if (/wedding|marriage/i.test(purpose)) return 'wedding';
+  if (/confirmation/i.test(purpose)) return 'confirmation';
+  if (/communion/i.test(purpose)) return 'first-communion';
+  if (/funeral/i.test(purpose)) return 'funeral-mass';
   return fallbackId;
 }
 
@@ -42,22 +45,38 @@ export function QueueModule({ data, busy, runMutation }: Props) {
   const [walkInStartsAt, setWalkInStartsAt] = useState('');
 
   const parishQueue = data.queue.filter((ticket) => ticket.parishId === queueParishId);
-  const active = parishQueue.find((ticket) => ticket.status === 'serving');
+  const normalizedCounter = counter.trim().toLowerCase();
+  const active =
+    parishQueue.find(
+      (ticket) =>
+        ticket.status === 'serving' &&
+        (ticket.counter ?? '').trim().toLowerCase() === normalizedCounter,
+    ) ?? null;
+  const otherServing = parishQueue.filter(
+    (ticket) => ticket.status === 'serving' && ticket.id !== active?.id,
+  );
   const waiting = parishQueue.filter((ticket) => ticket.status === 'waiting');
-  const slipTicket = printingTicket ?? active ?? waiting[0] ?? null;
+  const linkableTickets = parishQueue.filter(
+    (ticket) => ticket.status === 'waiting' || ticket.status === 'serving',
+  );
+  const slipTicket = printingTicket ?? active ?? otherServing[0] ?? waiting[0] ?? null;
 
   const printTicketSlip = (ticket: QueueTicket) => {
     setPrintingTicket(ticket);
     setTimeout(() => {
       if (typeof window === 'undefined' || typeof document === 'undefined') return;
-      document.body.classList.add('printing-queue-slip');
-      const cleanup = () => {
-        document.body.classList.remove('printing-queue-slip');
-        window.removeEventListener('afterprint', cleanup);
-      };
-      window.addEventListener('afterprint', cleanup);
+      document.body?.classList?.add('printing-queue-slip');
+      let cleaned = false;
+      function cleanup() {
+        if (cleaned) return;
+        cleaned = true;
+        window.clearTimeout(fallbackTimer);
+        document.body?.classList?.remove('printing-queue-slip');
+        window.removeEventListener?.('afterprint', cleanup);
+      }
+      window.addEventListener?.('afterprint', cleanup);
+      const fallbackTimer = window.setTimeout(cleanup, 1500);
       window.print();
-      cleanup();
     }, 0);
   };
 
@@ -117,6 +136,10 @@ export function QueueModule({ data, busy, runMutation }: Props) {
                   setWalkInClergyId(nextClergy?.id ?? '');
                   setWalkInVenueId(nextVenue?.id ?? '');
                   setWalkInTicketId('');
+                  setWalkInName('');
+                  setWalkInPhone('');
+                  setWalkInParticipant('');
+                  setWalkInStartsAt('');
                 }}
               >
                 {data.parishes.map((parish) => (
@@ -133,30 +156,32 @@ export function QueueModule({ data, busy, runMutation }: Props) {
           </div>
           <div className="queue-board">
             <div className="now-serving large">
-              <span>Now serving</span>
+              <span>Now serving at {counter.trim() || 'counter'}</span>
               <strong>{active?.number ?? '—'}</strong>
               <small>
                 {active
                   ? `${active.parishioner} · ${active.service} · ${active.counter}`
-                  : 'No ticket is currently active'}
+                  : 'No ticket is currently active at this counter'}
               </small>
             </div>
             <div className="queue-controls">
               {active ? (
                 <>
-                  <button
-                    type="button"
-                    className="approve-button"
-                    disabled={busy}
-                    onClick={() =>
-                      void runMutation(
-                        { action: 'queue.complete', ticketId: active.id },
-                        `${active.number} marked served.`,
-                      )
-                    }
-                  >
-                    Complete {active.number}
-                  </button>
+                  {data.actor.role !== 'clergy' && (
+                    <button
+                      type="button"
+                      className="approve-button"
+                      disabled={busy}
+                      onClick={() =>
+                        void runMutation(
+                          { action: 'queue.complete', ticketId: active.id },
+                          `${active.number} marked served.`,
+                        )
+                      }
+                    >
+                      Complete {active.number}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="row-action"
@@ -195,7 +220,7 @@ export function QueueModule({ data, busy, runMutation }: Props) {
                 <button
                   type="button"
                   className="primary-button"
-                  disabled={busy || !waiting.length || counter.trim().length < 2}
+                  disabled={busy || data.actor.role === 'clergy' || !waiting.length || counter.trim().length < 2}
                   onClick={() =>
                     void runMutation(
                       { action: 'queue.call_next', parishId: queueParishId, counter },
@@ -208,56 +233,131 @@ export function QueueModule({ data, busy, runMutation }: Props) {
               )}
             </div>
           </div>
-          <ol className="waiting-list">
-            {waiting.map((ticket, index) => (
-              <li key={ticket.id}>
-                <span className="queue-position">{index + 1}</span>
-                <strong>{ticket.number}</strong>
-                <div>
-                  <span>{ticket.parishioner}</span>
-                  <small>
-                    {ticket.service} · issued {formatDateTime(ticket.issuedAt)}
-                  </small>
-                </div>
-                <div className="waiting-actions">
-                  {ticket.priority > 0 && <span className="status pending">Priority {ticket.priority}</span>}
-                  <button
-                    type="button"
-                    className="row-action"
-                    disabled={busy}
-                    onClick={() => printTicketSlip(ticket)}
-                  >
-                    Print slip
-                  </button>
-                  {data.actor.role === 'parish_staff' && (
+
+          {otherServing.length > 0 && (
+            <div className="other-counters">
+              <span className="eyebrow">Active at other counters</span>
+              <ul className="waiting-list">
+                {otherServing.map((ticket) => (
+                  <li key={ticket.id}>
+                    <span className="queue-position" aria-hidden="true">●</span>
+                    <strong>{ticket.number}</strong>
+                    <div>
+                      <span>{ticket.parishioner}</span>
+                      <small>
+                        {ticket.counter ?? 'Counter'} · {ticket.service}
+                      </small>
+                    </div>
+                    <div className="waiting-actions">
+                      {data.actor.role !== 'clergy' && (
+                        <button
+                          type="button"
+                          className="approve-button"
+                          disabled={busy}
+                          onClick={() =>
+                            void runMutation(
+                              { action: 'queue.complete', ticketId: ticket.id },
+                              `${ticket.number} marked served.`,
+                            )
+                          }
+                        >
+                          Complete {ticket.number}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="row-action"
+                        disabled={busy}
+                        onClick={() => printTicketSlip(ticket)}
+                      >
+                        Print slip
+                      </button>
+                      {data.actor.role === 'parish_staff' && (
+                        <button
+                          type="button"
+                          className="row-action"
+                          disabled={busy}
+                          onClick={() => prefillWalkInFromTicket(ticket)}
+                        >
+                          Book schedule
+                        </button>
+                      )}
+                      {data.actor.role !== 'clergy' && (
+                        <button
+                          type="button"
+                          className="danger-button"
+                          disabled={busy}
+                          onClick={() =>
+                            void runMutation(
+                              { action: 'queue.cancel', ticketId: ticket.id, status: 'no_show' },
+                              `${ticket.number} marked no-show.`,
+                            )
+                          }
+                        >
+                          Mark no-show
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {waiting.length ? (
+            <ol className="waiting-list">
+              {waiting.map((ticket, index) => (
+                <li key={ticket.id}>
+                  <span className="queue-position">{index + 1}</span>
+                  <strong>{ticket.number}</strong>
+                  <div>
+                    <span>{ticket.parishioner}</span>
+                    <small>
+                      {ticket.service} · issued {formatDateTime(ticket.issuedAt)}
+                    </small>
+                  </div>
+                  <div className="waiting-actions">
+                    {ticket.priority > 0 && <span className="status pending">Priority {ticket.priority}</span>}
                     <button
                       type="button"
                       className="row-action"
                       disabled={busy}
-                      onClick={() => prefillWalkInFromTicket(ticket)}
+                      onClick={() => printTicketSlip(ticket)}
                     >
-                      Book schedule
+                      Print slip
                     </button>
-                  )}
-                  {data.actor.role !== 'clergy' && (
-                    <button
-                      type="button"
-                      className="row-action"
-                      disabled={busy}
-                      onClick={() =>
-                        void runMutation(
-                          { action: 'queue.cancel', ticketId: ticket.id, status: 'cancelled' },
-                          `${ticket.number} cancelled.`,
-                        )
-                      }
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ol>
+                    {data.actor.role === 'parish_staff' && (
+                      <button
+                        type="button"
+                        className="row-action"
+                        disabled={busy}
+                        onClick={() => prefillWalkInFromTicket(ticket)}
+                      >
+                        Book schedule
+                      </button>
+                    )}
+                    {data.actor.role !== 'clergy' && (
+                      <button
+                        type="button"
+                        className="row-action"
+                        disabled={busy}
+                        onClick={() =>
+                          void runMutation(
+                            { action: 'queue.cancel', ticketId: ticket.id, status: 'cancelled' },
+                            `${ticket.number} cancelled.`,
+                          )
+                        }
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <div className="empty-mini">No visitors are currently waiting in line for this parish.</div>
+          )}
         </article>
         <aside className="panel detail-panel">
           <span className="eyebrow">Front-desk ticket</span>
@@ -295,6 +395,7 @@ export function QueueModule({ data, busy, runMutation }: Props) {
                   value={queueVisitorName}
                   maxLength={120}
                   onChange={(event) => setQueueVisitorName(event.target.value)}
+                  placeholder="Visitor full name"
                   autoComplete="off"
                 />
               </label>
@@ -330,8 +431,8 @@ export function QueueModule({ data, busy, runMutation }: Props) {
                 className="stack-form"
                 onSubmit={(event: FormEvent) => {
                   event.preventDefault();
-                  const parsed = new Date(walkInStartsAt);
-                  if (Number.isNaN(parsed.getTime())) return;
+                  const parsed = parseManilaLocalDateTime(walkInStartsAt);
+                  if (!parsed) return;
                   void runMutation(
                     {
                       action: 'walkin.appointment.create',
@@ -364,16 +465,23 @@ export function QueueModule({ data, busy, runMutation }: Props) {
                     onChange={(event) => {
                       const nextTicketId = event.target.value;
                       setWalkInTicketId(nextTicketId);
-                      const matchedTicket = parishQueue.find((item) => item.id === nextTicketId);
-                      if (matchedTicket && !walkInName.trim()) {
+                      const matchedTicket = linkableTickets.find((item) => item.id === nextTicketId);
+                      if (matchedTicket) {
                         setWalkInName(matchedTicket.parishioner);
+                        const matchedService = serviceIdFromQueuePurpose(
+                          matchedTicket.service,
+                          defaultServiceId,
+                        );
+                        if (activeServices.some((service) => service.id === matchedService)) {
+                          setWalkInServiceId(matchedService);
+                        }
                       }
                     }}
                   >
                     <option value="">No queue ticket linked</option>
-                    {parishQueue.map((ticket) => (
+                    {linkableTickets.map((ticket) => (
                       <option value={ticket.id} key={ticket.id}>
-                        {ticket.number} · {ticket.parishioner} ({ticket.status})
+                        {ticket.number} · {ticket.parishioner} ({humanizeStatus(ticket.status)})
                       </option>
                     ))}
                   </select>
@@ -448,7 +556,7 @@ export function QueueModule({ data, busy, runMutation }: Props) {
                   />
                 </label>
                 <label>
-                  <span>Appointment date and time</span>
+                  <span>Appointment date and time (Philippine time)</span>
                   <input
                     type="datetime-local"
                     value={walkInStartsAt}
@@ -469,6 +577,21 @@ export function QueueModule({ data, busy, runMutation }: Props) {
                   Book walk-in appointment
                 </button>
               </form>
+            </>
+          )}
+
+          {data.actor.role === 'system_admin' && (
+            <>
+              <hr className="settings-divider" />
+              <span className="eyebrow">Assisted scheduling</span>
+              <h2>Book appointment for visitor</h2>
+              <div className="alert info">
+                <strong>Assigned parish staff workflow</strong>
+                <span>
+                  Walk-in sacramental booking is performed by parish front-desk staff so documentary checklists stay
+                  scoped to the receiving parish.
+                </span>
+              </div>
             </>
           )}
 

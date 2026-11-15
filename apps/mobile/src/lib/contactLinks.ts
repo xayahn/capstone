@@ -1,3 +1,6 @@
+export const isPlaceholderPhone = (phone: string | null | undefined): boolean =>
+  Boolean(phone && /\b555[-\s]?010\d\b/.test(phone));
+
 export const dialablePhoneUri = (phone: string | null | undefined): string | null => {
   if (!phone) return null;
   const cleaned = phone.replace(/[^\d+]/g, '');
@@ -8,5 +11,7 @@ export const dialablePhoneUri = (phone: string | null | undefined): string | nul
 export const mailtoUri = (email: string | null | undefined): string | null => {
   if (!email) return null;
   const trimmed = email.trim();
-  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(trimmed) ? `mailto:${trimmed}` : null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(trimmed)) return null;
+  if (/\.(?:test|example|invalid|localhost)$/i.test(trimmed)) return null;
+  return `mailto:${trimmed}`;
 };

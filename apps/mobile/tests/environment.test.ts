@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import configureApp from '../app.config';
 import {
   normalizeApiBaseUrl,
+  resolveDevelopmentLanApiBaseUrl,
   resolveRuntimeConfiguration,
 } from '../src/config/environment';
 
@@ -96,5 +97,35 @@ describe('mobile runtime configuration', () => {
     'https://api.parishlink.ph/api#fragment',
   ])('rejects an unsafe or ambiguous API base URL: %s', (value) => {
     expect(() => normalizeApiBaseUrl(value)).toThrow();
+  });
+
+  it('adapts stale LAN or loopback development URLs to the active Metro or browser host without affecting release URLs', () => {
+    expect(
+      resolveDevelopmentLanApiBaseUrl('http://192.168.1.9:3000/api', 'development', {
+        hostname: 'exp://192.168.1.25:8081',
+        allowLoopback: false,
+      }),
+    ).toBe('http://192.168.1.25:3000/api');
+
+    expect(
+      resolveDevelopmentLanApiBaseUrl('http://192.168.1.9:3000/api', 'development', {
+        hostname: 'localhost',
+        allowLoopback: true,
+      }),
+    ).toBe('http://localhost:3000/api');
+
+    expect(
+      resolveDevelopmentLanApiBaseUrl('http://192.168.1.9:3000/api', 'development', {
+        hostname: 'localhost:8081',
+        allowLoopback: false,
+      }),
+    ).toBe('http://192.168.1.9:3000/api');
+
+    expect(
+      resolveDevelopmentLanApiBaseUrl('https://api.parishlink.ph/api', 'production', {
+        hostname: '192.168.1.25',
+        allowLoopback: false,
+      }),
+    ).toBe('https://api.parishlink.ph/api');
   });
 });

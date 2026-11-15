@@ -42,66 +42,72 @@ const PUBLIC_WORDS = new Set(`
   a about access accessible account accounts action actions active activity activities
   add advance after again ahead alert alerts all allow allows also am an and android
   announcement announcements any app application applications appointment appointments
-  approval approvals approve approved archdiocese are as ask asking at available
-  availability awaiting back background banns baptism baptize baptise be before begin
-  beginner being between book booking bookings both bride bring browser buffer buffers
-  bulletin bulletins burial but by can cancel cancellation cancelled cannot catechism
-  cathedral certificate certificates change changed changes changing check checking
-  checklist checklists choose choosing christening church churches clergy click close
-  closed collect common communion compare compared comparing complete completed
-  completing completion confirm confirmation confirmed confused confusing contact
-  continue coordinator coordinators coordination copies copy could counter counters
-  create created creating current currently dashboard data date dates day days decision
-  decisions delay delayed delivered delivery denied depending describe description
-  desktop detail details differ difference differences different digital directory
-  discover do does doing document documents documentation down download draft drafts
-  duplicate duplicates duration during each easy edit eight email enable enabled end
-  endorsement enter entry error errors estimate estimated estimates event events every
-  example explain explanation expired expires expiry fail failed failing failure
-  feedback few fifo file files final finally find first five follow following for
-  forgot form forms four free from funeral general get getting give go godparent
-  godparents good granted groom guide guidance happen happens has have having hello
-  help helps here hey hi home hour hours how human i if important in incomplete
-  information inquiry inquiries instead instructions internal internet into ios is it
-  its just keep know latest learn leave left like link list listed live load loading
-  local location log logged logging login logout lost make making mandatory manage
+  approval approvals approve approved archdiocesan archdiocese are as ask asking at
+  attend attending available availability awaiting babies baby back background bacolor
+  banns baptism baptise baptistry baptize be before begin beginner being between binyag
+  book booking bookings both bride bring browser buffer buffers bulletin bulletins burial
+  but by cabetican can cana cancel cancellation cancelled cannot catechism cathedral
+  catholic cenomar ceremonies ceremony certificate certificates change changed changes
+  changing chapel check checking checklist checklists child children choose choosing
+  christening church churches clear clergy click close closed code codes collect common
+  communion compare compared comparing complete completed completing completion confirm
+  confirmation confirmed confused confusing contact continue coordinator coordinators
+  coordination copies copy could counter counters couple couples create created creating
+  current currently dashboard data date dates day days deceased decision decisions delay
+  delayed delivered delivery denied departed depending describe description desktop
+  detail details differ difference differences different digital directory discover do
+  does doing document documents documentation down download draft drafts duplicate
+  duplicates duration during each easy edit eight elderly email enable enabled end
+  endorsement enter entry error errors estimate estimated estimates eucharist event
+  events every example explain explanation expired expires expiry fail failed failing
+  failure families family feedback fernando few fifo file files final finally find first
+  five follow following for forgot form forms four free friday fridays from funeral
+  general get getting give go godparent godparents good granted groom guide guidance
+  guillermo happen happens has have having hello help helps here hey hi holy home hour
+  hours how human i if image images important in incomplete infant infants information
+  inquiry inquiries instead instructions internal internet into ios is isidro it its
+  joseph jpeg jpg just kasal keep kompil komunyon know kumpil labrador latest learn leave
+  left libing like link list listed liturgical liturgy live load loading local location
+  log logged logging login logout lost lourdes lucia make making mandatory manage
   management many marriage mass matrimony may mean meaning means message messages
-  might minute minutes missing mobile month months more most move much need needed
-  needs never new next no not notice notices notification notifications now of office
-  offices official offline on once one online only open operation operations optional
-  or order original originals other otherwise our out over overview page pages pampanga
-  parish parishes parishioner parishioners parishlink password pending people
-  permission permissions person phone photo photos platform please policies policy
-  portal postpone postponed preparation prepare preparing precana previous priest
-  priests print printable printed priorities priority privacy private process
-  processing profile progress provide public purpose purposes push queue queues ready
-  real receive received receiving record records refresh register registered
-  registration rejected rejection related reliable reload reminder reminders remote
-  remove replacement replace report reports request requested requests required
-  requirement requirements reschedule rescheduled reschedules rescheduling reset
-  respond response restart result results retry return review reviewed reviewer
-  reviewing rite rites role roles rule rules sacrament sacramental sacraments same
-  save saved saves saving scan scanned schedule scheduled schedules scheduling screen
-  screens search secure security see select selection seminar seminars send sending
-  sent sequence service services session sessions set setting settings seven should
-  show showing shown shrine sign signin signed signout signup simple simply six slip
-  slips slot slots slow so some someone sponsor sponsors staff stage stages start
-  started state status step steps still stop storage store stored submit submitted
-  submitting submission submissions success successful support supported system tablet
-  take taking tell than thank thanks that the their them then there these they thing
-  things this three through ticket tickets time times to today together tomorrow too
-  track tracking try turnaround two type types understand understanding unread until
-  up update updated updates upload uploaded uploading use used user users using usual
-  usually valid validation venue venues verification verified verify verifying version
-  vicariate view visit visitor visitors visits wait waiting walk walkin want wants was
-  way ways web website wedding week weekday weekdays weekend weekends weeks welcome
-  were what when where which while who why will window windows with withdraw withdrawn
-  withdrawing without work working works would wrong yes yet you your
+  metropolitan might minute minutes missing mobile monday mondays month months more most
+  move much need needed needs never new next nino no not notice notices notification
+  notifications now of office offices official offline older on once one online only open
+  operation operations optional or order original originals other otherwise our out over
+  overview page pages pampanga parent parents parish parishes parishioner parishioners
+  parishlink password pdf pdfs pending people permission permissions person phone photo
+  photos platform please png policies policy portal postpone postponed pre precana
+  preparation prepare preparing previous priest priests print printable printed
+  priorities priority privacy private process processing profile progress provide psa
+  public purpose purposes push qr queue queues ready real receive received receiving
+  record records refresh register registered registration rejected rejection related
+  reliable reload reminder reminders remote remove replacement replace report reports
+  request requested requests required requirement requirements reschedule rescheduled
+  reschedules rescheduling reset respond response restart result results retry return
+  review reviewed reviewer reviewing rite rites role roles rosario rule rules sacrament
+  sacramental sacraments saint same san sanctuario santa santo saturday saturdays save
+  saved saves saving scan scanned schedule scheduled schedules scheduling screen screens
+  search secure security see select selection seminar seminars send sending senior
+  seniors sent sequence service services session sessions set setting settings seven
+  should show showing shown shrine sign signin signed signout signup simple simply six
+  slip slips slot slots slow so some someone sponsor sponsors st sta staff stage stages
+  start started state status step steps still sto stop storage store stored submit
+  submitted submitting submission submissions success successful sunday sundays support
+  supported system tablet take taking tell than thank thanks that the their them then
+  there these they thing things this three through thursday thursdays ticket tickets time
+  times to today together tomorrow too track tracking try tuesday tuesdays turnaround two
+  type types understand understanding unread until up update updated updates upload
+  uploaded uploading use used user users using usual usually valid validation venue
+  venues verification verified verify verifying version vianney vicariate view visit
+  visitor visitors visits wait waiting walk walkin want wants was way ways web website
+  wedding wednesday wednesdays week weekday weekdays weekend weekends weeks welcome were
+  what when where which while who why will window windows with withdraw withdrawn
+  withdrawing without witness witnesses work working works would wrong yes yet you your
 `.trim().split(/\s+/));
 
 const PRIVATE_OR_UNSAFE = /\b(?:my|our|name|named|birthday|born|age|address|phone number|email address|reference|identifier|diagnos\w*|pregnan\w*|divorc\w*|annul\w*|adopt\w*|abuse|danger|emergency|suicid\w*|self[ -]?harm|eligible|eligibility|canon(?:ical)?|legal|financial|medical|counsel\w*|pastoral|password|credential\w*|secret\w*|token\w*)\b/i;
 const INJECTION = /\b(?:ignore|override|bypass|pretend|developer|system prompt|instruction|jailbreak|execute|script|roleplay|act as)\b/i;
-const PUBLIC_TOPIC = /\b(?:parish|parishes|parishioner|parishioners|parishlink|sacrament|sacraments|sacramental|appointment|appointments|request|requests|booking|schedule|schedules|reschedule|rescheduling|cancel|cancellation|document|documents|checklist|checklists|certificate|certificates|seminar|seminars|queue|queues|ticket|tickets|notification|notifications|reminder|reminders|announcement|announcements|directory|approval|verification|staff|clergy|priest|priests|baptism|wedding|matrimony|confirmation|communion|funeral|service|services|app|application|portal|account|signup|login|status)\b/i;
+const PUBLIC_TOPIC = /\b(?:parish|parishes|parishioner|parishioners|parishlink|sacrament|sacraments|sacramental|appointment|appointments|request|requests|booking|schedule|schedules|reschedule|rescheduling|cancel|cancellation|document|documents|checklist|checklists|certificate|certificates|seminar|seminars|precana|cana|queue|queues|ticket|tickets|notification|notifications|reminder|reminders|announcement|announcements|directory|approval|verification|staff|clergy|priest|priests|baptism|binyag|wedding|kasal|matrimony|marriage|confirmation|kumpil|communion|komunyon|funeral|libing|service|services|app|application|portal|account|signup|login|status)\b/i;
 
 export function publicGeminiEligibility(
   prompt: string,
@@ -112,22 +118,27 @@ export function publicGeminiEligibility(
     || !isGeminiApiKey(configuration.apiKey)
     || !/^gemini-[a-z0-9][a-z0-9.-]{0,70}$/.test(configuration.model?.trim() || DEFAULT_GEMINI_MODEL)) return 'disabled';
   if (consent !== true) return 'consent_required';
+  const normalizedChars = prompt.replace(/[ñÑ]/g, 'n');
   if (prompt.length < 2 || prompt.length > 500 || PRIVATE_OR_UNSAFE.test(prompt)
-    || INJECTION.test(prompt) || /[^a-zA-Z\s'’?,.!()-]/.test(prompt)) return 'private_or_sensitive';
+    || INJECTION.test(prompt) || /[^a-zA-Z\s'’?,.!()-]/.test(normalizedChars)) return 'private_or_sensitive';
   const words = publicQuestion(prompt).match(/[a-z]+/g) ?? [];
   if (words.some(word => !PUBLIC_WORDS.has(word))) return 'private_or_sensitive';
-  return PUBLIC_TOPIC.test(prompt) ? null : 'out_of_scope';
+  return PUBLIC_TOPIC.test(normalizedChars) ? null : 'out_of_scope';
 }
 
 function publicQuestion(prompt: string): string {
-  return prompt.toLowerCase().replace(/’/g, "'")
+  return prompt.toLowerCase().replace(/[ñ]/g, 'n').replace(/’/g, "'")
     .replace(/\bi'm\b/g, 'i am').replace(/\bwhat's\b/g, 'what is').replace(/\bhow's\b/g, 'how is')
-    .replace(/\b(?:can't|cannot)\b/g, 'cannot').replace(/\bdon't\b/g, 'do not')
-    .replace(/\bdoesn't\b/g, 'does not').replace(/\bisn't\b/g, 'is not')
+    .replace(/\bwhere's\b/g, 'where is').replace(/\bwhen's\b/g, 'when is').replace(/\bwho's\b/g, 'who is')
+    .replace(/\bthat's\b/g, 'that is')
+    .replace(/\b(?:can't|cannot)\b/g, 'cannot').replace(/\bwon't\b/g, 'will not')
+    .replace(/\bdon't\b/g, 'do not').replace(/\bdoesn't\b/g, 'does not')
+    .replace(/\bisn't\b/g, 'is not').replace(/\baren't\b/g, 'are not').replace(/\bweren't\b/g, 'were not')
     .replace(/\bwouldn't\b/g, 'would not').replace(/\bshouldn't\b/g, 'should not')
     .replace(/\bit's\b/g, 'it is').replace(/\bi've\b/g, 'i have')
     .replace(/\bi'd\b/g, 'i would').replace(/\bthere's\b/g, 'there is')
     .replace(/\byou're\b/g, 'you are').replace(/\bi'll\b/g, 'i will')
+    .replace(/\b([a-z]+)'s\b/g, '$1')
     .trim();
 }
 

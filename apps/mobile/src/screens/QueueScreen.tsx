@@ -33,7 +33,9 @@ export const QueueScreen = ({
   const [parishId, setParishId] = useState<ParishId>(profile.homeParishId);
   const [service, setService] = useState<QueueService>('General inquiry');
   const [confirmLeave, setConfirmLeave] = useState(false);
-  const atCounter = ticket ? isQueueTicketAtCounter(ticket.status) : false;
+  const activeTicket =
+    ticket && !['completed', 'cancelled'].includes(ticket.status) ? ticket : undefined;
+  const atCounter = activeTicket ? isQueueTicketAtCounter(activeTicket.status) : false;
 
   return (
     <Screen>
@@ -43,7 +45,7 @@ export const QueueScreen = ({
         tone="warning"
         icon="people-outline"
       />
-      {ticket ? (
+      {activeTicket ? (
         <>
           {atCounter ? (
             <Notice
@@ -55,27 +57,26 @@ export const QueueScreen = ({
           ) : null}
           <Card style={styles.ticketCard}>
             <Eyebrow>{atCounter ? 'Called to counter' : 'Active ticket'}</Eyebrow>
-            <Text style={styles.ticketNumberLarge}>{ticket.number}</Text>
-            <Text style={styles.ticketParish}>{getParish(ticket.parishId)?.name}</Text>
-            <StatusBadge label={queueStatusLabel[ticket.status]} tone={queueStatusTone[ticket.status]} />
+            <Text style={styles.ticketNumberLarge}>{activeTicket.number}</Text>
+            <Text style={styles.ticketParish}>{getParish(activeTicket.parishId)?.name}</Text>
+            <StatusBadge label={queueStatusLabel[activeTicket.status]} tone={queueStatusTone[activeTicket.status]} />
             <View style={styles.queueStats}>
-              <QueueStat value={String(ticket.ahead)} label="people ahead" />
+              <QueueStat value={String(activeTicket.ahead)} label={activeTicket.ahead === 1 ? 'person ahead' : 'people ahead'} />
               <View style={styles.verticalDivider} />
               <QueueStat
-                value={ticket.estimatedWaitMinutes === null ? '—' : `~${ticket.estimatedWaitMinutes}`}
-                label={ticket.estimatedWaitMinutes === null ? 'estimate pending' : 'minutes'}
+                value={activeTicket.estimatedWaitMinutes === null ? '—' : `~${activeTicket.estimatedWaitMinutes}`}
+                label={activeTicket.estimatedWaitMinutes === null ? 'estimate pending' : 'minutes'}
               />
             </View>
             <Text style={styles.mutedCentered}>
               {atCounter
-                ? `For: ${ticket.service}. Show ticket ${ticket.number} to the staff member at the counter.`
-                : `For: ${ticket.service}. Keep this screen available and follow parish staff instructions.`}
+                ? `For: ${activeTicket.service}. Show ticket ${activeTicket.number} to the staff member at the counter.`
+                : `For: ${activeTicket.service}. Keep this screen available and follow parish staff instructions.`}
             </Text>
-            <AppButton label="Leave queue" variant="danger" loading={loading} onPress={() => setConfirmLeave(true)} />
             {confirmLeave ? (
-              <View accessibilityRole="alert">
+              <View style={styles.confirmLeaveBox} accessibilityRole="alert">
                 <Text style={styles.mutedCentered}>Leave this queue? Your ticket will be released.</Text>
-                <AppButton label="Keep my ticket" variant="secondary" onPress={() => setConfirmLeave(false)} />
+                <AppButton label="Keep my ticket" variant="secondary" disabled={loading} onPress={() => setConfirmLeave(false)} />
                 <AppButton
                   label="Confirm leave queue"
                   variant="danger"
@@ -85,7 +86,9 @@ export const QueueScreen = ({
                   }}
                 />
               </View>
-            ) : null}
+            ) : (
+              <AppButton label="Leave queue" variant="danger" loading={loading} onPress={() => setConfirmLeave(true)} />
+            )}
           </Card>
         </>
       ) : (
@@ -135,5 +138,6 @@ const styles = StyleSheet.create({
   mutedCentered: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 15.5, lineHeight: 22, textAlign: 'center' },
   cardHeadline: { color: colors.ink, fontFamily: fonts.displayBold, fontSize: 28, lineHeight: 32 },
   fieldLabel: { color: colors.ink, fontFamily: fonts.bodyBold, fontSize: 16, marginBottom: spacing.xs, marginTop: spacing.md },
+  confirmLeaveBox: { gap: spacing.sm, width: '100%' },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
 });

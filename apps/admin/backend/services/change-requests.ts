@@ -1,6 +1,7 @@
 import { getRawDb } from '@/db/runtime';
 import { scoped } from '@/backend/services/admin-scope';
 import { resourceConflict } from '@/shared/scheduling';
+import { utcTimestamp } from '@/shared/validation';
 import type { Actor, AppointmentStatus, ChangeRequest } from '@/shared/domain';
 
 /**
@@ -72,14 +73,14 @@ export async function loadChangeRequests(actor: Actor): Promise<ChangeRequest[]>
       kind: row.kind,
       status: row.status,
       appointmentStatus: row.appointmentStatus as AppointmentStatus,
-      currentStartsAt: row.currentStartsAt,
-      proposedStartsAt: row.proposedStartsAt,
-      proposedEndsAt: row.proposedEndsAt,
+      currentStartsAt: utcTimestamp(row.currentStartsAt),
+      proposedStartsAt: row.proposedStartsAt ? utcTimestamp(row.proposedStartsAt) : null,
+      proposedEndsAt: row.proposedEndsAt ? utcTimestamp(row.proposedEndsAt) : null,
       reason: restricted ? 'Restricted' : row.reason,
-      decisionNote: row.decisionNote,
+      decisionNote: restricted ? null : row.decisionNote,
       decidedBy: row.decidedBy,
-      createdAt: row.createdAt,
-      decidedAt: row.decidedAt,
+      createdAt: utcTimestamp(row.createdAt),
+      decidedAt: row.decidedAt ? utcTimestamp(row.decidedAt) : null,
       canDecide: row.status === 'pending' && canDecideChangeRequest(actor, { parishId: row.parishId, clergyId: row.clergyId }),
       proposedSlotAvailable,
     };

@@ -29,6 +29,28 @@ function optionalString(value: unknown, label: string, max: number): string | nu
   return trimmed;
 }
 
+function formatAuditDetail(row: AuditRow, role: Actor['role']): string | null {
+  if (!row.detail) return null;
+  if (row.entityType === 'document_submission') {
+    const trimmed = row.detail.trim();
+    if (trimmed.startsWith('{')) {
+      if (role === 'system_admin') return 'Document uploaded';
+      try {
+        const parsed = JSON.parse(trimmed) as { sha256?: unknown; previousSha256?: unknown };
+        const hash = typeof parsed.sha256 === 'string' && parsed.sha256 ? parsed.sha256.slice(0, 12) : null;
+        const replaced = typeof parsed.previousSha256 === 'string' && parsed.previousSha256.length > 0;
+        return `${replaced ? 'Replacement document uploaded' : 'Document uploaded'}${hash ? ` (SHA-256 ${hash})` : ''}`;
+      } catch {
+        return 'Document uploaded';
+      }
+    }
+    if (role === 'system_admin') {
+      return row.detail.split(':')[0] ?? null;
+    }
+  }
+  return row.detail;
+}
+
 export async function searchAuditLogs(
   actor: Actor,
   input: Record<string, unknown>,
@@ -186,10 +208,7 @@ export async function searchAuditLogs(
 
   const entries: AuditLogEntry[] = result.results.slice(0, PAGE_SIZE).map((row) => {
     const isRestrictedParishioner = actor.role === 'system_admin' && row.actorRole === 'parishioner';
-    const redactedDetail =
-      actor.role === 'system_admin' && row.entityType === 'document_submission' && row.detail
-        ? row.detail.split(':')[0] ?? null
-        : row.detail;
+    const detail = formatAuditDetail(row, actor.role);
 
     return {
       id: row.id,
@@ -201,7 +220,7 @@ export async function searchAuditLogs(
       actorName: isRestrictedParishioner ? 'Restricted parishioner' : row.actorName ?? 'System',
       actorRole: row.actorRole,
       outcome: row.outcome,
-      detail: redactedDetail,
+      detail,
       createdAt: new Date(utcTimestamp(row.createdAt)).toISOString(),
     };
   });

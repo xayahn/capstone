@@ -81,10 +81,23 @@ export async function generateDueReminders(options: { userId?: string; now?: Dat
     .all<Candidate>();
   const plans = planReminders(result.results.map((row) => ({ ...row, missingDocuments: Number(row.missingDocuments) })), now);
   if (plans.length === 0) return 0;
-  const existing = await db.prepare(`SELECT dedupe_key AS dedupeKey FROM notifications
-    WHERE dedupe_key IN (${plans.map(() => '?').join(',')})`).bind(...plans.map((plan) => plan.dedupeKey)).all<{ dedupeKey: string }>();
+  const oneDayAppointmentIds = plans
+    .filter((plan) => plan.dedupeKey.endsWith(':1d'))
+    .map((plan) => plan.appointmentId);
+  const [existing, existingPushReminders] = await Promise.all([
+    db.prepare(`SELECT dedupe_key AS dedupeKey FROM notifications
+      WHERE dedupe_key IN (${plans.map(() => '?').join(',')})`).bind(...plans.map((plan) => plan.dedupeKey)).all<{ dedupeKey: string }>(),
+    oneDayAppointmentIds.length > 0
+      ? db.prepare(`SELECT entity_id AS appointmentId FROM notifications
+          WHERE type = 'appointment_reminder' AND entity_id IN (${oneDayAppointmentIds.map(() => '?').join(',')})`)
+          .bind(...oneDayAppointmentIds).all<{ appointmentId: string }>()
+      : Promise.resolve({ results: [] as { appointmentId: string }[] }),
+  ]);
   const known = new Set(existing.results.map((row) => row.dedupeKey));
-  const fresh = plans.filter((plan) => !known.has(plan.dedupeKey));
+  const pushRemindedAppointments = new Set(existingPushReminders.results.map((row) => row.appointmentId));
+  const fresh = plans.filter(
+    (plan) => !known.has(plan.dedupeKey) && !(plan.dedupeKey.endsWith(':1d') && pushRemindedAppointments.has(plan.appointmentId)),
+  );
   if (fresh.length === 0) return 0;
   await db.batch(fresh.map((plan) => db.prepare(`INSERT OR IGNORE INTO notifications
       (id, recipient_user_id, type, title, body, entity_type, entity_id, dedupe_key)

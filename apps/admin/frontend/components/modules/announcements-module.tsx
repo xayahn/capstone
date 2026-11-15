@@ -23,27 +23,34 @@ export function AnnouncementsModule({ data, busy, runMutation }: Props) {
       <article className="panel module-primary">
         <div className="panel-heading">
           <div>
-            <span className="eyebrow">Plain-text publishing</span>
+            <span className="eyebrow">Parish & Vicariate notices</span>
             <h2>Announcements</h2>
           </div>
           <span className="result-count">
             {data.announcements.length} recent · {data.metrics.publishedAnnouncements} total
           </span>
         </div>
-        <div className="announcement-list">
-          {data.announcements.map((announcement) => (
-            <article key={announcement.id}>
-              <div>
-                <span className="eyebrow">{announcement.parish}</span>
-                <h3>{announcement.title}</h3>
-                <p>{announcement.body}</p>
-                <small>
-                  Published {formatDateTime(announcement.publishedAt)} by {announcement.author}
-                </small>
-              </div>
-            </article>
-          ))}
-        </div>
+        {data.announcements.length ? (
+          <div className="announcement-list">
+            {data.announcements.map((announcement) => (
+              <article key={announcement.id}>
+                <div>
+                  <span className="eyebrow">{announcement.parish}</span>
+                  <h3>{announcement.title}</h3>
+                  <p>{announcement.body}</p>
+                  <small>
+                    Published {formatDateTime(announcement.publishedAt)} by {announcement.author}
+                  </small>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">
+            <strong>No published announcements yet</strong>
+            <span>New parish and Vicariate notices published here appear on the ParishLink mobile app.</span>
+          </div>
+        )}
       </article>
       <aside className="panel detail-panel">
         <span className="eyebrow">New notice</span>
@@ -105,6 +112,7 @@ export function AnnouncementsModule({ data, busy, runMutation }: Props) {
               <input
                 value={announcementTitle}
                 maxLength={120}
+                placeholder="Clear notice heading (4 to 120 characters)"
                 onChange={(event) => setAnnouncementTitle(event.target.value)}
               />
             </label>
@@ -113,6 +121,7 @@ export function AnnouncementsModule({ data, busy, runMutation }: Props) {
               <textarea
                 value={announcementBody}
                 maxLength={2000}
+                placeholder="Write the notice in clear language (at least 10 characters)"
                 onChange={(event) => setAnnouncementBody(event.target.value)}
               />
             </label>
@@ -122,7 +131,7 @@ export function AnnouncementsModule({ data, busy, runMutation }: Props) {
             >
               Publish notice
             </button>
-            <small>Content is stored and rendered as plain text to protect readers from injected markup.</small>
+            <small>Published notices appear immediately on the ParishLink mobile Home and Announcements screens.</small>
           </form>
         )}
       </aside>

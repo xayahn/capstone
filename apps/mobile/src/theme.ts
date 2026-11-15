@@ -95,9 +95,9 @@ export const type = {
   } satisfies TextStyle,
   label: {
     fontFamily: fonts.bodyBold,
-    fontSize: 13,
-    lineHeight: 19,
-    letterSpacing: 1.1,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 1.0,
     textTransform: 'uppercase',
     color: colors.oxblood,
   } satisfies TextStyle,

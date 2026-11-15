@@ -60,8 +60,18 @@ export function useAccountCodeFlow(kind: 'reset' | 'verification', initialEmail:
       setState(next === 'success' ? { ...blank(), phase: 'success' } : { ...blank(email), phase: next });
     } catch (cause) {
       if (!current()) return;
+      const keepResetPasswords =
+        confirming &&
+        kind === 'reset' &&
+        cause instanceof MobileApiError &&
+        cause.status >= 400 &&
+        cause.status < 500;
       setState(value => ({
-        ...value, busy: false, code: '', newPassword: '', confirmPassword: '',
+        ...value,
+        busy: false,
+        code: '',
+        newPassword: keepResetPasswords ? value.newPassword : '',
+        confirmPassword: keepResetPasswords ? value.confirmPassword : '',
         error: failureMessage(cause, confirming, kind),
       }));
     } finally {

@@ -14,11 +14,26 @@ const BASE_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
 } as const;
 
+function isRfc1918Ipv4(hostname: string): boolean {
+  const octets = hostname.split('.').map(Number);
+  if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) {
+    return false;
+  }
+  const [first = -1, second = -1] = octets;
+  return first === 10
+    || (first === 172 && second >= 16 && second <= 31)
+    || (first === 192 && second === 168);
+}
+
 function requestOriginAllowed(request: Request): boolean {
   const origin = request.headers.get('origin');
   if (!origin) return true;
-  if (origin === new URL(request.url).origin) return true;
+  const requestUrl = new URL(request.url);
+  if (origin === requestUrl.origin) return true;
   const development = process.env.NODE_ENV !== 'production';
+  if (development && isRfc1918Ipv4(requestUrl.hostname) && origin === `http://${requestUrl.hostname}:8081`) {
+    return true;
+  }
   return mobileAllowedOrigins(env.MOBILE_ALLOWED_ORIGINS, development).has(origin);
 }
 

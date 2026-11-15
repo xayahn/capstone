@@ -9,13 +9,15 @@ export interface NotificationsScreenProps {
 }
 
 export const formatRelativeTime = (iso: string) => {
-  const milliseconds = Date.now() - new Date(iso).getTime();
+  const parsed = new Date(iso).getTime();
+  if (Number.isNaN(parsed)) return '';
+  const milliseconds = Date.now() - parsed;
   const minutes = Math.max(0, Math.round(milliseconds / 60_000));
-  if (minutes < 1) return 'Now';
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes} min ago`;
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.round(hours / 24)}d`;
+  if (hours < 24) return `${hours} hr ago`;
+  return `${Math.round(hours / 24)}d ago`;
 };
 
 export const NotificationsScreen = ({ notifications, onOpen }: NotificationsScreenProps) => (
@@ -58,6 +60,6 @@ const styles = StyleSheet.create({
   notificationUnread: { backgroundColor: colors.cardStrong, borderColor: colors.gold },
   notificationDot: { backgroundColor: colors.oxblood, borderRadius: 6, height: 12, marginTop: 5, width: 12 },
   notificationDotRead: { backgroundColor: colors.line },
-  noticeTime: { color: colors.inkSoft, fontFamily: fonts.bodyMedium, fontSize: 13.5 },
+  noticeTime: { color: colors.inkSoft, fontFamily: fonts.bodyMedium, fontSize: 14 },
   mutedText: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 15, lineHeight: 22 },
 });

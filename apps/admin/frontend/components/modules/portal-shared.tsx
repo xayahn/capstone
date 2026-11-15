@@ -1,6 +1,6 @@
 'use client';
 
-import { humanizeStatus, type Appointment, type AppointmentStatus, type DashboardState } from '@/shared/domain';
+import { humanizeStatus, type Appointment, type AppointmentStatus } from '@/shared/domain';
 import { utcTimestamp } from '@/shared/validation';
 
 export type ModuleId =
@@ -45,10 +45,25 @@ export const REASON_REQUIRED = new Set<AppointmentStatus>(['needs_changes', 'rej
 export const QUEUE_PURPOSES = [
   'Baptism inquiry',
   'Wedding inquiry',
+  'Confirmation inquiry',
+  'First Communion inquiry',
+  'Funeral Mass inquiry',
   'Document submission',
   'Certificate request',
   'General inquiry',
 ] as const;
+
+export function parseManilaLocalDateTime(value: string): Date | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const iso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed)
+    ? `${trimmed}:00+08:00`
+    : /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(trimmed)
+      ? `${trimmed}+08:00`
+      : trimmed;
+  const parsed = new Date(iso);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
 
 export function formatDateTime(value: string): string {
   return new Intl.DateTimeFormat('en-PH', {
@@ -94,7 +109,7 @@ export function tone(status: string): string {
   return 'pending';
 }
 
-export function roleLabel(role: DashboardState['actor']['role']): string {
+export function roleLabel(role: string): string {
   return role === 'system_admin' ? 'System administrator' : humanizeStatus(role);
 }
 

@@ -23,7 +23,7 @@ export async function POST(request: Request): Promise<Response> {
       .bind(appointmentId, requirementId, actor.parishId).first<{ id:string }>();
     if (!doc) throw new AdminServiceError('The saved document requirement was not found.', 404);
     await saveDocument({ actorId:actor.id, parishId:actor.parishId, appointmentId, documentId:doc.id }, file);
-    return json({ ok:true, message:'The file was submitted for human review.' });
+    return json({ ok:true, message:'The document was attached and queued for parish staff verification.' });
   } catch (error) {
     if (error instanceof AdminServiceError || error instanceof MobileServiceError) return json({ error:error.message }, error.status);
     return json({ error:'The document could not be uploaded. Please try again.', requestId:recordServerFailure('admin-document-upload',error) },500);

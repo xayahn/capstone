@@ -1,5 +1,5 @@
 import { validCalendarDate, validPhoneNumber, utcTimestamp } from '@/shared/validation';
-import { isUniqueConstraintError, nextParishQueueTicketNumber, shortAppointmentReference } from '@/shared/identifiers';
+import { expirePreviousDayQueueTickets, isUniqueConstraintError, nextParishQueueTicketNumber, shortAppointmentReference } from '@/shared/identifiers';
 import { resourceConflict } from '@/shared/scheduling';
 import { parishionerChangeOptions } from '@/shared/change-policy';
 import type { AppointmentStatus } from '@/shared/domain';
@@ -26,6 +26,9 @@ const MOBILE_TO_SERVICE: Record<string, string> = Object.fromEntries(
 const QUEUE_SERVICES = new Set([
   'Baptism inquiry',
   'Wedding inquiry',
+  'Confirmation inquiry',
+  'First Communion inquiry',
+  'Funeral Mass inquiry',
   'Document submission',
   'Certificate request',
   'General inquiry',
@@ -46,7 +49,7 @@ export async function loadMobileCatalog() {
       }>(),
     db.prepare(`SELECT id, display_title AS name, home_parish_id AS parishId
       FROM clergy_profiles WHERE is_active = 1 AND EXISTS (SELECT 1 FROM users u WHERE u.id = clergy_profiles.user_id AND u.is_active = 1) ORDER BY display_title`).all<{ id: string; name: string; parishId: string | null }>(),
-    db.prepare(`SELECT id, parish_id AS parishId FROM venues WHERE is_active = 1 ORDER BY name`).all<{ id: string; parishId: string }>(),
+    db.prepare(`SELECT id, parish_id AS parishId FROM venues WHERE is_active = 1 ORDER BY CASE WHEN LOWER(name) LIKE '%main church%' THEN 0 ELSE 1 END, COALESCE(capacity, 0) DESC, name ASC`).all<{ id: string; parishId: string }>(),
     db.prepare(`SELECT id, name, description, duration_minutes AS durationMinutes
       FROM service_types WHERE is_active = 1 ORDER BY CASE id
         WHEN 'baptism' THEN 1 WHEN 'wedding' THEN 2 WHEN 'confirmation' THEN 3
@@ -205,7 +208,7 @@ function appointmentDto(row: AppointmentRow, documents: DocumentRow[], participa
       ...(document.mimeType ? { mimeType: document.mimeType } : {}),
       ...(document.sizeBytes ? { sizeBytes: Number(document.sizeBytes) } : {}),
       ...(document.note ? { note: document.note } : {}),
-      updatedAt: document.updatedAt,
+      updatedAt: utcTimestamp(document.updatedAt),
     })),
     submittedAt: utcTimestamp(row.submittedAt),
     updatedAt: utcTimestamp(row.updatedAt),
@@ -285,10 +288,10 @@ async function loadNotifications(userId: string) {
     title: row.title,
     body: row.body,
     createdAt: utcTimestamp(row.createdAt),
-    ...(row.readAt ? { readAt: row.readAt } : {}),
+    ...(row.readAt ? { readAt: utcTimestamp(row.readAt) } : {}),
     target: row.entityType === 'appointment' && row.entityId
       ? { kind: 'appointment', appointmentId: row.entityId }
-      : row.entityType === 'queue'
+      : row.entityType === 'queue' || row.entityType === 'queue_ticket' || row.type === 'queue'
         ? { kind: 'queue' }
         : row.type === 'assistant'
           ? { kind: 'assistant' }
@@ -359,6 +362,7 @@ async function loadAnnouncements(actor: MobileActor) {
 }
 
 export async function loadMobileSnapshot(actor: MobileActor) {
+  await expirePreviousDayQueueTickets(getRawDb()).catch(() => undefined);
   // Due reminders are created before notifications are read so they appear immediately.
   await generateDueReminders({ userId: actor.id }).catch((error) => {
     recordServerFailure('reminder-generation', error);
@@ -379,6 +383,7 @@ export async function loadMobileSnapshot(actor: MobileActor) {
       mobileNumber: actor.mobileNumber,
       homeParishId: actor.homeParishId,
       notificationsEnabled: actor.notificationsEnabled,
+      emailVerified: Boolean(actor.emailVerified),
     },
     appointments,
     notifications,
@@ -690,6 +695,7 @@ export async function joinMobileQueue(
   }
   const parish = await db.prepare('SELECT id FROM parishes WHERE id = ? AND is_active = 1').bind(parishId).first<{ id: string }>();
   if (!parish) throw new MobileServiceError('Choose a valid parish.');
+  await expirePreviousDayQueueTickets(db).catch(() => undefined);
   let results: Awaited<ReturnType<typeof db.batch>> | undefined;
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const id = crypto.randomUUID();
@@ -882,7 +888,7 @@ function detectAssistantService(prompt: string): AssistantService | undefined {
 }
 
 function readableTimestamp(value: string): string {
-  const date = new Date(value);
+  const date = new Date(utcTimestamp(value));
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat('en-PH', {
     dateStyle: 'medium',
@@ -948,7 +954,7 @@ async function serviceGuidance(service: AssistantService, wantsRequirements: boo
       sources: [{
         label: `Current ${name} requirements`,
         kind: 'service_requirements',
-        ...(lastUpdated ? { updatedAt: lastUpdated } : {}),
+        ...(lastUpdated ? { updatedAt: utcTimestamp(lastUpdated) } : {}),
       }],
       actions: [
         ...serviceActions(service),
@@ -971,7 +977,7 @@ async function serviceGuidance(service: AssistantService, wantsRequirements: boo
     sources: [{
       label: `Current ${name} information`,
       kind: 'service_requirements',
-      ...(serviceRow?.updatedAt ? { updatedAt: serviceRow.updatedAt } : {}),
+      ...(serviceRow?.updatedAt ? { updatedAt: utcTimestamp(serviceRow.updatedAt) } : {}),
     }],
     actions: [
       ...serviceActions(service),
@@ -1093,7 +1099,7 @@ async function appointmentGuidance(
     sources: [{
       label: `Your ${appointment.serviceName} request at ${appointment.parishName}`,
       kind: 'appointment',
-      updatedAt: appointment.updatedAt,
+      updatedAt: utcTimestamp(appointment.updatedAt),
     }],
     actions: [{
       id: 'view-appointment',
@@ -1176,11 +1182,28 @@ function documentClarification(): AssistantReply {
   };
 }
 
-async function parishOfficeGuidance(actor: MobileActor): Promise<AssistantReply> {
+const ASSISTANT_PARISH_ALIASES: Array<{ id: string; aliases: RegExp }> = [
+  { id: 'metropolitan-cathedral', aliases: /\b(?:metropolitan\s+cathedral|cathedral|sto\.?\s*rosario|consunji)\b/i },
+  { id: 'san-guillermo', aliases: /\b(?:san\s+guillermo|cabambangan)\b/i },
+  { id: 'sanctuario-san-jose', aliases: /\b(?:sanctuario|santuario|san\s+jose)\b/i },
+  { id: 'sta-lucia', aliases: /\b(?:sta\.?\s*lucia|santa\s+lucia)\b/i },
+  { id: 'sto-nino', aliases: /\b(?:sto\.?\s*ni[nñ]o|santo\s+ni[nñ]o)\b/i },
+  { id: 'san-isidro-labrador', aliases: /\b(?:san\s+isidro(?:\s+labrador)?)\b/i },
+  { id: 'st-joseph', aliases: /\b(?:st\.?\s*joseph|saint\s+joseph)\b/i },
+  { id: 'our-lady-of-lourdes', aliases: /\b(?:our\s+lady\s+of\s+lourdes|lourdes|cabetican)\b/i },
+];
+
+function detectAssistantParishId(prompt: string): string | undefined {
+  return ASSISTANT_PARISH_ALIASES.find((entry) => entry.aliases.test(prompt))?.id;
+}
+
+async function parishOfficeGuidance(actor: MobileActor, prompt: string): Promise<AssistantReply> {
+  const requestedParishId = detectAssistantParishId(prompt);
+  const targetParishId = requestedParishId ?? actor.homeParishId;
   const parish = await getRawDb().prepare(`SELECT name, address, office_hours AS officeHours,
       contact_phone AS contactPhone, contact_email AS contactEmail,
       updated_at AS updatedAt FROM parishes WHERE id = ? AND is_active = 1 LIMIT 1`)
-    .bind(actor.homeParishId).first<{
+    .bind(targetParishId).first<{
       name: string;
       address: string | null;
       officeHours: string | null;
@@ -1189,10 +1212,13 @@ async function parishOfficeGuidance(actor: MobileActor): Promise<AssistantReply>
       updatedAt: string;
     }>();
   const hasPublishedDirectory = Boolean(parish && (parish.address || parish.officeHours || parish.contactPhone || parish.contactEmail));
+  const isNamedOtherParish = Boolean(requestedParishId && requestedParishId !== actor.homeParishId);
   return {
     title: parish?.name ?? 'Contact your parish',
     text: parish
-      ? 'Here is the public office information currently listed for your home parish. Contact the office for official decisions, pastoral questions, or details not published in ParishLink.'
+      ? isNamedOtherParish
+        ? `Here is the public office information currently listed for ${parish.name}. Contact the office for official decisions, pastoral questions, or details not published in ParishLink.`
+        : 'Here is the public office information currently listed for your home parish. Contact the office for official decisions, pastoral questions, or details not published in ParishLink.'
       : 'Contact your parish office for official decisions, pastoral questions, or details not published in ParishLink.',
     category: 'parish-office',
     escalation: false,
@@ -1207,7 +1233,7 @@ async function parishOfficeGuidance(actor: MobileActor): Promise<AssistantReply>
       sources: [{
         label: `${parish.name} public office information`,
         kind: 'parish_directory',
-        updatedAt: parish.updatedAt,
+        ...(parish.updatedAt ? { updatedAt: utcTimestamp(parish.updatedAt) } : {}),
       }],
     } : {}),
     actions: [{ id: 'contact-parish', label: 'Contact parish office', kind: 'contact_parish' }],
@@ -1256,7 +1282,7 @@ function knownGeneralGuidance(prompt: string): AssistantReply | null {
   if (/\b(?:announcement|announcements|bulletin|notice|notices)\b/i.test(prompt)) {
     return {
       title: 'Parish and Vicariate announcements',
-      text: 'Published parish and Vicariate announcements appear on the mobile Home screen and under More -> Announcements. Contact your selected parish office directly to confirm urgent schedule adjustments.',
+      text: 'Published parish and Vicariate announcements appear on the mobile Home screen and under More › Announcements. Contact your selected parish office directly to confirm urgent schedule adjustments.',
       category: 'announcements',
       escalation: false,
       actions: [{ id: 'go-home', label: 'Open home screen', kind: 'home' }],
@@ -1356,7 +1382,7 @@ async function publicAssistantKnowledge(): Promise<PublicKnowledgeSource[]> {
     },
     {
       id: 'navigation',
-      content: 'Parishioners use the mobile application across the Vicariate of Virgen De Los Remedios. Services shows the five supported sacramental services (Baptism, Wedding, Confirmation, First Communion, and Funeral Mass) and their current parish document checklists. Start a request from Services, select an available parish, priest, venue, date, and time (conflict-checked with preparation and cleanup buffers), and submit for parish review. Submission does not mean approval. My Appointments shows the signed-in user their own request status, reference code, timeline, and document uploads. Authorized parish staff verify uploaded documents and may request a replacement if an image or PDF is unclear or incomplete. Before parish approval, parishioners can withdraw a request directly in My Appointments; after approval, cancellation requests and reschedule requests (for slots at least 24 hours ahead) are reviewed by authorized parish staff. Published parish and Vicariate announcements appear on Home and under More -> Announcements, alongside upcoming appointment and document reminders. Walk-in Queue issues one active sequential daily ticket per visitor (format MMDD-NNN); parish staff call, serve, or mark tickets cancelled or no-show at the office counter, and wait estimates may change. Notifications contains in-app updates to requests, reminders, and queue activity; device push alerts depend on permission and configuration. Profile manages contact details and notification preferences. Staff, clergy, and administrators use the separate internal web portal with role-scoped parish access. ParishLink supports administrative coordination only and never replaces official Church archives, canonical judgments, or pastoral decisions. No payments, donations, livestreaming, fee schedules, or guaranteed turnaround times are offered in the assistant.',
+      content: 'Parishioners use the mobile application across the Vicariate of St. John Mary Vianney. Services shows the five supported sacramental services (Baptism, Wedding, Confirmation, First Communion, and Funeral Mass) and their current parish document checklists. Start a request from Services, select an available parish, priest, venue, date, and time (conflict-checked with preparation and cleanup buffers), and submit for parish review. Submission does not mean approval. My Appointments shows the signed-in user their own request status, reference code, timeline, and document uploads. Authorized parish staff verify uploaded documents and may request a replacement if an image or PDF is unclear or incomplete. Before parish approval, parishioners can withdraw a request directly in My Appointments; after approval, cancellation requests and reschedule requests (for slots at least 24 hours ahead) are reviewed by authorized parish staff. Published parish and Vicariate announcements appear on Home and under More › Announcements, alongside upcoming appointment and document reminders. Walk-in Queue issues one active sequential daily ticket per visitor (format MMDD-NNN); parish staff call, serve, or mark tickets cancelled or no-show at the office counter, and wait estimates may change. Notifications contains in-app updates to requests, reminders, and queue activity; device push alerts depend on permission and configuration. Profile manages contact details and notification preferences. Staff, clergy, and administrators use the separate internal web portal with role-scoped parish access. ParishLink supports administrative coordination only and never replaces official Church archives, canonical judgments, or pastoral decisions. No payments, donations, livestreaming, fee schedules, or guaranteed turnaround times are offered in the assistant.',
     },
   ];
 }
@@ -1378,8 +1404,8 @@ export async function askMobileAssistant(actor: MobileActor, input: Record<strin
     reply = await serviceGuidance(service, DOCUMENT_QUESTION.test(redactedPrompt));
   } else if (EXACT_CHECKLIST_QUESTION.test(redactedPrompt)) {
     reply = documentClarification();
-  } else if (/\b(?:parish office|office hours|contact|address|location)\b/i.test(redactedPrompt)) {
-    reply = await parishOfficeGuidance(actor);
+  } else if (/\b(?:parish office|office hours?|contact|address|location|phone|telephone|email|where\s+is|when\s+is.{0,30}\bopen)\b/i.test(redactedPrompt)) {
+    reply = await parishOfficeGuidance(actor, redactedPrompt);
   } else {
     reply = knownGeneralGuidance(redactedPrompt) ?? generalFallbackGuidance();
   }

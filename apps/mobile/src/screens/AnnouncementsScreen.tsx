@@ -107,8 +107,8 @@ export const AnnouncementsScreen = ({
       )}
 
       <Notice
-        title="Plain-text bulletin"
-        body="Announcements are published by authorized parish staff or the system administrator. Confirm schedule-critical details directly with your parish office."
+        title="Official parish notices"
+        body="Announcements are published by authorized parish personnel. Confirm urgent schedule adjustments directly with your parish office."
         tone="info"
         icon="shield-checkmark-outline"
       />
@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
   headerRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
   flex: { flex: 1 },
   parishLabel: { color: colors.oxblood, fontFamily: fonts.bodyBold, fontSize: 14 },
-  dateLabel: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 13, marginTop: 2 },
+  dateLabel: { color: colors.inkSoft, fontFamily: fonts.body, fontSize: 14, marginTop: 2 },
   announcementTitle: { color: colors.ink, fontFamily: fonts.displayBold, fontSize: 24, lineHeight: 29 },
   bodyText: { color: colors.ink, fontFamily: fonts.body, fontSize: 16.5, lineHeight: 24 },
   emptyCard: { alignItems: 'center', gap: spacing.xs },

@@ -249,7 +249,7 @@ export const Field = ({ label, secureTextEntry, style, ...props }: TextInputProp
       <TextInput
         accessibilityLabel={label}
         placeholderTextColor={colors.inkSoft}
-        style={[styles.input, style]}
+        style={[styles.input, props.editable === false && styles.inputReadOnly, style]}
         {...props}
       />
     </View>
@@ -457,6 +457,7 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     borderRadius: radii.lg,
     borderWidth: 1,
+    gap: spacing.sm,
     padding: spacing.lg,
     ...shadow,
   },
@@ -493,7 +494,7 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.72, transform: [{ scale: 0.99 }] },
   disabled: { opacity: 0.45 },
   badge: { alignSelf: 'flex-start', borderRadius: radii.pill, paddingHorizontal: 12, paddingVertical: 6 },
-  badgeText: { fontFamily: fonts.bodyBold, fontSize: 13.5, lineHeight: 18 },
+  badgeText: { fontFamily: fonts.bodyBold, fontSize: 14, lineHeight: 19 },
   notice: { borderRadius: radii.md, flexDirection: 'row', gap: spacing.sm, padding: spacing.md },
   noticeCopy: { flex: 1, gap: spacing.xxs },
   noticeTitle: { fontFamily: fonts.bodyBold, fontSize: 16, lineHeight: 22 },
@@ -534,6 +535,10 @@ const styles = StyleSheet.create({
     minHeight: 54,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+  },
+  inputReadOnly: {
+    backgroundColor: colors.paperLight,
+    color: colors.inkSoft,
   },
   passwordRow: {
     alignItems: 'center',
@@ -596,23 +601,27 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     borderRadius: radii.md,
     borderWidth: 1,
+    flexBasis: '46%',
     flexDirection: 'row',
+    flexGrow: 1,
     gap: spacing.sm,
-    minHeight: 74,
+    minHeight: 76,
+    minWidth: 152,
     padding: spacing.sm,
-    width: '48%',
     ...shadow,
   },
-  quickActionLabel: { color: colors.ink, flex: 1, fontFamily: fonts.bodyBold, fontSize: 15, lineHeight: 21 },
+  quickActionLabel: { color: colors.ink, flex: 1, fontFamily: fonts.bodyBold, fontSize: 15.5, lineHeight: 21 },
   moreLink: {
     alignItems: 'center',
     backgroundColor: colors.card,
-    borderBottomColor: colors.line,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.line,
+    borderRadius: radii.md,
+    borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.md,
     minHeight: 80,
     padding: spacing.md,
+    ...shadow,
   },
   infoRow: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.xs },
   infoText: { color: colors.inkSoft, flex: 1, fontFamily: fonts.body, fontSize: 15, lineHeight: 22 },
@@ -632,8 +641,8 @@ const styles = StyleSheet.create({
   emptyCard: { alignItems: 'center', gap: spacing.xs },
   emptyState: { alignItems: 'center', flex: 1, gap: spacing.md, justifyContent: 'center', padding: spacing.xl },
   formHeading: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
-  stepNumber: { alignItems: 'center', backgroundColor: colors.oxblood, borderRadius: radii.pill, height: 34, justifyContent: 'center', width: 34 },
-  stepNumberText: { color: colors.card, fontFamily: fonts.bodyBold, fontSize: 13 },
+  stepNumber: { alignItems: 'center', backgroundColor: colors.oxblood, borderRadius: radii.pill, height: 36, justifyContent: 'center', width: 36 },
+  stepNumberText: { color: colors.card, fontFamily: fonts.bodyBold, fontSize: 14 },
   formTitle: { color: colors.ink, fontFamily: fonts.displayBold, fontSize: 24 },
   loadingScreen: { alignItems: 'center', backgroundColor: colors.paper, flex: 1, gap: spacing.lg, justifyContent: 'center' },
   screenScroll: { gap: spacing.lg, padding: spacing.md, paddingBottom: 120 },

@@ -225,5 +225,6 @@ describe('Milestone 4 sequential queue tickets, cancellation, short references, 
     const mobileSnapshot = await loadMobileSnapshot(member);
     expect(mobileSnapshot.appointments).toHaveLength(1);
     expect(mobileSnapshot.appointments[0]!.reference).toMatch(/^PL-\d{4}-[0-9A-HJ-KM-NP-TV-Z]{6}$/);
+    expect(mobileSnapshot.activeQueueTicket).toBeUndefined();
   });
 });

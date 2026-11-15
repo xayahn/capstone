@@ -39,6 +39,7 @@ export function OverviewModule({
   );
   const waitingQueue = data.queue.filter((item) => item.status === 'waiting');
   const servingQueue = data.queue.filter((item) => item.status === 'serving');
+  const showParishInQueue = !data.actor.parishId;
 
   return (
     <>
@@ -67,7 +68,7 @@ export function OverviewModule({
           <small>
             {data.metrics.awaitingDocumentReview === null
               ? 'Parish staff access required'
-              : 'Human review required'}
+              : 'Awaiting parish staff verification'}
           </small>
         </article>
         <article className="kpi-card">
@@ -108,31 +109,40 @@ export function OverviewModule({
               <span className="eyebrow">Front desk</span>
               <h2>Live queue</h2>
             </div>
-            <span className="queue-count">{waitingQueue.length} waiting</span>
+            <span className="queue-count">
+              {data.actor.role === 'clergy' ? 'Staff desk' : `${waitingQueue.length} waiting`}
+            </span>
           </div>
-          {servingQueue[0] ? (
-            <div className="now-serving">
-              <span>Now serving</span>
-              <strong>{servingQueue[0].number}</strong>
-              <small>
-                {servingQueue[0].service} · {servingQueue[0].counter}
-              </small>
-            </div>
+          {data.actor.role === 'clergy' ? (
+            <div className="empty-mini">Queue operations are managed by parish front-desk staff.</div>
           ) : (
-            <div className="empty-mini">No active counter</div>
+            <>
+              {servingQueue[0] ? (
+                <div className="now-serving">
+                  <span>Now serving</span>
+                  <strong>{servingQueue[0].number}</strong>
+                  <small>
+                    {showParishInQueue ? `${servingQueue[0].parish} · ` : ''}
+                    {servingQueue[0].service} · {servingQueue[0].counter}
+                  </small>
+                </div>
+              ) : (
+                <div className="empty-mini">No active counter</div>
+              )}
+              <ol className="queue-list">
+                {waitingQueue.slice(0, 3).map((ticket, index) => (
+                  <li key={ticket.id}>
+                    <strong>{ticket.number}</strong>
+                    <span>{showParishInQueue ? `${ticket.parish} · ${ticket.service}` : ticket.service}</span>
+                    <small>#{index + 1}</small>
+                  </li>
+                ))}
+              </ol>
+              <button className="secondary-button" onClick={() => onOpenModule('queue')}>
+                Open queue console
+              </button>
+            </>
           )}
-          <ol className="queue-list">
-            {waitingQueue.slice(0, 3).map((ticket, index) => (
-              <li key={ticket.id}>
-                <strong>{ticket.number}</strong>
-                <span>{ticket.service}</span>
-                <small>#{index + 1}</small>
-              </li>
-            ))}
-          </ol>
-          <button className="secondary-button" onClick={() => onOpenModule('queue')}>
-            Open queue console
-          </button>
         </aside>
       </section>
     </>

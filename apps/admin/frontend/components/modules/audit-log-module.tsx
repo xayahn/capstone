@@ -9,7 +9,7 @@ import {
 } from '@/shared/domain';
 import { adminRequest, AdminAccessError } from '@/frontend/lib/admin-request';
 import { privatePageState, type PrivatePageResult } from '@/frontend/lib/private-page-state';
-import { formatDateTime, StatusPill } from '@/frontend/components/modules/portal-shared';
+import { formatDateTime, roleLabel, StatusPill } from '@/frontend/components/modules/portal-shared';
 
 type Props = {
   data: DashboardState;
@@ -51,6 +51,43 @@ const ACTION_CATEGORIES: { value: string; label: string }[] = [
   { value: 'user', label: 'Internal access' },
   { value: 'staff', label: 'Staff sign-in & passwords' },
 ];
+
+const AUDIT_ACTION_LABELS: Record<string, string> = {
+  'appointment.transition': 'Appointment status change',
+  'appointment.walkin.create': 'Walk-in appointment booked',
+  'change_request.decide': 'Change request decision',
+  'document.upload': 'Document uploaded',
+  'document.review': 'Document verification',
+  'document.download': 'Document downloaded',
+  'queue.issue': 'Queue ticket issued',
+  'queue.call_next': 'Queue ticket called',
+  'queue.complete': 'Queue ticket completed',
+  'queue.cancel': 'Queue ticket cancelled',
+  'record.create': 'Archive record indexed',
+  'record.verify': 'Archive record verified',
+  'clergy.assignment.create': 'Clergy assignment created',
+  'clergy.assignment.cancel': 'Clergy assignment cancelled',
+  'announcement.publish': 'Announcement published',
+  'parish.profile.update': 'Parish directory updated',
+  'service.update': 'Sacrament rules updated',
+  'requirement.create': 'Requirement added',
+  'requirement.update': 'Requirement updated',
+  'venue.create': 'Parish venue added',
+  'user.provision': 'Internal access provisioned',
+  'user.set_active': 'Account status changed',
+  'staff.auth.sign_in': 'Staff sign-in',
+  'staff.auth.sign_out': 'Staff sign-out',
+  'staff.auth.change_password': 'Password changed',
+  'staff.auth.temporary_password': 'Temporary password issued',
+};
+
+function formatActorRole(role: string | null | undefined): string {
+  if (!role) return 'System';
+  if (role === 'system_admin' || role === 'parish_staff' || role === 'clergy') {
+    return roleLabel(role);
+  }
+  return humanizeStatus(role);
+}
 
 export function AuditLogModule({ data, busy, onAccessLost }: Props) {
   const [draft, setDraft] = useState<AuditFilters>(INITIAL_FILTERS);
@@ -285,9 +322,13 @@ export function AuditLogModule({ data, busy, onAccessLost }: Props) {
                           </td>
                           <td>
                             <strong>{entry.actorName}</strong>
-                            <small>{entry.actorRole ? humanizeStatus(entry.actorRole) : 'System'}</small>
+                            <small>{formatActorRole(entry.actorRole)}</small>
                           </td>
                           <td>
+                            <strong>
+                              {AUDIT_ACTION_LABELS[entry.action] ??
+                                humanizeStatus(entry.action.replaceAll('.', '_'))}
+                            </strong>
                             <code>{entry.action}</code>
                             <small>{humanizeStatus(entry.entityType)}</small>
                           </td>

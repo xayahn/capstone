@@ -29,7 +29,7 @@ export const DEMO_STATE: DashboardState = {
     {
       id: 'metropolitan-cathedral',
       name: 'Metropolitan Cathedral of San Fernando',
-      address: 'Sto. Rosario, City of San Fernando, Pampanga (sample directory)',
+      address: 'Sto. Rosario, City of San Fernando, Pampanga',
       officeHours: 'Tue–Sat 8:00 AM – 12:00 NN, 1:30 PM – 5:00 PM',
       contactPhone: '+63 (045) 555-0101',
       contactEmail: 'office.cathedral@parishlink.test',
@@ -38,7 +38,7 @@ export const DEMO_STATE: DashboardState = {
     {
       id: 'san-guillermo',
       name: 'San Guillermo Parish',
-      address: 'Cabambangan, Bacolor, Pampanga (sample directory)',
+      address: 'Cabambangan, Bacolor, Pampanga',
       officeHours: 'Tue–Sat 8:30 AM – 12:00 NN, 1:30 PM – 4:30 PM',
       contactPhone: '+63 (045) 555-0102',
       contactEmail: 'office.sanguillermo@parishlink.test',

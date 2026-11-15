@@ -39,7 +39,7 @@ export async function GET(
     // Purpose/assignment elevation is not implemented: default deny outside staff scope.
     const authorized = actor.role === 'parish_staff' && actor.parishId === row.parishId;
     if (!authorized) throw new AdminServiceError('You cannot access this document.', 403);
-    if (!row.storageKey) throw new AdminServiceError('This demonstration record has no stored file.', 404);
+    if (!row.storageKey) throw new AdminServiceError('No stored file was found for this document record.', 404);
     const object = await env.FILES.get(row.storageKey);
     if (!object) throw new AdminServiceError('The stored file could not be found.', 404);
 

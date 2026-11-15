@@ -10,7 +10,7 @@ export const PARISHES: Parish[] = [
     ],
     venueId: 'venue-cathedral-main',
     contact: {
-      address: 'Consunji St., Brgy. Sto. Rosario, City of San Fernando, Pampanga (sample directory)',
+      address: 'Consunji St., Brgy. Sto. Rosario, City of San Fernando, Pampanga',
       officeHours: 'Tue–Sat 8:00 AM – 12:00 NN, 1:30 PM – 5:00 PM; Sun 8:00 AM – 11:30 AM',
       phone: '+63 (045) 555-0101',
       email: 'office.cathedral@parishlink.test',
@@ -23,7 +23,7 @@ export const PARISHES: Parish[] = [
     clergy: [{ id: 'clergy-manalo', name: 'Fr. A. Manalo' }],
     venueId: 'venue-sg-main',
     contact: {
-      address: 'Cabambangan, Bacolor, Pampanga (sample directory)',
+      address: 'Cabambangan, Bacolor, Pampanga',
       officeHours: 'Tue–Sun 8:00 AM – 12:00 NN, 1:30 PM – 4:30 PM',
       phone: '+63 (045) 555-0102',
       email: 'office.sanguillermo@parishlink.test',
@@ -36,7 +36,7 @@ export const PARISHES: Parish[] = [
     clergy: [{ id: 'fr-j-cruz', name: 'Fr. J. Cruz' }],
     venueId: 'venue-sanctuario-san-jose',
     contact: {
-      address: 'Brgy. San Jose, City of San Fernando, Pampanga (sample directory)',
+      address: 'Brgy. San Jose, City of San Fernando, Pampanga',
       officeHours: 'Tue–Sat 8:30 AM – 12:00 NN, 1:30 PM – 5:00 PM',
       phone: '+63 (045) 555-0103',
       email: 'office.sanctuario@parishlink.test',
@@ -49,7 +49,7 @@ export const PARISHES: Parish[] = [
     clergy: [{ id: 'clergy-pineda', name: 'Fr. M. Pineda' }],
     venueId: 'venue-sl-main',
     contact: {
-      address: 'Brgy. Sta. Lucia, City of San Fernando, Pampanga (sample directory)',
+      address: 'Brgy. Sta. Lucia, City of San Fernando, Pampanga',
       officeHours: 'Tue–Sat 8:00 AM – 12:00 NN, 1:00 PM – 4:30 PM',
       phone: '+63 (045) 555-0104',
       email: 'office.stalucia@parishlink.test',
@@ -62,7 +62,7 @@ export const PARISHES: Parish[] = [
     clergy: [{ id: 'fr-b-tolentino', name: 'Fr. B. Tolentino' }],
     venueId: 'venue-sto-nino',
     contact: {
-      address: 'Brgy. Sto. Niño, City of San Fernando, Pampanga (sample directory)',
+      address: 'Brgy. Sto. Niño, City of San Fernando, Pampanga',
       officeHours: 'Tue–Sat 8:00 AM – 12:00 NN, 1:30 PM – 5:00 PM',
       phone: '+63 (045) 555-0105',
       email: 'office.stonino@parishlink.test',
@@ -75,7 +75,7 @@ export const PARISHES: Parish[] = [
     clergy: [{ id: 'fr-c-reyes', name: 'Fr. C. Reyes' }],
     venueId: 'venue-san-isidro-labrador',
     contact: {
-      address: 'Brgy. San Isidro, Bacolor / San Fernando boundary, Pampanga (sample directory)',
+      address: 'Brgy. San Isidro, Bacolor / San Fernando boundary, Pampanga',
       officeHours: 'Tue–Sat 8:30 AM – 12:00 NN, 1:30 PM – 4:30 PM',
       phone: '+63 (045) 555-0106',
       email: 'office.sanisidro@parishlink.test',
@@ -88,7 +88,7 @@ export const PARISHES: Parish[] = [
     clergy: [{ id: 'fr-d-lopez', name: 'Fr. D. Lopez' }],
     venueId: 'venue-st-joseph',
     contact: {
-      address: 'City of San Fernando, Pampanga (sample directory)',
+      address: 'City of San Fernando, Pampanga',
       officeHours: 'Tue–Sat 8:00 AM – 12:00 NN, 1:30 PM – 5:00 PM',
       phone: '+63 (045) 555-0107',
       email: 'office.stjoseph@parishlink.test',
@@ -101,7 +101,7 @@ export const PARISHES: Parish[] = [
     clergy: [{ id: 'fr-n-ocampo', name: 'Fr. N. Ocampo' }],
     venueId: 'venue-our-lady-of-lourdes',
     contact: {
-      address: 'Cabetican, Bacolor, Pampanga (sample directory)',
+      address: 'Cabetican, Bacolor, Pampanga',
       officeHours: 'Tue–Sun 8:00 AM – 12:00 NN, 1:30 PM – 5:00 PM',
       phone: '+63 (045) 555-0108',
       email: 'office.lourdes@parishlink.test',
@@ -178,6 +178,9 @@ export const SACRAMENT_SERVICES: SacramentService[] = [
 export const QUEUE_SERVICES: QueueService[] = [
   'Baptism inquiry',
   'Wedding inquiry',
+  'Confirmation inquiry',
+  'First Communion inquiry',
+  'Funeral Mass inquiry',
   'Document submission',
   'Certificate request',
   'General inquiry',

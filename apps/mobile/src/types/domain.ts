@@ -197,6 +197,9 @@ export interface AuthSession {
 export type QueueService =
   | 'Baptism inquiry'
   | 'Wedding inquiry'
+  | 'Confirmation inquiry'
+  | 'First Communion inquiry'
+  | 'Funeral Mass inquiry'
   | 'Document submission'
   | 'Certificate request'
   | 'General inquiry';

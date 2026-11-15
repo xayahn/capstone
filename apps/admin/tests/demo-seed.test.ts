@@ -44,10 +44,17 @@ describe('development migration runner (single schema source)', () => {
 });
 
 describe('synthetic demonstration seed', () => {
-  it('seeds once and is idempotent', async () => {
-    const { db, summary } = await seededDatabase();
+  it('seeds once and is idempotent, while backfilling missing R2 demo PDFs if storage was reset', async () => {
+    const { db, storage, summary } = await seededDatabase();
     expect(summary).toMatchObject({ seeded: true, parishioners: 24, appointments: 88 });
-    expect(await seedDemoData(db, undefined, NOW)).toMatchObject({ seeded: false });
+    expect(await seedDemoData(db, storage.bucket, NOW)).toMatchObject({ seeded: false, files: 0 });
+    expect(await seedDemoData(db, undefined, NOW)).toMatchObject({ seeded: false, files: 0 });
+
+    const freshStorage = memoryBucket();
+    const backfilled = await seedDemoData(db, freshStorage.bucket, NOW);
+    expect(backfilled.seeded).toBe(false);
+    expect(backfilled.files).toBe(summary.files);
+    expect(freshStorage.objects.size).toBe(storage.objects.size);
   });
 
   it('covers all eight parishes, every status, and both past and upcoming dates', async () => {

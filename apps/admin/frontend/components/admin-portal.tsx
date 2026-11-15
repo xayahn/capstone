@@ -418,12 +418,15 @@ export function AdminPortal({ signedInName, signOutPath }: { signedInName: strin
           <div className="topbar-actions">
             <div
               className="profile-button"
-              aria-label={`${data.actor.name}, ${roleLabel(data.actor.role)}`}
+              title={`${data.actor.name} — ${roleLabel(data.actor.role)} (${data.actor.parishName})`}
+              aria-label={`${data.actor.name}, ${roleLabel(data.actor.role)}, ${data.actor.parishName}`}
             >
               <span className="avatar">{initials(data.actor.name || signedInName)}</span>
               <span>
                 <strong>{data.actor.name}</strong>
-                <small>{roleLabel(data.actor.role)}</small>
+                <small>
+                  {roleLabel(data.actor.role)} · {data.actor.parishName}
+                </small>
               </span>
             </div>
             <a className="signout-link" href={CHANGE_PASSWORD_URL}>
