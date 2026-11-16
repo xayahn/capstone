@@ -1,3 +1,4 @@
+import { auditIpHash } from '@/backend/security/audit-ip';
 import { env } from 'cloudflare:workers';
 import { getStaffUser } from '@/backend/auth/staff-session';
 import { AdminServiceError, resolveActor } from '@/backend/services/admin-service';
@@ -44,9 +45,9 @@ export async function GET(
     if (!object) throw new AdminServiceError('The stored file could not be found.', 404);
 
     await getRawDb().prepare(`INSERT INTO audit_logs
-      (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-      VALUES (?, ?, 'document.download', 'document_submission', ?, ?, 'success', 'Authorized private download')`)
-      .bind(crypto.randomUUID(), actor.id, row.id, row.parishId).run();
+      (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+      VALUES (?, ?, ?, 'document.download', 'document_submission', ?, ?, 'success', 'Authorized private download')`)
+      .bind(await auditIpHash(), crypto.randomUUID(), actor.id, row.id, row.parishId).run();
 
     return new Response(object.body, {
       headers: {

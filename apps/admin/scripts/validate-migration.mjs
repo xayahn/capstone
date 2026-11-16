@@ -76,6 +76,9 @@ for (const table of ['users', 'appointments', 'documents', 'queue', 'assignments
     if (!database.prepare("SELECT name FROM sqlite_schema WHERE type='trigger' AND name=?").get(`${prefix}_${event}`)) throw new Error(`Required integrity trigger is missing: ${prefix}_${event}`);
   }
 }
+for (const trigger of ['trg_audit_logs_no_update', 'trg_audit_logs_no_delete', 'trg_appointment_events_no_update', 'trg_appointment_events_no_delete']) {
+  if (!database.prepare("SELECT name FROM sqlite_schema WHERE type='trigger' AND name=?").get(trigger)) throw new Error(`Required append-only history trigger is missing: ${trigger}`);
+}
 const appointmentColumns = new Set(database.prepare("PRAGMA table_info('appointments')").all().map(row => String(row.name)));
 if (!appointmentColumns.has('buffer_before_minutes') || !appointmentColumns.has('buffer_after_minutes')) throw new Error('Appointment buffer snapshot columns are missing.');
 const credentialColumns = new Set(database.prepare("PRAGMA table_info('mobile_credentials')").all().map(row => String(row.name)));

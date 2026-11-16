@@ -1,3 +1,4 @@
+import { auditIpHash } from '@/backend/security/audit-ip';
 import { getRawDb } from '@/db/runtime';
 import { AdminServiceError } from '@/backend/services/admin-error';
 import { validPhoneNumber } from '@/shared/validation';
@@ -40,10 +41,10 @@ async function recordSettingAudit(
 ): Promise<void> {
   await getRawDb()
     .prepare(
-      `INSERT INTO audit_logs (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-       VALUES (?, ?, ?, ?, ?, ?, 'success', ?)`,
+      `INSERT INTO audit_logs (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'success', ?)`,
     )
-    .bind(crypto.randomUUID(), actor.id, action, entityType, entityId, parishId, detail.slice(0, 1000))
+    .bind(await auditIpHash(), crypto.randomUUID(), actor.id, action, entityType, entityId, parishId, detail.slice(0, 1000))
     .run();
 }
 

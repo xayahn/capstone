@@ -1,3 +1,4 @@
+import { auditIpHash } from '@/backend/security/audit-ip';
 import { env } from 'cloudflare:workers';
 import { getRawDb } from '@/db/runtime';
 import { MobileServiceError } from '@/backend/auth/mobile-auth';
@@ -108,10 +109,10 @@ export async function saveDocument(scope: UploadScope, file: File): Promise<void
         updated_at = datetime('now') WHERE id = ? AND EXISTS (
           SELECT 1 FROM document_submissions WHERE id = ? AND storage_key = ?)`)
         .bind(scope.appointmentId, row.id, key),
-      db.prepare(`INSERT INTO audit_logs (id,actor_id,action,entity_type,entity_id,parish_id,outcome,detail)
-        SELECT ?,?,'document.upload','document_submission',?,?,'success',?
+      db.prepare(`INSERT INTO audit_logs (ip_hash,id,actor_id,action,entity_type,entity_id,parish_id,outcome,detail)
+        SELECT ?, ?,?,'document.upload','document_submission',?,?,'success',?
         WHERE EXISTS (SELECT 1 FROM document_submissions WHERE id = ? AND storage_key = ?)`)
-        .bind(crypto.randomUUID(), scope.actorId, row.id, row.parishId,
+        .bind(await auditIpHash(), crypto.randomUUID(), scope.actorId, row.id, row.parishId,
           JSON.stringify({ storageKey: key, sha256, previousStorageKey: row.oldKey, previousSha256: row.oldHash }), row.id, key),
     ]);
     committed = Number(result[0]?.meta.changes) === 1;

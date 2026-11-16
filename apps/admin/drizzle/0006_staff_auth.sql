@@ -1,5 +1,5 @@
 -- Internal portal email/password sign-in for parish staff, clergy and system
--- administrators. Replaces the hosted "Sign in with ChatGPT" identity bridge.
+-- administrators. Replaces the earlier externally hosted identity bridge.
 CREATE TABLE IF NOT EXISTS `staff_credentials` (
 	`user_id` text PRIMARY KEY NOT NULL REFERENCES `users`(`id`) ON DELETE CASCADE,
 	`password_hash` text NOT NULL,

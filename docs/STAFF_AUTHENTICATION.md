@@ -1,6 +1,6 @@
 # Internal Portal Authentication (Staff, Clergy, System Administrator)
 
-**Introduced:** 9 November 2026 · **Replaces:** the hosted "Sign in with ChatGPT" identity bridge (`app/chatgpt-auth.ts` and `@openai/sites-vite-plugin`), which only worked on OpenAI's hosting platform and always signed in one fixed administrator locally.
+**Introduced:** 9 November 2026 · **Replaces:** an earlier externally hosted identity bridge, which only worked on that hosting platform and always signed in one fixed administrator locally.
 
 ## How it works
 
@@ -44,7 +44,7 @@ Seeded only in local development, together with the synthetic demonstration data
 
 - Admin unit tests: 268/268 passed (includes 11 new staff-auth tests); TypeScript and ESLint clean.
 - Security regression: 97/97 passed. Migration validator: 7 files, 29 tables, 49 indexes.
-- Live HTTP check against the running local server: anonymous access → 401; forged legacy ChatGPT identity headers → 401; wrong password → 401 generic; missing Origin → 403; staff/clergy/admin sign-in → correct role and parish scope; temporary password → portal blocked (403) until password changed → 200; parish staff cannot issue temporary passwords (403); sign-out → 401 afterwards; parishioner email on staff sign-in → 401.
+- Live HTTP check against the running local server: anonymous access → 401; forged legacy identity headers → 401; wrong password → 401 generic; missing Origin → 403; staff/clergy/admin sign-in → correct role and parish scope; temporary password → portal blocked (403) until password changed → 200; parish staff cannot issue temporary passwords (403); sign-out → 401 afterwards; parishioner email on staff sign-in → 401.
 
 ## Production note
 

@@ -23,6 +23,7 @@ describe('development migration runner (single schema source)', () => {
     expect(MIGRATIONS.map((migration) => migration.name)).toEqual([
       '0000_initial_parishlink', '0001_release_safety', '0002_record_pagination', '0003_schedule_pagination',
       '0004_push_notifications', '0005_account_recovery', '0006_staff_auth', '0007_defense_features',
+      '0008_audit_append_only',
     ]);
     expect(migrationStatements(MIGRATIONS[0].sql).some((statement) => /PRAGMA foreign_keys/i.test(statement))).toBe(false);
   });

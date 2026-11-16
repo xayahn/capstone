@@ -1,3 +1,4 @@
+import { auditIpHash } from '@/backend/security/audit-ip';
 import { ensurePublicRuntimeDatabase, getRawDb } from '@/db/runtime';
 import { validPhoneNumber } from '@/shared/validation';
 
@@ -189,9 +190,9 @@ export async function signUpMobile(input: Record<string, unknown>, userAgent: st
         'Your account is ready. Requests still require review and approval by authorized parish personnel.', 'profile')`)
       .bind(crypto.randomUUID(), userId),
     db.prepare(`INSERT INTO audit_logs
-      (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-      VALUES (?, ?, 'mobile.account.create', 'user', ?, ?, 'success', 'Privacy notice accepted; parishioner account created')`)
-      .bind(crypto.randomUUID(), userId, userId, homeParishId),
+      (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+      VALUES (?, ?, ?, 'mobile.account.create', 'user', ?, ?, 'success', 'Privacy notice accepted; parishioner account created')`)
+      .bind(await auditIpHash(), crypto.randomUUID(), userId, userId, homeParishId),
     ]);
   } catch (error) {
     // The preflight check is not a lock. A second signup can win during hashing.
@@ -333,10 +334,10 @@ export async function changeMobilePassword(request: Request, input: Record<strin
         AND EXISTS (SELECT 1 FROM mobile_credentials WHERE user_id = ? AND password_hash = ?)`)
       .bind(actor.id, actor.sessionId, actor.id, passwordHash),
     getRawDb().prepare(`INSERT INTO audit_logs
-      (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-      SELECT ?, ?, 'mobile.password.change', 'user', ?, ?, 'success', 'Password changed; other sessions revoked'
+      (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+      SELECT ?, ?, ?, 'mobile.password.change', 'user', ?, ?, 'success', 'Password changed; other sessions revoked'
       WHERE EXISTS (SELECT 1 FROM mobile_credentials WHERE user_id = ? AND password_hash = ?)`)
-      .bind(crypto.randomUUID(), actor.id, actor.id, actor.homeParishId, actor.id, passwordHash),
+      .bind(await auditIpHash(), crypto.randomUUID(), actor.id, actor.id, actor.homeParishId, actor.id, passwordHash),
   ]);
   // D1 includes credential-version and challenge-invalidation trigger writes
   // in meta.changes; this conditional update still targets one credential row.

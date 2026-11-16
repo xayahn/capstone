@@ -25,3 +25,8 @@ PUSH_DISPATCH_SECRET=
 # send Origin. Local development already permits http://localhost:8081.
 MOBILE_ALLOWED_ORIGINS=
 RELEASE_VERSION=local
+
+# Server-only key (random, at least 32 characters) used to store a keyed
+# HMAC-SHA-256 fingerprint of the requester's network address on audit
+# entries. The raw address is never stored. Leave empty to record no address.
+AUDIT_IP_HASH_KEY=

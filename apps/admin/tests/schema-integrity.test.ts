@@ -93,3 +93,37 @@ describe('booking buffers and notification de-duplication', () => {
     expect(count.n).toBe(3);
   });
 });
+
+describe('audit history is append-only (drizzle/0008_audit_append_only.sql)', () => {
+  beforeEach(() => {
+    db.exec(`INSERT INTO audit_logs(id,actor_id,action,entity_type,entity_id,parish_id,outcome,detail,ip_hash)
+        VALUES('l1','u1','appointment.transition','appointment','a1','p1','success','submitted -> under_review','abc123');
+      INSERT INTO appointment_events(id,appointment_id,actor_id,event_type,from_status,to_status)
+        VALUES('e1','a1','u1','status_changed','submitted','under_review');`);
+  });
+
+  it.each([
+    ["UPDATE audit_logs SET detail = 'rewritten' WHERE id = 'l1'", 'audit log entries cannot be changed'],
+    ["UPDATE audit_logs SET ip_hash = NULL WHERE id = 'l1'", 'audit log entries cannot be changed'],
+    ["DELETE FROM audit_logs WHERE id = 'l1'", 'audit log entries cannot be deleted'],
+    ['DELETE FROM audit_logs', 'audit log entries cannot be deleted'],
+    ["UPDATE appointment_events SET to_status = 'approved' WHERE id = 'e1'", 'appointment history cannot be changed'],
+    ["DELETE FROM appointment_events WHERE id = 'e1'", 'appointment history cannot be deleted'],
+  ])('rejects %s', (statement, message) => {
+    expect(() => db.exec(statement)).toThrow(message);
+  });
+
+  it('keeps the original entries unchanged after rejected edits', () => {
+    expect(() => db.exec("UPDATE audit_logs SET detail = 'rewritten' WHERE id = 'l1'")).toThrow();
+    expect(() => db.exec("DELETE FROM appointment_events WHERE id = 'e1'")).toThrow();
+    const log = db.prepare("SELECT detail, ip_hash AS ipHash FROM audit_logs WHERE id = 'l1'").get() as { detail: string; ipHash: string };
+    expect(log).toEqual({ detail: 'submitted -> under_review', ipHash: 'abc123' });
+    const events = db.prepare('SELECT COUNT(*) AS n FROM appointment_events').get() as { n: number };
+    expect(events.n).toBe(1);
+  });
+
+  it('still accepts new entries', () => {
+    expect(() => db.exec(`INSERT INTO audit_logs(id,action,entity_type,outcome) VALUES('l2','user.sign_in','user','success')`)).not.toThrow();
+    expect(() => db.exec(`INSERT INTO appointment_events(id,appointment_id,event_type) VALUES('e2','a1','note')`)).not.toThrow();
+  });
+});

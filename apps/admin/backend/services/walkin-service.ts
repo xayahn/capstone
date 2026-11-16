@@ -1,3 +1,4 @@
+import { auditIpHash } from '@/backend/security/audit-ip';
 import { getRawDb } from '@/db/runtime';
 import { AdminServiceError } from '@/backend/services/admin-error';
 import { sha256Hex } from '@/backend/security/idempotency';
@@ -93,9 +94,9 @@ export async function cancelQueueTicket(
       .bind(mutation.status, row.id),
     db
       .prepare(`INSERT INTO audit_logs
-        (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-        SELECT ?, ?, 'queue.cancel', 'queue_ticket', ?, ?, 'success', ? WHERE changes() = 1`)
-      .bind(auditId, actor.id, row.id, row.parishId, detail),
+        (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+        SELECT ?, ?, ?, 'queue.cancel', 'queue_ticket', ?, ?, 'success', ? WHERE changes() = 1`)
+      .bind(await auditIpHash(), auditId, actor.id, row.id, row.parishId, detail),
     db
       .prepare(`INSERT INTO notifications
         (id, recipient_user_id, type, title, body, entity_type, entity_id)
@@ -346,10 +347,10 @@ export async function createWalkInAppointment(
     statements.push(
       db
         .prepare(`INSERT INTO audit_logs
-          (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-          SELECT ?, ?, 'walkin.appointment.create', 'appointment', ?, ?, 'success', ?
+          (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+          SELECT ?, ?, ?, 'walkin.appointment.create', 'appointment', ?, ?, 'success', ?
           WHERE EXISTS (SELECT 1 FROM appointment_events WHERE id = ?)`)
-        .bind(
+        .bind(await auditIpHash(),
           crypto.randomUUID(),
           actor.id,
           appointmentId,

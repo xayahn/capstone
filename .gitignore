@@ -54,3 +54,6 @@ apps/admin/.site-git-backup/
 # Coordinator-controlled pilot records and synthetic rehearsal output
 /research/pilot/data/
 /research/pilot/rehearsal/
+
+# Dated local audit record containing machine-specific paths (kept locally)
+/docs/PRELAUNCH_AUDIT_2026-09-20.md

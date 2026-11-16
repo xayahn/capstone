@@ -1,80 +1,147 @@
 # ParishLink
 
-ParishLink is a capstone implementation for sacramental-service coordination across the eight parishes named in the research paper. It contains two purpose-specific applications:
+ParishLink is a capstone system for coordinating sacramental services across the eight parishes of the Vicariate of St. John Mary Vianney (Archdiocese of San Fernando, Pampanga). It has two applications that share one server and database:
 
-- `apps/mobile` — the parishioner-facing Expo application for iOS and Android.
-- `apps/admin` — the internal web portal and shared server API for parish staff, clergy, and system administrators.
-  Its source is separated into `frontend/`, `backend/`, `shared/`, and `db/`, while `app/` contains only framework entrypoints.
+- `apps/mobile`: the parishioner app (Expo / React Native) for iOS and Android.
+- `apps/admin`: the internal web portal for parish staff, clergy and the system administrator, plus the server API used by the mobile app. Source is split into `frontend/`, `backend/`, `shared/` and `db/`; `app/` holds only framework route entry points.
 
-Parishioners do not use the admin web portal. The implementation preserves the prototype's parchment, burgundy, cream, and gold visual direction while following the paper's roles, five services, eight parishes, scheduling, document, notification, queue, record, reporting, and informational-assistant requirements.
+Parishioners never use the admin portal, and staff never use the mobile app.
 
-## Release status
+## What it does
 
-**Hold release. Nothing has been deployed, submitted to an app store, or installed as a native device build.** The latest release decision remains the [4 November technical audit](docs/AUDIT_2026-11-04.md): dependency advisories and required privacy, canonical, security, operational, and stakeholder clearance remain unresolved. Passing local checks does not certify production readiness.
+**Parishioner mobile app (13 screens)**
 
-The [8 November critical-gap follow-up](docs/CRITICAL_GAPS_ACCEPTANCE_2026-11-08.md) records the new recovery/verification implementation, current checks and blocked acceptance work. The owner confirms that beneficiary/pilot approval is pending, both phones have no test build, and no email provider/domain exists. The [beneficiary review brief](research/pilot/BENEFICIARY_APPROVAL_BRIEF.md) is prepared for the group; it has not been sent and no stakeholder pilot has been conducted.
+- Create an account, sign in, change password, edit contact details and home parish
+- Browse the five services (Baptism, Wedding, Confirmation, First Communion, Funeral Mass) and their document requirements
+- Request an appointment at any of the eight parishes, choosing priest, date and an available time
+- Attach PDF, JPG or PNG documents (up to 10 MB each) and follow each document's review status
+- Cancel a request, or ask to move it to another time
+- Join a parish's walk-in queue and see the ticket's place in line
+- Read parish announcements, notifications and the parish directory (address, office hours, contact)
+- Ask the parish assistant about requirements and about the user's own requests
 
-The subsequent [step 1 local account acceptance, 8–9 November](docs/LOCAL_ACCOUNT_ACCEPTANCE_2026-11-09.md) records that connections now work under the current permission grant: 39 actual-Worker account checks and 36 actual local-backend HTTP checks passed. This does not close inbox delivery, physical-device, operational or stakeholder acceptance.
+**Admin web portal (10 modules)**
 
-## Local start order
+Overview · Appointments (including cancellation and reschedule requests) · Document review · Clergy schedule · Parish records · Walk-in queue · Announcements · Reports · Audit log · Settings
 
-Use Node.js 22.13 or newer and pnpm. Start the admin/API first, then the mobile app:
+**Roles**
+
+| Role | Can do | Cannot do |
+|---|---|---|
+| Parishioner | Own profile, requests, documents, queue ticket | Open the admin portal |
+| Parish staff | Own parish: review documents, prepare requests, run the queue, records, announcements, reports | Give final approval of a sacrament; see other parishes |
+| Clergy | Approve or decline appointments assigned to them | Run the queue; read the audit log |
+| System administrator | Accounts, settings, vicariate-wide reports and audit log | Approve sacraments; download parishioners' private documents |
+
+Roles and parish boundaries are enforced by the server on every request, not only hidden in the interface.
+
+## Project status
+
+**Local capstone build. Nothing is deployed, published to an app store, or installed on a phone as a native build.**
+
+Working locally and covered by automated checks: everything listed above.
+
+Not done (release gates):
+
+- **No hosting.** The system runs on a laptop (admin/API on port 3000, mobile on Expo).
+- **Email is not set up.** Password-reset and email-verification codes cannot be delivered until an email sender is configured.
+- **Push notifications are disabled** and have never been tested on a physical phone. In-app notifications work.
+- **No document malware scanner is configured.** In production mode the server refuses uploads until one is.
+- **No user evaluation yet.** No pilot or ISO/IEC 25010 survey has been run; no evaluation scores exist.
+- Parish details in the demo data (phone numbers, emails, some addresses) are placeholders until confirmed by each parish.
+
+## Run locally
+
+Requirements: Node.js 22.13 or newer and pnpm 11 (`pnpm@11.25.0` is pinned).
+
+**Easiest (Windows):** from the repository root run
+
+```powershell
+.\scripts\start-demo.ps1
+```
+
+It finds the laptop's Wi-Fi address, writes it into `apps/mobile/.env`, starts the admin/API server in a new window, prints the demo accounts, and then starts Expo for Expo Go on the same Wi-Fi. Add `-ResetDemo` (with the servers stopped) to start again from fresh demo data, or `-CheckOnly` to only update the settings.
+
+**Manually:**
 
 ```powershell
 cd apps/admin
 pnpm install
-pnpm dev
+pnpm dev            # http://localhost:3000
 ```
 
 ```powershell
 cd apps/mobile
 pnpm install
 if (-not (Test-Path -LiteralPath .env)) { Copy-Item -LiteralPath .env.example -Destination .env }
-pnpm start
+pnpm start          # Expo; press w for the web preview at http://localhost:8081
 ```
 
-- Admin portal and mobile API: `http://localhost:3000`
-- Mobile web preview for development: `http://localhost:8081`
-- Android emulator API base: `http://10.0.2.2:3000/api`
-- Physical phone/custom native build API base: a device-reachable, trusted HTTPS origin
+- **Phone with Expo Go:** phone and laptop on the same Wi-Fi, and `EXPO_PUBLIC_API_BASE_URL` in `apps/mobile/.env` set to `http://<laptop Wi-Fi address>:3000/api` (the start script does this). Plain `http://` is allowed only in development builds; preview and production builds require HTTPS.
+- **Android emulator:** use `http://10.0.2.2:3000/api`.
+- **Reset demo data:** stop the admin server, then run `pnpm demo:reset` in `apps/admin`. The next request rebuilds the database from `drizzle/` and seeds fresh synthetic data dated relative to today.
 
-The local mobile `.env` is ignored, not checked in. The guarded copy command creates it only when it is absent; if it already exists, preserve and edit the existing settings rather than overwriting them. A custom native build intentionally rejects cleartext traffic, so a development computer's LAN `http://` address is not a working physical-phone API solution. Use an approved, device-reachable HTTPS development endpoint, and use an approved HTTPS origin for any eventual production build.
+### Demo accounts (local development only)
 
-## Current implementation shape
+Password for all: `ParishLink2026!`
 
-- The Expo app keeps repository/domain orchestration in `src/repositories/parishLinkRepository.ts`, shared HTTP behavior in `src/api/mobileApiClient.ts`, and API-session persistence in `src/api/tokenStore.ts`. Native builds use Expo SecureStore; AsyncStorage is used only by the local web preview.
-- `src/screens/AssistantScreen.tsx` and `src/screens/ServicesScreen.tsx` are extracted screen modules. `App.tsx` remains the application shell and still contains the remaining parishioner screens while that decomposition continues.
-- Assistant v2 returns structured text, bullets, sources, actions, follow-up prompts, and service clarification choices. Service requirements, the signed-in actor's request status/documents, and the actor's active queue ticket are answered deterministically from ParishLink data.
-- Since 6 November, an explicitly consented public-question path can use live Gemini through the server-only gateway when locally enabled. Its conservative vocabulary/identifier gate sends only bounded public questions and approved public catalogue/directory/navigation context; private status, files, account data and unsupported/authority-sensitive questions remain on the local path. The provider has no write authority, safe fallback remains available, and chatbot transcript writes remain absent.
-- Native push has an Expo project and a verified Firebase project/Android app with FCM HTTP v1 enabled. The public `apps/mobile/google-services.json` was retrieved through the official Firebase CLI, verified against the expected project/sender/App/package identifiers, and linked from the preserved ignored mobile `.env`; both remain ignored/untracked. A one-year RSA-2048/X.509 Google sender key is stored only in ignored `.local-secrets/` and is now assigned to the ParishLink Android app. A fresh Expo server query verified the real `xayahrs-team` owner, project UUID, package, sender email and key ID. Setup is still incomplete: push remains disabled, the app has zero Android signing credentials and no submission credential, and no physical-device delivery has been attempted. See [`docs/GEMINI_PUSH_SETUP.md`](docs/GEMINI_PUSH_SETUP.md).
-- Parishioner password recovery and signed-in email verification are implemented across the mobile UI and server API. The server uses 12-character, hashed, single-use codes that expire after 15 minutes and stop after five wrong attempts. A successful password reset changes the password, treats the recovered email as verified, revokes every mobile session and push-device binding, and requires a fresh manual sign-in. Existing accounts remain unverified until they complete a proven code flow, and email verification is not yet enforced when booking. Internal staff, clergy and administrator passwords are reset only by a system administrator issuing a one-time temporary password.
+| Role | Email |
+|---|---|
+| System administrator | `admin@parishlink.test` |
+| Parish staff, Metropolitan Cathedral | `staff.cathedral@parishlink.test` |
+| Clergy, Msgr. R. Dizon (Metropolitan Cathedral) | `dizon@example.test` |
+| Parishioner (mobile app) | `liza.gomez@example.test` |
 
-Account email is not usable in this local environment: `MAIL_ENABLED`, `MAIL_DELIVERY_VERIFIED`, `RESEND_API_KEY`, and `MAIL_FROM` are all unavailable. The only implemented transport is the fixed server-side Resend endpoint; no live recovery or verification email has been sent or accepted as delivery evidence. See [`docs/ACCOUNT_RECOVERY.md`](docs/ACCOUNT_RECOVERY.md).
+The full list (staff for every parish, more clergy and parishioners) is in [`docs/DEMO_DATA.md`](docs/DEMO_DATA.md). All demo people and records are fictional. These accounts are never created in production.
 
-## Implemented security baseline
+## Technology
 
-- Internal portal (staff, clergy, system administrator) email/password sign-in with PBKDF2-SHA-256 hashes, HttpOnly SameSite=Strict session cookies, lockout, administrator-issued one-time temporary passwords with forced change, and audited sign-in/out. Local demo accounts are seeded only in development. See [`docs/STAFF_AUTHENTICATION.md`](docs/STAFF_AUTHENTICATION.md).
-- PBKDF2-SHA-256 parishioner passwords, account lockout, hashed bearer tokens, revocation, expiry, OS-protected mobile token storage, and rate-limited email-code recovery/verification with generic account-enumeration-safe reset acknowledgement
-- server-enforced role/parish scope for the internal portal
-- atomic clergy/venue/time conflict protection and database-authoritative service durations/buffers
-- server-authoritative availability, participant capture, frozen checklist snapshots, and payload-bound retry protection
-- exact mobile browser-origin allowlisting, production schema/readiness checks, and no request-time production schema/bootstrap mutation
-- private document storage with ownership checks, size/type/signature validation, SHA-256 checksums, and audited replacement
-- bounded request bodies, parameterized database operations, same-origin checks for cookie-authenticated admin writes, CSP/security headers, and database-backed rate limiting
-- deterministic Assistant v2 guidance with actor-owned database lookups, structured sources/actions/clarification, and an optional server-only Gemini phrasing path with redaction, timeout, restricted instructions, no write authority, and safe fallback
+| Part | Technology |
+|---|---|
+| Mobile app | Expo SDK 58, React Native 0.88, React 19, TypeScript 6.0 |
+| Admin portal and API | React 19, Next.js App Router conventions on Vinext (Vite 8), TypeScript 5.9 |
+| Database | SQLite (Cloudflare D1 compatible): 9 migration files, 30 tables, 56 indexes |
+| File storage | Private R2-compatible object storage |
+| Parish assistant | Answers from ParishLink's own data; optional Google Gemini for general public questions (off unless configured on the server) |
+| Tests | Vitest, Node test runner, Miniflare/workerd |
 
-## Verification status
+## Security and data integrity
 
-This recovery/pilot increment records **257 admin tests in 16 files**, **164 mobile tests in 15 files**, **97 backend security regressions**, and TypeScript passing in both applications. The pilot recorder/validator records **35 passing tests and one host-permission skip**. Admin production compilation and unsigned Android/iOS/web exports pass. Exported JavaScript is not a signed native build or physical-device acceptance.
+- **Passwords:** PBKDF2-SHA-256 with 210,000 iterations and a unique random salt per account. Passwords must be 12–128 characters with an uppercase letter, a lowercase letter and a number.
+- **Lockout:** 5 wrong passwords lock an account for 15 minutes. Wrong email and wrong password get the same message.
+- **Sessions:** only a SHA-256 hash of each session token is stored. Mobile sessions last 30 days; staff sessions last 12 hours in an HttpOnly, SameSite=Strict cookie, with at most 5 per person.
+- **No double booking:** the server checks priest, venue and preparation/cleanup time, and inserts the appointment in the same SQL statement. A clashing request gets HTTP 409.
+- **Documents:** stored privately with a SHA-256 checksum. The server checks size (10 MB) and the file's real PDF/JPEG/PNG signature, not just its name.
+- **Audit history cannot be edited.** Database triggers block every UPDATE and DELETE on `audit_logs` and `appointment_events`.
+- **Network address on audit entries:** when `AUDIT_IP_HASH_KEY` is set, each audit entry stores a keyed HMAC-SHA-256 fingerprint of the requester's address as reported by the Cloudflare edge (`CF-Connecting-IP`). The raw address is never stored. The local development server does not supply this header, so locally the field stays empty.
+- **Retries are safe:** appointment and queue requests carry an idempotency key, so a retried request never creates a duplicate.
+- **Assistant boundaries:** the assistant cannot approve, verify or change anything. Questions about a user's own requests, documents or queue ticket are answered only from the database. Gemini is used only when the server is configured for it and the user has allowed it, and it receives only general public questions.
 
-The current isolated database check covers **six migrations, 27 tables and 48 indexes**. In the subsequent 8 November local acceptance run, **nine provider Worker checks**, **39 account Worker source-route checks**, **36 actual Vinext HTTP checks** and **six HTTP-runner safeguard tests** passed. The Worker checks use ephemeral D1 and intercepted mail; the HTTP checks use the running development backend with mail/push disabled. The browser recovery form now renders and reports invalid input/unavailable mail honestly. The earlier connection denial was not reproduced under the current network grant; this does not prove a permanent OS/network fix. Live Gemini public-question connectivity remains separately dated 6 November evidence. See [local account acceptance](docs/LOCAL_ACCOUNT_ACCEPTANCE_2026-11-09.md) for the exact boundaries and rerun commands.
+## Verification (16 November 2026, local)
 
-The owner explicitly approved Firebase CLI's broader access only to retrieve the public Android client file. After retrieval, the CLI's normal logout failed before revocation on a Windows ADC cleanup path and printed a misleading success message; the refresh token was instead revoked through Google's official HTTPS endpoint with status 200, task-owned temporary auth/login artifacts were removed, and no global Firebase ADC file was found. No Firebase CLI authentication remains and no other Google project data was changed. A Google OAuth JWT exchange for the `firebase.messaging` scope later returned HTTP 200 without retaining an access token or sending a push; it does not prove delivery.
+| Check | Result |
+|---|---|
+| Admin TypeScript and ESLint | 0 errors, 0 warnings |
+| Admin unit and integration tests | 349 passed (26 files) |
+| Security regression suite | 113/113 passed |
+| Migration validation | 9 files, 30 tables, 56 indexes; integrity and foreign keys valid |
+| Provider Worker compatibility | 9/9 passed (synthetic responses, no external traffic) |
+| Account Worker route checks | 39/39 passed |
+| Account HTTP runner safeguards | 6/6 passed |
+| Admin production build | Passed |
+| Mobile TypeScript | 0 errors |
+| Mobile tests | 195 passed (18 files) |
+| Mobile Web, iOS and Android bundles | Exported successfully (unsigned) |
 
-The owner then approved temporary Expo settings/sign-in access. Because the filesystem tool still exposed only `.expo`, EAS used safe task-owned settings under ignored `.validation-tmp/expo-cli-settings`, with no Windows-profile or SDK source changes. The organization-only device flow selected `xayahrs-team` Release Manager and left the personal account unchecked. The normal menu stalled before mutation and was interrupted; official installed EAS credential client functions then preflighted the real project/key, created the empty Android credential identity, assigned the existing sender key, and freshly verified the metadata with 10-second request limits. Official Expo server logout returned 200 and the official session manager removed local auth; no Expo authentication remains. The root configuration check finds Gemini and Android Firebase client configuration present; push remains false, so its overall exit remains 1. No signing credential, submission credential, native/device build, store submission, scheduler, device push, production migration, or deployment has been completed.
+Re-run everything with:
 
-All of this is local engineering evidence only. Dependency advisories from the latest audit remain unresolved, and physical-device testing, app signing/store review, production-configured and acceptance-tested account email delivery, booking-verification policy enforcement, malware scanning, completed push credentials, staging load/restore/rollback, privacy/canonical/security clearance, and stakeholder UAT remain release gates. See [`docs/PREDEPLOYMENT_READINESS.md`](docs/PREDEPLOYMENT_READINESS.md).
+```powershell
+node apps/admin/scripts/release-check.mjs
+node apps/mobile/scripts/release-check.mjs
+```
+
+These are local engineering checks. They are not a physical-device test, a signed app build, a deployment, or a user evaluation.
 
 ## Documentation
 
-Start with [`docs/README.md`](docs/README.md). Use [`docs/PROJECT_STRUCTURE.md`](docs/PROJECT_STRUCTURE.md) to locate frontend, backend, shared, database, and route files. Account email setup and acceptance are in [`docs/ACCOUNT_RECOVERY.md`](docs/ACCOUNT_RECOVERY.md). The approval-gated research pilot and physical-device matrices are in [`docs/PILOT_PROTOCOL.md`](docs/PILOT_PROTOCOL.md) and [`docs/NATIVE_ACCEPTANCE.md`](docs/NATIVE_ACCEPTANCE.md); neither records a completed pilot or native acceptance. For the exact local release commands, configuration, evidence, and remaining owner decisions, use [`docs/PRODUCTION_HANDOFF.md`](docs/PRODUCTION_HANDOFF.md).
+Start with [`docs/README.md`](docs/README.md). Useful entry points: [`docs/PROJECT_STRUCTURE.md`](docs/PROJECT_STRUCTURE.md) (where the code lives), [`docs/RBAC.md`](docs/RBAC.md) (roles), [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md), [`docs/SECURITY_PRIVACY.md`](docs/SECURITY_PRIVACY.md), [`docs/STAFF_AUTHENTICATION.md`](docs/STAFF_AUTHENTICATION.md), [`docs/DEMO_DATA.md`](docs/DEMO_DATA.md), and the pilot materials in [`research/pilot/`](research/pilot/README.md).

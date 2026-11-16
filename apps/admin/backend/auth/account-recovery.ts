@@ -1,3 +1,4 @@
+import { auditIpHash } from '@/backend/security/audit-ip';
 import * as workers from 'cloudflare:workers';
 import { ensurePublicRuntimeDatabase, getRawDb } from '@/db/runtime';
 import { derivePassword, MobileServiceError, normalizeEmail, PASSWORD_ITERATIONS, randomHex, validEmail, validatePassword, type MobileActor } from '@/backend/auth/mobile-auth';
@@ -133,9 +134,9 @@ export async function confirmMobilePasswordReset(request: Request, input: Record
       AND code_hash=? AND ${ELIGIBLE}`).bind(claim,email,hash),
     db.prepare(`DELETE FROM push_devices WHERE user_id IN (${claimed})`).bind(claim),
     db.prepare(`DELETE FROM mobile_sessions WHERE user_id IN (${claimed})`).bind(claim),
-    db.prepare(`INSERT INTO audit_logs (id,actor_id,action,entity_type,entity_id,parish_id,outcome,detail)
-      SELECT ?,u.id,'mobile.password.reset','user',u.id,u.home_parish_id,'success','Email code redeemed; all sessions revoked'
-      FROM users u WHERE u.id IN (${claimed})`).bind(crypto.randomUUID(),claim),
+    db.prepare(`INSERT INTO audit_logs (ip_hash,id,actor_id,action,entity_type,entity_id,parish_id,outcome,detail)
+      SELECT ?, ?,u.id,'mobile.password.reset','user',u.id,u.home_parish_id,'success','Email code redeemed; all sessions revoked'
+      FROM users u WHERE u.id IN (${claimed})`).bind(await auditIpHash(), crypto.randomUUID(),claim),
     db.prepare(`UPDATE mobile_credentials SET password_hash=?,password_salt=?,password_iterations=?,
       failed_attempts=0,locked_until=NULL,password_changed_at=datetime('now'),updated_at=datetime('now'),
       email_verified_at=COALESCE(email_verified_at,datetime('now')) WHERE user_id IN (${claimed})`)
@@ -162,9 +163,9 @@ export async function confirmMobileEmailVerification(request: Request, actor: Mo
       AND code_hash=? AND ${ELIGIBLE} AND ${session}`).bind(claim,actor.id,hash,actor.sessionId),
     db.prepare(`UPDATE mobile_credentials SET email_verified_at=COALESCE(email_verified_at,datetime('now')),updated_at=datetime('now')
       WHERE user_id IN (SELECT user_id FROM mobile_email_challenges WHERE consumed_by=?)`).bind(claim),
-    db.prepare(`INSERT INTO audit_logs (id,actor_id,action,entity_type,entity_id,parish_id,outcome,detail)
-      SELECT ?,u.id,'mobile.email.verify','user',u.id,u.home_parish_id,'success','Email code redeemed'
-      FROM users u JOIN mobile_email_challenges c ON c.user_id=u.id WHERE c.consumed_by=?`).bind(crypto.randomUUID(),claim),
+    db.prepare(`INSERT INTO audit_logs (ip_hash,id,actor_id,action,entity_type,entity_id,parish_id,outcome,detail)
+      SELECT ?, ?,u.id,'mobile.email.verify','user',u.id,u.home_parish_id,'success','Email code redeemed'
+      FROM users u JOIN mobile_email_challenges c ON c.user_id=u.id WHERE c.consumed_by=?`).bind(await auditIpHash(), crypto.randomUUID(),claim),
     db.prepare('DELETE FROM mobile_email_challenges WHERE consumed_by=?').bind(claim),
   ]);
   if (Number(result[0]?.meta.changes) !== 1 || Number(result[1]?.meta.changes) !== 1) throw new MobileServiceError(INVALID_CODE);

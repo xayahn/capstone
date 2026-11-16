@@ -1,3 +1,4 @@
+import { auditIpHash } from '@/backend/security/audit-ip';
 import { getRawDb } from '@/db/runtime';
 import { MobileServiceError, type MobileActor } from '@/backend/auth/mobile-auth';
 import { loadMobileAppointment, startsAtFromInput } from '@/backend/services/mobile-service';
@@ -77,9 +78,9 @@ export async function cancelMobileAppointment(actor: MobileActor, appointmentId:
       db.prepare(`INSERT INTO notifications (id, recipient_user_id, type, title, body, entity_type, entity_id)
         SELECT ?, ?, 'appointment', 'Appointment cancelled', ?, 'appointment', ? WHERE EXISTS (SELECT 1 FROM appointment_events WHERE id = ?)`)
         .bind(crypto.randomUUID(), actor.id, `${appointment.reference} was cancelled at your request.`, appointment.id, eventId),
-      db.prepare(`INSERT INTO audit_logs (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-        SELECT ?, ?, 'mobile.appointment.cancel', 'appointment', ?, ?, 'success', ? WHERE EXISTS (SELECT 1 FROM appointment_events WHERE id = ?)`)
-        .bind(crypto.randomUUID(), actor.id, appointment.id, appointment.parishId, `${appointment.status} -> cancelled: ${reason}`, eventId),
+      db.prepare(`INSERT INTO audit_logs (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+        SELECT ?, ?, ?, 'mobile.appointment.cancel', 'appointment', ?, ?, 'success', ? WHERE EXISTS (SELECT 1 FROM appointment_events WHERE id = ?)`)
+        .bind(await auditIpHash(), crypto.randomUUID(), actor.id, appointment.id, appointment.parishId, `${appointment.status} -> cancelled: ${reason}`, eventId),
     ]);
     if (Number(results[0]?.meta.changes ?? 0) < 1) throw new MobileServiceError('This appointment changed in the meantime. Refresh and try again.', 409);
     return loadMobileAppointment(actor, appointment.id);
@@ -98,9 +99,9 @@ export async function cancelMobileAppointment(actor: MobileActor, appointmentId:
         db.prepare(`INSERT INTO notifications (id, recipient_user_id, type, title, body, entity_type, entity_id)
           SELECT ?, ?, 'appointment', 'Cancellation request sent', ?, 'appointment', ? WHERE EXISTS (SELECT 1 FROM appointment_change_requests WHERE id = ?)`)
           .bind(crypto.randomUUID(), actor.id, `Your request to cancel ${appointment.reference} was sent to the parish office. The appointment stays scheduled until the parish confirms.`, appointment.id, requestId),
-        db.prepare(`INSERT INTO audit_logs (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-          SELECT ?, ?, 'mobile.change_request.cancel', 'appointment', ?, ?, 'success', ? WHERE EXISTS (SELECT 1 FROM appointment_change_requests WHERE id = ?)`)
-          .bind(crypto.randomUUID(), actor.id, appointment.id, appointment.parishId, reason, requestId),
+        db.prepare(`INSERT INTO audit_logs (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+          SELECT ?, ?, ?, 'mobile.change_request.cancel', 'appointment', ?, ?, 'success', ? WHERE EXISTS (SELECT 1 FROM appointment_change_requests WHERE id = ?)`)
+          .bind(await auditIpHash(), crypto.randomUUID(), actor.id, appointment.id, appointment.parishId, reason, requestId),
       ]);
     } catch (error) {
       if (String(error).toLowerCase().includes('unique')) throw new MobileServiceError('A request for this appointment is already waiting for the parish.', 409);
@@ -158,9 +159,9 @@ export async function requestMobileReschedule(actor: MobileActor, appointmentId:
       db.prepare(`INSERT INTO notifications (id, recipient_user_id, type, title, body, entity_type, entity_id)
         SELECT ?, ?, 'appointment', 'Reschedule request sent', ?, 'appointment', ? WHERE EXISTS (SELECT 1 FROM appointment_change_requests WHERE id = ?)`)
         .bind(crypto.randomUUID(), actor.id, `Your request to move ${appointment.reference} to ${when} was sent to the parish office. Your current schedule stays in place until the parish approves.`, appointment.id, requestId),
-      db.prepare(`INSERT INTO audit_logs (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-        SELECT ?, ?, 'mobile.change_request.reschedule', 'appointment', ?, ?, 'success', ? WHERE EXISTS (SELECT 1 FROM appointment_change_requests WHERE id = ?)`)
-        .bind(crypto.randomUUID(), actor.id, appointment.id, appointment.parishId, `${appointment.startsAt} -> ${proposedStart.toISOString()}: ${reason}`, requestId),
+      db.prepare(`INSERT INTO audit_logs (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+        SELECT ?, ?, ?, 'mobile.change_request.reschedule', 'appointment', ?, ?, 'success', ? WHERE EXISTS (SELECT 1 FROM appointment_change_requests WHERE id = ?)`)
+        .bind(await auditIpHash(), crypto.randomUUID(), actor.id, appointment.id, appointment.parishId, `${appointment.startsAt} -> ${proposedStart.toISOString()}: ${reason}`, requestId),
     ]);
   } catch (error) {
     if (String(error).toLowerCase().includes('unique')) throw new MobileServiceError('A request for this appointment is already waiting for the parish.', 409);
@@ -180,9 +181,9 @@ export async function withdrawMobileChangeRequest(actor: MobileActor, appointmen
     db.prepare(`UPDATE appointment_change_requests SET status = 'withdrawn', decision_note = 'Withdrawn by the parishioner',
         decided_at = datetime('now'), updated_at = datetime('now') WHERE id = ? AND status = 'pending' AND requested_by = ?`)
       .bind(appointment.pendingId, actor.id),
-    db.prepare(`INSERT INTO audit_logs (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-      SELECT ?, ?, 'mobile.change_request.withdraw', 'appointment', ?, ?, 'success', ? WHERE changes() = 1`)
-      .bind(crypto.randomUUID(), actor.id, appointment.id, appointment.parishId, `${appointment.pendingKind} request withdrawn`),
+    db.prepare(`INSERT INTO audit_logs (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+      SELECT ?, ?, ?, 'mobile.change_request.withdraw', 'appointment', ?, ?, 'success', ? WHERE changes() = 1`)
+      .bind(await auditIpHash(), crypto.randomUUID(), actor.id, appointment.id, appointment.parishId, `${appointment.pendingKind} request withdrawn`),
   ]);
   return loadMobileAppointment(actor, appointment.id);
 }

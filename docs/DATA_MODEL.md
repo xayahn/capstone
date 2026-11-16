@@ -33,7 +33,7 @@
 | `clergy_assignments` | Cross-parish clergy/venue service schedule | Interval and status; conflict checked against all active assignments/appointments |
 | `chatbot_messages` | Minimal, redacted AI interaction metadata | Session/category/provider request; retention and content fields subject to DEC-005 |
 | `evaluation_responses` | Actual consented quality-evaluation answers | Respondent group, item code, one of eight characteristics, score 1–4, timestamp |
-| `audit_logs` | Security and privileged-business audit | Actor, action, entity, parish, outcome, request ID, safe detail, timestamp |
+| `audit_logs` | Security and privileged-business audit | Actor, action, entity, parish, outcome, request ID, safe detail, keyed network-address fingerprint (`ip_hash`, only when `AUDIT_IP_HASH_KEY` is configured; never the raw address), timestamp |
 
 The implementation may add supporting entities such as checklist versions, upload scan events, notification outbox/delivery attempts, refresh sessions, device registrations, idempotency keys, consent records, configuration history, or data-subject request cases. Those are implementation safeguards, not claims from the paper.
 
@@ -101,7 +101,7 @@ Selecting a local file is not a state transition. Malware scanning or OCR never 
 
 ### 4.3 Queue lifecycle
 
-Canonical states are `waiting`, `serving`, `served`, and `cancelled`. A brief `called` presentation event may be emitted without becoming a second authoritative state, or may be added as a canonical state only through an approved migration. A counter claim from `waiting` to `serving` is atomic. Terminal tickets cannot re-enter the active queue without an audited new ticket.
+Canonical states are `waiting`, `serving`, `served`, `cancelled`, and `no_show` (enforced by database triggers). A brief `called` presentation event may be emitted without becoming a second authoritative state, or may be added as a canonical state only through an approved migration. A counter claim from `waiting` to `serving` is atomic. Terminal tickets cannot re-enter the active queue without an audited new ticket.
 
 ### 4.4 Record lifecycle
 
@@ -139,7 +139,7 @@ Object metadata includes storage key, original display filename, media type, byt
 - A respondent can submit only according to the approved evaluation protocol; consent is recorded before an answer.
 - Scores are integers 1–4 and characteristics are restricted to the eight named ISO/IEC 25010:2011 product-quality characteristics.
 - Announcements and user-entered notes are stored as text and output-encoded; raw HTML is not trusted.
-- Audit and event entries are append-only for normal application roles.
+- Audit and event entries are append-only: database triggers (`drizzle/0008_audit_append_only.sql`) reject every UPDATE and DELETE on `audit_logs` and `appointment_events`.
 
 ## 8. Data classification and minimization
 

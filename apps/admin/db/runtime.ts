@@ -55,6 +55,7 @@ const REQUIRED_PRODUCTION_INDEXES = [
 const REQUIRED_PRODUCTION_TRIGGERS = [
   'mobile_password_invalidate_challenges', 'mobile_identity_invalidate_challenges', 'notifications_enqueue_push',
   'trg_appointments_status_update', 'trg_documents_status_update', 'trg_users_role_insert',
+  'trg_audit_logs_no_update', 'trg_audit_logs_no_delete', 'trg_appointment_events_no_update', 'trg_appointment_events_no_delete',
 ] as const;
 
 async function columns(db: D1Database, table: string): Promise<Set<string>> {

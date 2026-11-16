@@ -1,3 +1,4 @@
+import { auditIpHash } from '@/backend/security/audit-ip';
 import { getRawDb } from '@/db/runtime';
 import { derivePassword, PASSWORD_ITERATIONS, normalizeEmail, randomHex, validEmail } from '@/backend/auth/mobile-auth';
 
@@ -128,9 +129,9 @@ export function staffTokenFromCookieHeader(cookieHeader: string | null | undefin
 
 async function writeStaffAudit(actorId: string | null, action: string, entityId: string | null, outcome: string, detail: string): Promise<void> {
   await getRawDb().prepare(`INSERT INTO audit_logs
-    (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-    VALUES (?, ?, ?, 'user', ?, (SELECT home_parish_id FROM users WHERE id = ?), ?, ?)`)
-    .bind(crypto.randomUUID(), actorId, action, entityId, entityId, outcome, detail).run();
+    (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+    VALUES (?, ?, ?, ?, 'user', ?, (SELECT home_parish_id FROM users WHERE id = ?), ?, ?)`)
+    .bind(await auditIpHash(), crypto.randomUUID(), actorId, action, entityId, entityId, outcome, detail).run();
 }
 
 async function issueStaffSession(userId: string, userAgent: string | null, expectedPasswordHash: string): Promise<{ token: string; sessionId: string; expiresAt: string }> {

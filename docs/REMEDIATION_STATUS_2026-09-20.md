@@ -4,7 +4,7 @@
 
 ## Decision: HOLD RELEASE
 
-This is a verified local remediation batch, **not a production-readiness certificate**. No deployment, remote push, credential rotation, or production data change was performed. Existing audit evidence in [PRELAUNCH_AUDIT_2026-09-20.md](PRELAUNCH_AUDIT_2026-09-20.md) is retained as the before-fix baseline.
+This is a verified local remediation batch, **not a production-readiness certificate**. No deployment, remote push, credential rotation, or production data change was performed. Existing audit evidence from the 20 September pre-launch audit is retained locally (not in the repository) as the before-fix baseline.
 
 ## Changes implemented
 

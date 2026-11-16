@@ -1,3 +1,4 @@
+import { auditIpHash } from '@/backend/security/audit-ip';
 import type { StaffIdentity } from '@/backend/auth/staff-auth';
 import { ensureRuntimeDatabase, getRawDb } from '@/db/runtime';
 import { sha256Hex } from '@/backend/security/idempotency';
@@ -389,9 +390,9 @@ async function writeAudit(
   detail: string,
 ): Promise<void> {
   await getRawDb().prepare(`INSERT INTO audit_logs
-    (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-    .bind(crypto.randomUUID(), actor.id, action, entityType, entityId, parishId, outcome, detail.slice(0, 1000))
+    (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .bind(await auditIpHash(), crypto.randomUUID(), actor.id, action, entityType, entityId, parishId, outcome, detail.slice(0, 1000))
     .run();
 }
 
@@ -476,10 +477,10 @@ async function transitionAppointment(
         `${current.reference} is now ${statusLabel}.${reason ? ` ${reason}` : ''}`.slice(0, 1000),
         mutation.appointmentId, eventId),
     db.prepare(`INSERT INTO audit_logs
-      (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-      SELECT ?, ?, 'appointment.transition', 'appointment', ?, ?, 'success', ?
+      (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+      SELECT ?, ?, ?, 'appointment.transition', 'appointment', ?, ?, 'success', ?
       WHERE EXISTS (SELECT 1 FROM appointment_events WHERE id = ?)`)
-      .bind(crypto.randomUUID(), actor.id, mutation.appointmentId, current.parishId,
+      .bind(await auditIpHash(), crypto.randomUUID(), actor.id, mutation.appointmentId, current.parishId,
         `${current.status} -> ${mutation.status}${reason ? `: ${reason}` : ''}`, eventId),
     // Closing an appointment also closes any open reschedule/cancellation request for it.
     db.prepare(`UPDATE appointment_change_requests SET status = 'withdrawn',
@@ -569,10 +570,11 @@ async function decideChangeRequest(
       (id, recipient_user_id, type, title, body, entity_type, entity_id)
     SELECT ?, ?, 'appointment', ?, ?, 'appointment', ? WHERE EXISTS (SELECT 1 FROM appointment_events WHERE id = ?)`)
     .bind(crypto.randomUUID(), row.parishionerUserId, title, body.slice(0, 1000), row.appointmentId, eventId);
+  const ipHash = await auditIpHash();
   const audit = (detail: string) => db.prepare(`INSERT INTO audit_logs
-      (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-    SELECT ?, ?, ?, 'appointment_change_request', ?, ?, 'success', ? WHERE EXISTS (SELECT 1 FROM appointment_events WHERE id = ?)`)
-    .bind(crypto.randomUUID(), actor.id, `change_request.${mutation.decision}`, row.id, row.parishId, detail.slice(0, 1000), eventId);
+      (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+    SELECT ?, ?, ?, ?, 'appointment_change_request', ?, ?, 'success', ? WHERE EXISTS (SELECT 1 FROM appointment_events WHERE id = ?)`)
+    .bind(ipHash, crypto.randomUUID(), actor.id, `change_request.${mutation.decision}`, row.id, row.parishId, detail.slice(0, 1000), eventId);
 
   if (mutation.decision === 'reject') {
     const results = await db.batch([
@@ -687,10 +689,10 @@ async function reviewDocument(
         `${row.requirementName} for ${row.reference} was ${mutation.status === 'verified' ? 'verified' : 'returned for replacement'}.${note ? ` ${note}` : ''}`.slice(0, 1000),
         row.appointmentId, eventId),
     db.prepare(`INSERT INTO audit_logs
-      (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-      SELECT ?, ?, 'document.review', 'document_submission', ?, ?, 'success', ?
+      (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+      SELECT ?, ?, ?, 'document.review', 'document_submission', ?, ?, 'success', ?
       WHERE EXISTS (SELECT 1 FROM appointment_events WHERE id = ?)`)
-      .bind(crypto.randomUUID(), actor.id, mutation.documentId, row.parishId,
+      .bind(await auditIpHash(), crypto.randomUUID(), actor.id, mutation.documentId, row.parishId,
         `${mutation.status}${note ? `: ${note}` : ''}`, eventId),
     adminIdempotencyStatement(actor, idempotency, mutation.documentId, 'appointment_events', eventId),
   ]);
@@ -748,9 +750,9 @@ async function issueQueueTicket(
           VALUES (?, ?, ?, ?, ?)`)
           .bind(id, ticketNumber, mutation.parishId, parishionerName, service),
         db.prepare(`INSERT INTO audit_logs
-          (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-          SELECT ?, ?, 'queue.issue', 'queue_ticket', ?, ?, 'success', ? WHERE changes() = 1`)
-          .bind(auditId, actor.id, id, mutation.parishId, `${service}; accountless front-desk ticket`),
+          (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+          SELECT ?, ?, ?, 'queue.issue', 'queue_ticket', ?, ?, 'success', ? WHERE changes() = 1`)
+          .bind(await auditIpHash(), auditId, actor.id, id, mutation.parishId, `${service}; accountless front-desk ticket`),
         adminIdempotencyStatement(actor, idempotency, id, 'audit_logs', auditId),
       ]);
       break;
@@ -795,9 +797,9 @@ async function callNext(
       called_at = datetime('now'), updated_at = datetime('now') WHERE id = ? AND status = 'waiting'`)
       .bind(counter, next.id),
     db.prepare(`INSERT INTO audit_logs
-      (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-      SELECT ?, ?, 'queue.call_next', 'queue_ticket', ?, ?, 'success', ? WHERE changes() = 1`)
-      .bind(auditId, actor.id, next.id, mutation.parishId, `Called at ${counter}`),
+      (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+      SELECT ?, ?, ?, 'queue.call_next', 'queue_ticket', ?, ?, 'success', ? WHERE changes() = 1`)
+      .bind(await auditIpHash(), auditId, actor.id, next.id, mutation.parishId, `Called at ${counter}`),
     db.prepare(`INSERT INTO notifications
       (id, recipient_user_id, type, title, body, entity_type, entity_id)
       SELECT ?, ?, 'queue', 'Your queue ticket was called', ?, 'queue_ticket', ?
@@ -834,9 +836,9 @@ async function completeQueueTicket(
     db.prepare(`UPDATE queue_tickets SET status = 'served', served_at = datetime('now'),
       updated_at = datetime('now') WHERE id = ? AND status = 'serving'`).bind(row.id),
     db.prepare(`INSERT INTO audit_logs
-      (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-      SELECT ?, ?, 'queue.complete', 'queue_ticket', ?, ?, 'success', 'Service completed' WHERE changes() = 1`)
-      .bind(auditId, actor.id, row.id, row.parishId),
+      (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+      SELECT ?, ?, ?, 'queue.complete', 'queue_ticket', ?, ?, 'success', 'Service completed' WHERE changes() = 1`)
+      .bind(await auditIpHash(), auditId, actor.id, row.id, row.parishId),
     db.prepare(`INSERT INTO notifications
       (id, recipient_user_id, type, title, body, entity_type, entity_id)
       SELECT ?, ?, 'queue', 'Queue visit completed', ?, 'queue_ticket', ?
@@ -879,10 +881,10 @@ async function publishAnnouncement(
         AND (? = 'all' OR u.home_parish_id = ?)`)
       .bind(title, body, id, mutation.audience, parishId),
     db.prepare(`INSERT INTO audit_logs
-      (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-      SELECT ?, ?, 'announcement.publish', 'announcement', ?, ?, 'success', ?
+      (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+      SELECT ?, ?, ?, 'announcement.publish', 'announcement', ?, ?, 'success', ?
       WHERE EXISTS (SELECT 1 FROM announcements WHERE id = ?)`)
-      .bind(crypto.randomUUID(), actor.id, id, parishId, title, id),
+      .bind(await auditIpHash(), crypto.randomUUID(), actor.id, id, parishId, title, id),
     adminIdempotencyStatement(actor, idempotency, id, 'announcements', id),
   ]);
 }

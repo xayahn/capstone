@@ -1,123 +1,88 @@
 # ParishLink mobile
 
-ParishLink mobile is the parishioner-facing Expo application for the capstone project **“ParishLink: A Digital Platform for Sacramental Services Coordination and Parish Information Management.”** Staff, clergy, and system-administration functions intentionally remain outside this app and belong in the protected admin website.
+The parishioner app for ParishLink, built with Expo SDK 58 (React Native 0.88, React 19, TypeScript 6.0). Staff, clergy and administrator work happens in the separate admin web portal (`apps/admin`), never in this app.
 
-## Implemented experience
+## Screens
 
-- Real mobile sign-up, sign-in, secure session restore/revoke, and password change through the shared API
-- Explicit fictional demonstration mode kept separate from live API mode
-- Parishioner home dashboard and notifications
-- Service discovery for Baptism, Wedding, Confirmation, First Communion, and Funeral Mass
-- Appointment requests across the eight parishes named in the research paper
-- Parish, clergy, date, and time selection
-- Interval-aware conflict detection using the service duration and 15-minute preparation buffers
-- Document selection for PDF, JPG, and PNG files up to 10 MB
-- Separate `selected`, `submitted`, `under review`, and `staff verified` document states
-- Appointment status timeline and document-review summary
-- Walk-in queue ticket flow with an explicitly estimated wait
-- Structured Assistant v2 guidance with deterministic service requirements, signed-in-user request status, document next steps, active queue context, sources, actions, follow-up prompts, clarification choices, and human handoff boundaries
-- Parishioner contact profile, home parish, and notification preference
-- Responsive layouts, screen-reader labels, touch targets, and readable status cues that do not rely on color alone
-- Native app icon, adaptive Android icon, splash artwork, and web favicon using the prototype palette
+`src/screens/` holds 13 screens: Welcome (sign in / create account), Home, Services, Booking, Appointments, Appointment detail, Assistant, Queue, Announcements, Parishes (directory), Notifications, More, and Profile. The bottom navigation shows Home, Services, Appointments, Assistant and More.
 
-The app preserves the prototype’s parchment, oxblood, leather, brass, and olive palette. Cormorant Garamond is used for display text and Inter for interface text.
+The interface is designed for older parishioners: large text, large touch targets, plain-language labels and messages, status shown in words (not only colour), and screen-reader labels.
 
 ## Run locally
 
-Requirements: Node.js 22.13 or newer and pnpm.
+Requirements: Node.js 22.13 or newer and pnpm. Start the admin/API server first (see the root [`README.md`](../../README.md)), then:
 
-```bash
+```powershell
 pnpm install
-copy .env.example .env
+if (-not (Test-Path -LiteralPath .env)) { Copy-Item -LiteralPath .env.example -Destination .env }
 pnpm start
 ```
 
-Then open the project with Expo Go or an Android/iOS simulator. The web target is available for development and accessibility checks with `pnpm web`, but it does not replace the native mobile deliverable.
+Open the app in Expo Go (same Wi-Fi as the laptop) or press `w` for the web preview at `http://localhost:8081`.
 
-## Demonstration and API modes
+`EXPO_PUBLIC_API_BASE_URL` in `.env` must point to the admin server's `/api`:
 
-The checked-in example enables the integrated local API:
+| Where the app runs | API base URL |
+|---|---|
+| Web preview on the laptop | `http://localhost:3000/api` |
+| Phone with Expo Go | `http://<laptop Wi-Fi address>:3000/api` (the root `scripts/start-demo.ps1` writes this for you) |
+| Android emulator | `http://10.0.2.2:3000/api` |
+| Preview / production build | An approved `https://` address (plain `http://` is rejected outside development) |
 
-```dotenv
-EXPO_PUBLIC_DEMO_MODE=false
-EXPO_PUBLIC_API_BASE_URL=http://localhost:3000/api
-```
+`.env` is ignored by git. Setting `EXPO_PUBLIC_DEMO_MODE=true` instead runs a self-contained demonstration that stores fictional data on the device only; it does not reach any parish.
 
-Demonstration mode stores sample data locally with AsyncStorage. It does **not** create official accounts, reserve live parish schedules, upload files to a parish, or modify official sacramental records.
+## How it talks to the server
 
-For an Android emulator use `http://10.0.2.2:3000/api`. A physical phone must use the development computer's LAN address. Production must use an approved HTTPS API origin. Screens use the repository in `src/repositories/parishLinkRepository.ts` rather than calling the network directly. The repository delegates shared bearer-header, timeout, cancellation, response-format, and safe-error behavior to `src/api/mobileApiClient.ts`. `src/api/tokenStore.ts` stores API tokens in Expo SecureStore on native platforms and uses AsyncStorage only for the local web preview.
+Screens never call the network directly. They use `src/repositories/parishLinkRepository.ts`, which uses `src/api/mobileApiClient.ts` for authentication headers, timeouts, cancellation and safe error messages. Session tokens are kept in Expo SecureStore on phones (AsyncStorage only in the web preview).
 
-The API adapter expects these authenticated endpoints:
+| Method | Endpoint (under `/api`) | Purpose |
+|---|---|---|
+| `GET` | `/mobile/catalog` | Parishes, services, priests, venues, requirements, queue services |
+| `POST` | `/mobile/auth/sign-up`, `/mobile/auth/sign-in`, `/mobile/auth/sign-out` | Account and session |
+| `GET` | `/mobile/auth/session` | Restore the saved session |
+| `POST` | `/mobile/auth/change-password` | Change password (other sessions are signed out) |
+| `POST` | `/mobile/auth/password-reset/request`, `/mobile/auth/password-reset/confirm` | Reset a forgotten password with an emailed code |
+| `POST` | `/mobile/auth/email-verification/request`, `/mobile/auth/email-verification/confirm` | Verify the account email with a code |
+| `GET` | `/mobile/snapshot` | Profile, appointments, notifications, announcements, active queue ticket |
+| `POST` | `/mobile/availability` | Available times for a priest, venue and date |
+| `POST` | `/mobile/appointments` | Submit an appointment request |
+| `POST` | `/mobile/appointments/{id}/documents/{documentId}` | Upload one document |
+| `POST` | `/mobile/appointments/{id}/cancel` | Cancel, or ask the parish to cancel once approved |
+| `POST` | `/mobile/appointments/{id}/reschedule` | Ask to move the appointment |
+| `POST` | `/mobile/appointments/{id}/change-request/withdraw` | Withdraw a pending cancel/reschedule request |
+| `POST` / `DELETE` | `/mobile/queue/tickets`, `/mobile/queue/tickets/active` | Join or leave the walk-in queue |
+| `POST` | `/mobile/notifications/{id}/read` | Mark a notification read |
+| `POST` | `/mobile/assistant` | Ask the parish assistant |
+| `PUT` | `/mobile/profile` | Update name, mobile number, home parish, notification preference |
+| `POST` / `DELETE` | `/mobile/push/devices` | Register or remove this phone for push notifications |
 
-| Method | Endpoint | Purpose |
-| --- | --- | --- |
-| `GET` | `/mobile/catalog` | Load the authoritative parish, service, clergy, venue, requirement, and queue catalog |
-| `POST` | `/mobile/auth/sign-up` | Create a parishioner account and secure session |
-| `POST` | `/mobile/auth/sign-in` | Start a parishioner session |
-| `GET` | `/mobile/auth/session` | Restore the current secure session |
-| `POST` | `/mobile/auth/sign-out` | Revoke the current session |
-| `POST` | `/mobile/auth/change-password` | Change the password and revoke other sessions |
-| `GET` | `/mobile/snapshot` | Load profile, appointments, notifications, and active queue ticket |
-| `POST` | `/mobile/appointments` | Create an appointment request and return its authoritative state |
-| `POST` | `/mobile/appointments/{id}/documents/{documentId}` | Upload one selected file as multipart form data |
-| `POST` | `/mobile/notifications/{id}/read` | Mark a notice read |
-| `POST` | `/mobile/queue/tickets` | Create one walk-in queue ticket |
-| `DELETE` | `/mobile/queue/tickets/active` | Release the active queue ticket |
-| `POST` | `/mobile/assistant` | Request structured Assistant v2 guidance |
-| `PUT` | `/mobile/profile` | Update the parishioner’s contact preferences |
+The server is the final authority for scheduling conflicts, file checks, ownership and permissions; the app's own checks only give faster feedback.
 
-The included backend enforces authentication/ownership, content and file-size checks, rate limits, audit logging, and authoritative schedule conflict checks. Production still requires an approved malware-scanning/quarantine service and infrastructure-level abuse controls. Client-side conflict checks are helpful feedback but are never the final reservation authority.
+Email codes need an email sender configured on the server, and push notifications are disabled on the server. Neither has been tested on a physical phone.
 
-### Assistant v2 behavior
+## Parish assistant
 
-The assistant endpoint returns an `AssistantMessage` with required `id`, `from`, `text`, and `createdAt` fields plus optional `title`, `bullets`, `sources`, `actions`, `followUpPrompts`, `clarification`, and `escalation`. Actions carry typed navigation targets and optional service or appointment IDs; clarification options send a specific follow-up prompt.
-
-Requirements come from the current service catalogue. Appointment status and document guidance are queried only for the authenticated actor, and queue guidance uses only that actor's active ticket. These paths are deterministic and remain available without Gemini. An optional server-only Gemini key may rephrase only otherwise-unmatched general product guidance after redaction; it cannot inspect documents, use actor-owned appointment/queue data, approve anything, or mutate a workflow. No real Gemini provider-key run is claimed by the local evidence.
-
-Never place a Gemini or other provider key in an `EXPO_PUBLIC_*` value. The mobile app calls the protected ParishLink assistant endpoint; the backend owns any provider credential, safety policy, redacted logging, and staff handoff.
+Answers about requirements, the parish directory, and the user's own requests, documents and queue ticket come from ParishLink's data. The assistant cannot approve, verify or change anything. If the server has Google Gemini configured and the user turns on the permission switch, general public questions may be answered by Gemini; questions about the user's own requests, documents, queue ticket or account always stay on the ParishLink server and are not sent to Gemini. Never put any provider key in an `EXPO_PUBLIC_*` variable.
 
 ## Verification
 
-```bash
+```powershell
 pnpm typecheck
 pnpm test
+node ./scripts/release-check.mjs   # config check, TypeScript, tests, Web/iOS/Android export
 ```
 
-The current mobile suite contains 24 passing tests: 3 authentication, 6 scheduling, 4 status/document-boundary, 5 mobile API client, and 6 assistant tests. The assistant tests cover clarification, traceable service actions, signed-in-actor appointment/queue isolation, official-decision handoff, and emergency escalation.
-
-Local Expo bundle smoke exports have passed for all three targets:
-
-```bash
-pnpm expo export --platform ios
-pnpm expo export --platform android
-pnpm expo export --platform web
-```
-
-A local mobile web-preview check was completed at 390 px after the typography/responsive work. This is not evidence of physical iOS/Android device behavior, signing, store readiness, a complete accessibility audit, UAT, or production approval.
-
-## Production readiness checklist
-
-This repository is a release-conscious capstone implementation, not a claim that a live parish service is deployed or approved. Before a real launch:
-
-1. Connect and contract-test the production API.
-2. Complete privacy, data-retention, consent, and breach-response review with the participating parishes and school.
-3. Configure verified account recovery and production internal identity/MFA; validate OS-backed mobile session storage on devices.
-4. Add malware scanning/quarantine and validate provider encryption/private-storage policy.
-5. Add push-notification credentials and explicit device permission handling.
-6. Run Android and iOS device testing, accessibility testing, security testing, load testing, and parish user-acceptance testing.
-7. Replace sample clergy and requirement details only with parish-approved operational data.
-8. Record measured ISO/IEC 25010 evaluation results; do not invent scores.
+On 16 November 2026: TypeScript clean, 195 tests passed in 18 files, and Web, iOS and Android bundles exported. These are unsigned local exports, not physical-device testing or a store build.
 
 ## Key files
 
-- `App.tsx` — application shell plus the parishioner screens that are still being decomposed into modules
-- `src/screens/AssistantScreen.tsx` — extracted structured assistant conversation UI
-- `src/screens/ServicesScreen.tsx` — extracted service catalogue and request-entry UI
-- `src/repositories/parishLinkRepository.ts` — demo and API repositories
-- `src/api/mobileApiClient.ts` — authenticated HTTP, timeout/cancellation, response, and safe-error boundary
-- `src/api/tokenStore.ts` — native SecureStore token persistence and local-web fallback
-- `src/lib/scheduling.ts` — deterministic interval-aware schedule checks
-- `src/lib/status.ts` — human-readable status and timeline rules
-- `src/lib/assistant.ts` — bounded demonstration guidance
-- `src/data/catalog.ts` — eight parishes and five services
-- `tests/` — domain tests
+- `App.tsx`: app shell, navigation state and Android back button
+- `src/screens/`: the 13 screens
+- `src/components/`: shared UI (`ui.tsx`), header and bottom navigation, document attachment controls
+- `src/hooks/useParishLink.ts`: app state, loading and error handling
+- `src/repositories/parishLinkRepository.ts`: API and demonstration repositories
+- `src/api/`: HTTP client, secure token store, retry-safe submission keys
+- `src/config/environment.ts`: environment and development Wi-Fi address handling
+- `src/lib/`: scheduling, status labels, document picking, contact links, assistant helpers
+- `src/data/catalog.ts`: offline fallback catalogue (eight parishes, five services)
+- `tests/`: unit tests

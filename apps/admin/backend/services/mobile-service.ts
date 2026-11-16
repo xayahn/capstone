@@ -1,3 +1,4 @@
+import { auditIpHash } from '@/backend/security/audit-ip';
 import { validCalendarDate, validPhoneNumber, utcTimestamp } from '@/shared/validation';
 import { expirePreviousDayQueueTickets, isUniqueConstraintError, nextParishQueueTicketNumber, shortAppointmentReference } from '@/shared/identifiers';
 import { resourceConflict } from '@/shared/scheduling';
@@ -629,10 +630,10 @@ export async function createMobileAppointment(
         WHERE EXISTS (SELECT 1 FROM appointments WHERE id = ?)`)
         .bind(crypto.randomUUID(), actor.id, `${reference} was submitted. This is not yet parish approval.`, appointmentId, appointmentId),
       db.prepare(`INSERT INTO audit_logs
-        (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-        SELECT ?, ?, 'mobile.appointment.create', 'appointment', ?, ?, 'success', ?
+        (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+        SELECT ?, ?, ?, 'mobile.appointment.create', 'appointment', ?, ?, 'success', ?
         WHERE EXISTS (SELECT 1 FROM appointments WHERE id = ?)`)
-        .bind(crypto.randomUUID(), actor.id, appointmentId, parishId, `${serviceTypeId}; ${startsAt}`, appointmentId),
+        .bind(await auditIpHash(), crypto.randomUUID(), actor.id, appointmentId, parishId, `${serviceTypeId}; ${startsAt}`, appointmentId),
       db.prepare(`INSERT INTO idempotency_keys
         (id, actor_id, scope, key_hash, request_hash, resource_id, response_status, expires_at)
         SELECT ?, ?, 'mobile.appointment.create', ?, ?, ?, 201, ?
@@ -709,9 +710,9 @@ export async function joinMobileQueue(
             SELECT 1 FROM queue_tickets WHERE parishioner_user_id = ? AND status IN ('waiting','serving')
           )`).bind(id, number, parishId, actor.id, actor.displayName, service, actor.id),
         db.prepare(`INSERT INTO audit_logs
-          (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-          SELECT ?, ?, 'mobile.queue.join', 'queue_ticket', ?, ?, 'success', ? WHERE changes() = 1`)
-          .bind(auditId, actor.id, id, parishId, service),
+          (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+          SELECT ?, ?, ?, 'mobile.queue.join', 'queue_ticket', ?, ?, 'success', ? WHERE changes() = 1`)
+          .bind(await auditIpHash(), auditId, actor.id, id, parishId, service),
         db.prepare(`INSERT INTO idempotency_keys
           (id, actor_id, scope, key_hash, request_hash, resource_id, response_status, expires_at)
           SELECT ?, ?, 'mobile.queue.join', ?, ?, ?, 201, ?
@@ -754,10 +755,10 @@ export async function leaveMobileQueue(actor: MobileActor): Promise<void> {
       cancelled_at = datetime('now'), updated_at = datetime('now')
       WHERE parishioner_user_id = ? AND status IN ('waiting','serving')`).bind(actor.id),
     db.prepare(`INSERT INTO audit_logs
-      (id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
-      SELECT ?, ?, 'mobile.queue.leave', 'queue_ticket', id, parish_id, 'success', 'Parishioner left queue'
+      (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+      SELECT ?, ?, ?, 'mobile.queue.leave', 'queue_ticket', id, parish_id, 'success', 'Parishioner left queue'
       FROM queue_tickets WHERE parishioner_user_id = ? AND status = 'cancelled' AND changes() > 0
-      ORDER BY cancelled_at DESC LIMIT 1`).bind(crypto.randomUUID(), actor.id, actor.id),
+      ORDER BY cancelled_at DESC LIMIT 1`).bind(await auditIpHash(), crypto.randomUUID(), actor.id, actor.id),
   ]);
 }
 

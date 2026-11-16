@@ -31,7 +31,7 @@ const paths = [
   'backend/security/mobile-rate-limit.ts', 'backend/http/mobile-http.ts', 'backend/http/small-json.ts',
   'backend/config/runtime-config.ts', 'backend/observability/server-log.ts', 'shared/validation.ts',
   'backend/notifications/background-dispatch.ts', 'backend/notifications/push-service.ts',
-  'backend/notifications/expo-provider.ts',
+  'backend/notifications/expo-provider.ts', 'backend/security/audit-ip.ts',
   ...Object.values(routes).map(([, file]) => `backend/routes/mobile/auth/${file}.ts`),
 ];
 const moduleName = file => file.replace(/\.ts$/, '.mjs');
@@ -166,7 +166,7 @@ async function run() {
       if (statement && !/^PRAGMA foreign_keys/i.test(statement)) await bounded(db.prepare(statement).run(), 'Apply isolated migration');
     }
   }
-  check('All eight append-only migrations execute on actual workerd D1', migrations.length === 8);
+  check('All nine append-only migrations execute on actual workerd D1', migrations.length === 9);
   await bounded(db.prepare("INSERT INTO parishes(id,slug,name)VALUES('probe-parish','probe-parish','Synthetic Worker Parish')").run(), 'Seed synthetic parish');
   const accounts = new Map();
   async function signup(name) {
