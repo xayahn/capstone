@@ -15,7 +15,7 @@ import { parishionerChangeOptions } from '../shared/change-policy';
 import { cancelMobileAppointment, requestMobileReschedule, withdrawMobileChangeRequest } from '../backend/services/appointment-changes';
 import { loadMobileSnapshot } from '../backend/services/mobile-service';
 import { performAdminMutation, loadDashboardState } from '../backend/services/admin-service';
-import { generateDueReminders, planReminders } from '../backend/services/reminders';
+import { generateDueReminders, planReminders, pushReminderId, scheduleReminderKey } from '../backend/services/reminders';
 import type { MobileActor } from '../backend/auth/mobile-auth';
 import type { Actor } from '../shared/domain';
 
@@ -191,16 +191,106 @@ describe('parish decisions on change requests', () => {
 });
 
 describe('reminders and the mobile snapshot', () => {
-  it('plans 3-day, 1-day and missing-document reminders', () => {
-    const now = new Date('2026-11-09T02:00:00Z');
+  it('plans 3-day, 1-day and missing-document reminders keyed to the scheduled time', () => {
+    const now = new Date('2026-11-09T02:00:00Z'); // 10:00 AM, 9 Nov, Asia/Manila
     const base = { reference: 'PL-1', userId: 'u1', serviceName: 'Baptism', parishName: 'Parish One', missingDocuments: 0 };
+    const seconds = (iso: string) => Date.parse(iso) / 1000;
     const plans = planReminders([
       { ...base, id: 'x1', status: 'approved', startsAt: '2026-11-09T20:00:00Z' },
       { ...base, id: 'x2', status: 'approved', startsAt: '2026-11-11T02:00:00Z' },
       { ...base, id: 'x3', status: 'documents_pending', startsAt: '2026-11-15T02:00:00Z', missingDocuments: 2 },
       { ...base, id: 'x4', status: 'approved', startsAt: '2026-11-20T02:00:00Z' },
     ], now);
-    expect(plans.map((plan) => plan.dedupeKey)).toEqual(['reminder:x1:1d', 'reminder:x2:3d', 'reminder:x3:documents']);
+    expect(plans.map((plan) => plan.dedupeKey)).toEqual([
+      `reminder:x1:${seconds('2026-11-09T20:00:00Z')}:1d`,
+      `reminder:x2:${seconds('2026-11-11T02:00:00Z')}:3d`,
+      'reminder:x3:documents',
+    ]);
+    // 4:00 AM on 10 Nov in Manila is the next calendar day.
+    expect(plans[0].title).toBe('Appointment tomorrow');
+    expect(plans[1].title).toBe('Upcoming appointment');
+  });
+
+  it('says "today" for a same-day appointment and accepts SQLite-format times', () => {
+    const now = new Date('2026-11-09T00:30:00Z'); // 8:30 AM, 9 Nov, Asia/Manila
+    const base = { reference: 'PL-2', userId: 'u1', serviceName: 'Wedding', parishName: 'Parish One', missingDocuments: 0, status: 'approved' };
+    const [sameDay, sqliteFormat] = planReminders([
+      { ...base, id: 'y1', startsAt: '2026-11-09T07:00:00Z' }, // 3:00 PM same day
+      { ...base, id: 'y2', startsAt: '2026-11-09 07:00:00' },
+    ], now);
+    expect(sameDay.title).toBe('Appointment today');
+    expect(sqliteFormat.dedupeKey).toBe(`reminder:y2:${Date.parse('2026-11-09T07:00:00Z') / 1000}:1d`);
+    expect(planReminders([{ ...base, id: 'y3', startsAt: 'not a date' }], now)).toEqual([]);
+  });
+
+  it('reminds again for the new time after an approved reschedule, exactly once per time', async () => {
+    const originalStart = at(5, '09:30');
+    appointment('r1', 'u1', 'approved', originalStart);
+    const dayBefore = (iso: string) => new Date(Date.parse(iso) - 20 * 3_600_000);
+    expect(await generateDueReminders({ userId: 'u1', now: dayBefore(originalStart) })).toBe(1);
+
+    await requestMobileReschedule(member, 'r1', { date: manilaDate(9), time: '1:30 PM', reason: 'Sponsor arrives later' });
+    await decide(staff, pendingId('r1'), 'approve');
+    const movedStart = appointmentRow('r1').startsAt;
+    expect(movedStart).toBe(at(9, '13:30'));
+
+    expect(await generateDueReminders({ userId: 'u1', now: dayBefore(movedStart) })).toBe(1);
+    expect(await generateDueReminders({ userId: 'u1', now: dayBefore(movedStart) })).toBe(0);
+    const keys = (sql.prepare("SELECT dedupe_key AS key FROM notifications WHERE type = 'reminder' ORDER BY created_at, rowid").all() as { key: string }[])
+      .map((row) => row.key);
+    expect(keys).toEqual([scheduleReminderKey('r1', originalStart, '1d'), scheduleReminderKey('r1', movedStart, '1d')]);
+  });
+
+  it('honours reminders stored in the older key format unless the appointment was rescheduled afterwards', async () => {
+    const startsAt = at(5, '09:30');
+    const now = new Date(Date.parse(startsAt) - 20 * 3_600_000);
+    appointment('L1', 'u1', 'approved', startsAt);
+    appointment('L2', 'u1', 'approved', at(5, '11:00')); // 21.5 h after ow: still the 1-day window
+    sql.exec(`INSERT INTO notifications (id, recipient_user_id, type, title, body, entity_type, entity_id, dedupe_key, created_at) VALUES
+      ('old1','u1','reminder','Appointment tomorrow','Old','appointment','L1','reminder:L1:1d', datetime('now','-1 hour')),
+      ('old2','u1','reminder','Appointment tomorrow','Old','appointment','L2','reminder:L2:1d', datetime('now','-1 hour'));
+      INSERT INTO appointment_events (id, appointment_id, event_type, detail, created_at)
+        VALUES ('ev1','L2','rescheduled','Moved', datetime('now'));`);
+    expect(await generateDueReminders({ userId: 'u1', now })).toBe(1);
+    const created = sql.prepare("SELECT entity_id AS id FROM notifications WHERE type = 'reminder' AND id NOT LIKE 'old%'").all() as { id: string }[];
+    expect(created).toEqual([{ id: 'L2' }]);
+  });
+
+  it('does not repeat a push reminder for the same time, but reminds after the time changes', async () => {
+    const startsAt = at(5, '09:30');
+    appointment('P1', 'u1', 'approved', startsAt);
+    sql.prepare(`INSERT INTO notifications (id, recipient_user_id, type, title, body, entity_type, entity_id)
+      VALUES (?, 'u1', 'appointment_reminder', 'Upcoming appointment', 'Push', 'appointment', 'P1')`).run(pushReminderId('P1', startsAt));
+    expect(await generateDueReminders({ userId: 'u1', now: new Date(Date.parse(startsAt) - 20 * 3_600_000) })).toBe(0);
+
+    const moved = at(6, '11:00');
+    sql.prepare("UPDATE appointments SET starts_at = ?, ends_at = ? WHERE id = 'P1'").run(moved, new Date(Date.parse(moved) + 3_600_000).toISOString());
+    expect(await generateDueReminders({ userId: 'u1', now: new Date(Date.parse(moved) - 20 * 3_600_000) })).toBe(1);
+  });
+
+  it('stays within the D1 limit of 100 bound parameters when many reminders are due', async () => {
+    const base = Date.parse(at(2, '08:00'));
+    for (let index = 0; index < 150; index += 1) {
+      appointment(`m${index}`, 'u1', 'approved', new Date(base + index * 60_000).toISOString());
+    }
+    const real = d1(sql);
+    const limited = {
+      ...real,
+      prepare(query: string) {
+        const statement = real.prepare(query);
+        const bind = statement.bind.bind(statement);
+        statement.bind = (...values: unknown[]) => {
+          if (values.length > 100) throw new Error(`D1_ERROR: too many SQL variables (${values.length})`);
+          return bind(...values);
+        };
+        return statement;
+      },
+      batch: real.batch.bind(real),
+    } as D1Database;
+    runtime.getRawDb.mockReturnValue(limited);
+    const now = new Date(base - 48 * 3_600_000);
+    expect(await generateDueReminders({ now })).toBe(150);
+    expect(await generateDueReminders({ now })).toBe(0);
   });
 
   it('creates each reminder once and returns announcements and allowed changes in the snapshot', async () => {

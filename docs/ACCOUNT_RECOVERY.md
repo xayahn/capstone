@@ -10,7 +10,7 @@ In Profile, **Email security** shows the server's `emailVerified` value. Request
 
 If mail is disabled or incomplete, requests fail uniformly with HTTP 503 and the app explains that delivery is unavailable. Invalid input, rate limits, unavailable services, lost connectivity and uncertain confirmation results remain visible. A failed response is never converted to success. A confirmation whose result is uncertain tells the user to check sign-in/profile state before retrying. Closing the form aborts the pending client request, clears sensitive fields and prevents delayed callbacks changing a different account's UI; an already accepted server operation may still complete.
 
-Internal parish staff, clergy and system administrators use their configured identity-provider recovery process. Mobile recovery cannot reset internal SSO identities. Loss of mailbox access requires the parish's approved identity/support procedure; staff must never ask for passwords or one-time codes, or issue an informal password override.
+Internal parish staff, clergy and system administrators cannot use email recovery. A system administrator issues them a one-time temporary password, which ends their sessions and must be changed at first sign-in (see [`STAFF_AUTHENTICATION.md`](STAFF_AUTHENTICATION.md)). Mobile recovery cannot reset internal accounts. Loss of mailbox access requires the parish's approved identity/support procedure; staff must never ask for passwords or one-time codes, or issue an informal password override.
 
 ## API contract
 
@@ -23,7 +23,7 @@ All calls use JSON and the existing mobile origin/body-size/error policies. Veri
 | `POST /api/mobile/auth/email-verification/request` | `{}` and active session | 202 `{accepted:true}` |
 | `POST /api/mobile/auth/email-verification/confirm` | `code` and same active session | 200 `{emailVerified:true}` |
 
-Sign-up, sign-in, session and profile responses include a server-computed `emailVerified` boolean. The new password follows the existing 12–128-character uppercase/lowercase/number policy. Wrong/expired/used codes return a generic invalid-code error. Requests and confirmations have separate account/email and IP rate limits, returning 429 when exceeded.
+Sign-up, sign-in, session and profile responses include a server-computed `emailVerified` boolean. The new password follows the existing 12–128-character uppercase/lowercase/number policy. Wrong/expired/used codes return a generic invalid-code error. Requests and confirmations have separate account/email and IP rate limits, returning 429 when exceeded: reset request 20 per hour per IP and 3 per 15 minutes per email; verification request 20 per hour per IP and 3 per 15 minutes per account; reset confirmation 30 per 15 minutes per IP and 10 per 15 minutes per email; verification confirmation 30 per 15 minutes per IP and 10 per 15 minutes per account.
 
 ## Security design
 

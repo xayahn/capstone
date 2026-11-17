@@ -35,11 +35,25 @@ const INITIAL_FILTERS: AppliedFilters = {
   to: '',
 };
 
+/** The same filters drive the on-screen report and its full CSV export. */
+function reportRequestBody(filters: AppliedFilters, role: DashboardState['actor']['role'], fullExport = false): string {
+  return JSON.stringify({
+    ...(role === 'system_admin' && filters.parishId !== 'all' ? { parishId: filters.parishId } : {}),
+    ...(filters.serviceTypeId !== 'all' ? { serviceTypeId: filters.serviceTypeId } : {}),
+    status: filters.status,
+    ...(filters.from ? { from: filters.from } : {}),
+    ...(filters.to ? { to: filters.to } : {}),
+    ...(fullExport ? { export: true } : {}),
+  });
+}
+
 export function ReportsModule({ data, busy, onAccessLost }: Props) {
   const [draft, setDraft] = useState<AppliedFilters>(INITIAL_FILTERS);
   const [applied, setApplied] = useState<AppliedFilters>(INITIAL_FILTERS);
   const [retry, setRetry] = useState(0);
   const [loaded, setLoaded] = useState<PrivatePageResult<AdminReport>>();
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
 
   const pageKey = JSON.stringify([
     data.actor.id,
@@ -56,15 +70,7 @@ export function ReportsModule({ data, busy, onAccessLost }: Props) {
     void adminRequest<AdminReport | { error?: string }>('/api/admin/reports', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({
-        ...(data.actor.role === 'system_admin' && applied.parishId !== 'all'
-          ? { parishId: applied.parishId }
-          : {}),
-        ...(applied.serviceTypeId !== 'all' ? { serviceTypeId: applied.serviceTypeId } : {}),
-        status: applied.status,
-        ...(applied.from ? { from: applied.from } : {}),
-        ...(applied.to ? { to: applied.to } : {}),
-      }),
+      body: reportRequestBody(applied, data.actor.role),
     })
       .then(({ response, payload }) => {
         if (!response.ok || !('totals' in payload)) {
@@ -110,20 +116,45 @@ export function ReportsModule({ data, busy, onAccessLost }: Props) {
     setRetry((value) => value + 1);
   }
 
-  function exportCsv() {
-    if (!report) return;
-    const csv = '\uFEFF' + formatReportCsv(report);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') return;
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    const stamp = report.generatedAt.slice(0, 10);
-    link.download = `parishlink-report-${stamp}.csv`;
-    document.body?.appendChild(link);
-    link.click();
-    link.remove?.();
-    URL.revokeObjectURL(url);
+  /**
+   * The on-screen log shows at most 200 rows, so the CSV is built from a
+   * separate full export of every matching appointment. The server refuses
+   * (with a message) instead of returning a partial list.
+   */
+  async function exportCsv() {
+    if (!report || exporting) return;
+    setExporting(true);
+    setExportError('');
+    try {
+      const { response, payload } = await adminRequest<AdminReport | { error?: string }>('/api/admin/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: reportRequestBody(applied, data.actor.role, true),
+      }, 60_000);
+      if (!response.ok || !('totals' in payload)) {
+        throw new Error(('error' in payload && payload.error) || 'The CSV export could not be prepared. Please retry.');
+      }
+      const csv = '\uFEFF' + formatReportCsv(payload);
+      if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
+        throw new Error('This browser cannot save the CSV file.');
+      }
+      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `parishlink-report-${payload.generatedAt.slice(0, 10)}.csv`;
+      document.body?.appendChild(link);
+      link.click();
+      link.remove?.();
+      URL.revokeObjectURL(url);
+    } catch (cause) {
+      if (cause instanceof AdminAccessError) {
+        onAccessLost(cause);
+        return;
+      }
+      setExportError(cause instanceof Error ? cause.message : 'The CSV export could not be prepared. Please retry.');
+    } finally {
+      setExporting(false);
+    }
   }
 
   const conflicts = data.appointments.filter(
@@ -155,10 +186,11 @@ export function ReportsModule({ data, busy, onAccessLost }: Props) {
             <button
               type="button"
               className="secondary-button compact"
-              disabled={!report || busy}
-              onClick={exportCsv}
+              disabled={!report || busy || exporting}
+              aria-busy={exporting}
+              onClick={() => void exportCsv()}
             >
-              Export CSV
+              {exporting ? 'Preparing CSV…' : 'Export CSV'}
             </button>
             <button
               type="button"
@@ -170,6 +202,11 @@ export function ReportsModule({ data, busy, onAccessLost }: Props) {
             </button>
           </div>
         </div>
+        {exportError ? (
+          <div className="alert danger" role="alert">
+            {exportError}
+          </div>
+        ) : null}
         <form className="report-filter-grid" onSubmit={applyFilters}>
           {data.actor.role === 'system_admin' ? (
             <label>
@@ -486,8 +523,9 @@ export function ReportsModule({ data, busy, onAccessLost }: Props) {
                   <h2>Matching appointment log</h2>
                 </div>
                 <span className="result-count">
-                  {report.appointments.length}
-                  {report.appointmentsTruncated ? ' of 200+ rows' : ' rows'}
+                  {report.appointmentsTruncated
+                    ? `First ${report.appointments.length} of ${report.totals.appointments} rows · Export CSV for all`
+                    : `${report.appointments.length} rows`}
                 </span>
               </div>
               {report.appointments.length ? (

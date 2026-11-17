@@ -192,3 +192,67 @@ describe('temporary passwords and password changes', () => {
     await expect(changeStaffPassword(identity, { currentPassword: PASSWORD, newPassword: 'MyNewPassword2026', confirmPassword: 'Different2026xx' })).rejects.toThrow('do not match');
   });
 });
+
+describe('password-change races', () => {
+  const email = 'staff@parishlink.test';
+  const change = (identity: Awaited<ReturnType<typeof readStaffSession>>, newPassword: string) =>
+    changeStaffPassword(identity!, { currentPassword: PASSWORD, newPassword, confirmPassword: newPassword });
+  const passwordChangeAudits = () =>
+    Number((sql.prepare("SELECT COUNT(*) AS n FROM audit_logs WHERE action = 'staff.password.change'").get() as { n: number }).n);
+
+  it('lets only one of two racing changes from different sessions win, and keeps the winner signed in', async () => {
+    const first = await signInStaff({ email, password: PASSWORD }, null);
+    const second = await signInStaff({ email, password: PASSWORD }, null);
+    const firstIdentity = await readStaffSession(cookieFor(first.token));
+    const secondIdentity = await readStaffSession(cookieFor(second.token));
+
+    const results = await Promise.allSettled([
+      change(firstIdentity, 'FirstNewPassword2026'),
+      change(secondIdentity, 'SecondNewPassword2026'),
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const winner = results.findIndex((result) => result.status === 'fulfilled');
+    const loser = results[1 - winner] as PromiseRejectedResult;
+    // The winner ended the loser's session, so the loser is told to sign in again.
+    expect(loser.reason).toBeInstanceOf(StaffAuthError);
+    expect(loser.reason).toMatchObject({ status: 401 });
+
+    const [winnerToken, loserToken] = winner === 0 ? [first.token, second.token] : [second.token, first.token];
+    const [winnerPassword, loserPassword] = winner === 0
+      ? ['FirstNewPassword2026', 'SecondNewPassword2026'] : ['SecondNewPassword2026', 'FirstNewPassword2026'];
+    // Before the fix, the losing request still revoked every other session,
+    // signing out the browser whose password change had succeeded.
+    expect(await readStaffSession(cookieFor(winnerToken))).not.toBeNull();
+    expect(await readStaffSession(cookieFor(loserToken))).toBeNull();
+    await expect(signInStaff({ email, password: winnerPassword }, null)).resolves.toMatchObject({ mustChangePassword: false });
+    await expect(signInStaff({ email, password: loserPassword }, null)).rejects.toMatchObject({ status: 401 });
+    expect(passwordChangeAudits()).toBe(1);
+  });
+
+  it('reports a conflict for a double-submitted change from the same session and keeps that session', async () => {
+    const { token } = await signInStaff({ email, password: PASSWORD }, null);
+    const identity = await readStaffSession(cookieFor(token));
+    const results = await Promise.allSettled([change(identity, 'FirstNewPassword2026'), change(identity, 'SecondNewPassword2026')]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect((results.find((result) => result.status === 'rejected') as PromiseRejectedResult).reason).toMatchObject({ status: 409 });
+    expect(await readStaffSession(cookieFor(token))).not.toBeNull();
+    expect(passwordChangeAudits()).toBe(1);
+  });
+
+  it('refuses a change from a session that was signed out after it was read', async () => {
+    const { token } = await signInStaff({ email, password: PASSWORD }, null);
+    const identity = await readStaffSession(cookieFor(token));
+    await signOutStaff(cookieFor(token));
+    await expect(change(identity, 'MyNewPassword2026')).rejects.toMatchObject({ status: 401 });
+    await expect(signInStaff({ email, password: PASSWORD }, null)).resolves.toMatchObject({ mustChangePassword: false });
+    expect(passwordChangeAudits()).toBe(0);
+  });
+
+  it('refuses a change from an expired session', async () => {
+    const { token } = await signInStaff({ email, password: PASSWORD }, null);
+    const identity = await readStaffSession(cookieFor(token));
+    sql.prepare("UPDATE staff_sessions SET expires_at = datetime('now','-1 minute') WHERE id = ?").run(identity!.sessionId);
+    await expect(change(identity, 'MyNewPassword2026')).rejects.toMatchObject({ status: 401 });
+    await expect(signInStaff({ email, password: PASSWORD }, null)).resolves.toMatchObject({ mustChangePassword: false });
+  });
+});

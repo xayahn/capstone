@@ -136,7 +136,12 @@ async function claim(db: D1Database, now: number, receipt: boolean): Promise<str
   return claimId;
 }
 
-/** Idempotent 24h reminders; bounded work. Not a scheduler itself. */
+/**
+ * Idempotent 24h reminders; bounded work. Not a scheduler itself.
+ * Skipped when the in-app 1-day reminder for the same start time already exists
+ * (key from backend/services/reminders.ts `scheduleReminderKey`), or an older
+ * format reminder exists and the appointment was not rescheduled after it.
+ */
 async function createDueReminders(db: D1Database, now: number) {
   await db.prepare(`INSERT OR IGNORE INTO notifications(id,recipient_user_id,type,title,body,entity_type,entity_id)
     SELECT 'appointment-reminder:'||a.id||':'||a.starts_at,a.parishioner_user_id,'appointment_reminder',
@@ -146,7 +151,10 @@ async function createDueReminders(db: D1Database, now: number) {
       AND julianday(a.starts_at)>julianday(?,'unixepoch','+30 minutes')
       AND julianday(a.starts_at)<=julianday(?,'unixepoch','+24 hours')
       AND NOT EXISTS(SELECT 1 FROM notifications n WHERE n.id='appointment-reminder:'||a.id||':'||a.starts_at
-        OR (n.entity_id=a.id AND n.dedupe_key='reminder:'||a.id||':1d'))
+        OR n.dedupe_key='reminder:'||a.id||':'||strftime('%s',a.starts_at)||':1d'
+        OR (n.entity_id=a.id AND n.dedupe_key='reminder:'||a.id||':1d' AND NOT EXISTS(
+          SELECT 1 FROM appointment_events e WHERE e.appointment_id=a.id AND e.event_type='rescheduled'
+            AND julianday(e.created_at)>=julianday(n.created_at))))
     ORDER BY a.starts_at,a.id LIMIT 100`).bind(now, now).run();
 }
 

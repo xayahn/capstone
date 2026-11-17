@@ -15,7 +15,7 @@ allow = authenticated
     AND required_policy_conditions_are_met
 ```
 
-Client navigation is a convenience, not a security control. Denial returns a safe `403`, changes no data, and creates an audit signal for privileged or suspicious attempts.
+Client navigation is a convenience, not a security control. Denial returns a safe `403` and changes no data. Currently only failed staff sign-ins are audited; other denied requests are not yet written to the audit log.
 
 ## 2. Role and client boundary
 
@@ -57,9 +57,11 @@ Legend: **Own** = own resource; **Scoped** = assigned parish/appointment; **Assi
 | Export personal/record data | Own approved request | Scoped and purpose-authorized | Scoped and purpose-authorized | Purpose-authorized; auditable |
 | Manage service/checklist configuration | No | Propose/scoped if enabled | Approve per policy | Technical publish after required approval |
 | Manage internal users and memberships | No | No by default | No | All, with separation-of-duties review |
-| View security audit logs | Own security events where appropriate | No by default | No by default | Security-authorized administrators only |
+| View security audit logs | No | Own parish only | No | All parishes (parishioner names redacted) |
 | Configure providers/secrets/retention | No | No | No | Authorized system administrators; dual review recommended |
 | Use Gemini general inquiry | Own session | Public-content test | Public-content test | Configuration/test without private data |
+
+> Current implementation: only parish staff of the appointment's parish can download a submitted document in the portal; clergy and system administrators are denied.
 
 “Config” means the source material does not settle the permission and an approved policy must enable it. Until approval, default deny.
 
@@ -83,7 +85,7 @@ System administration requires broad configuration and diagnostic capability, bu
 
 ## 5. Sensitive actions and separation of duties
 
-The following actions require reauthentication or recent MFA for internal users: role/membership changes, secret/provider configuration, bulk export, retention/deletion execution, backup restore, official-certificate configuration, and emergency access.
+Planned (not implemented yet): the following actions should require reauthentication or recent MFA for internal users: role/membership changes, secret/provider configuration, bulk export, retention/deletion execution, backup restore, official-certificate configuration, and emergency access.
 
 Recommended dual review applies to:
 

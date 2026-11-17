@@ -13,9 +13,9 @@ vi.mock('cloudflare:workers', () => ({ env: {}, waitUntil: vi.fn() }));
 vi.mock('../db/runtime', () => runtime);
 vi.mock('@/db/runtime', () => runtime);
 
-import { generateAdminReport } from '../backend/services/report-service';
+import { generateAdminReport, MAX_REPORT_EXPORT_ROWS, MAX_REPORT_PREVIEW_ROWS } from '../backend/services/report-service';
 import { searchAuditLogs } from '../backend/services/audit-service';
-import { escapeCsvCell, formatReportCsv } from '../shared/report-csv';
+import { escapeCsvCell, formatReportCsv, IncompleteReportExportError } from '../shared/report-csv';
 import type { Actor } from '../shared/domain';
 
 let sql: DatabaseSync;
@@ -182,6 +182,66 @@ describe('generateAdminReport', () => {
     expect(clergyReport.totals.appointments).toBe(2);
     expect(clergyReport.totals.verifiedDocuments).toBeNull();
     expect(clergyReport.totals.queueServed).toBeNull();
+  });
+
+  /** Adds `count` extra San Guillermo (p1) appointments in one statement. */
+  function bulkAppointments(count: number) {
+    sql.prepare(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?)
+      INSERT INTO appointments
+        (id, reference, parishioner_user_id, parishioner_name, service_type_id, parish_id, clergy_id, clergy_name, venue_id, venue_name, starts_at, ends_at, status)
+      SELECT 'bulk-' || i, 'PL-B' || i, 'u-member', 'Bulk Member', 'baptism', 'p1', 'c1', 'Fr. Manalo', 'v1', 'Main church',
+        datetime('2026-08-01', '+' || i || ' minutes'), datetime('2026-08-01', '+' || (i + 60) || ' minutes'), 'submitted'
+      FROM n`).run(count);
+  }
+  const appointmentLines = (csv: string) => csv.split('\r\n').filter((line) => line.startsWith('PL-'));
+
+  it('exports every matching appointment even when the screen shows only the first 200', async () => {
+    bulkAppointments(250); // plus the 2 San Guillermo appointments above = 252
+    const preview = await generateAdminReport(staffP1, {});
+    expect(preview.totals.appointments).toBe(252);
+    expect(preview.appointments).toHaveLength(MAX_REPORT_PREVIEW_ROWS);
+    expect(preview.appointmentsTruncated).toBe(true);
+    // A partial list can never become a CSV file.
+    expect(() => formatReportCsv(preview)).toThrow(IncompleteReportExportError);
+
+    const full = await generateAdminReport(staffP1, { export: true });
+    expect(full.appointmentsTruncated).toBe(false);
+    expect(full.appointments).toHaveLength(252);
+    const csv = formatReportCsv(full);
+    expect(appointmentLines(csv)).toHaveLength(252);
+    expect(csv).toContain('Appointments Matching Filters,252');
+    expect(csv).toContain('Appointment Rows in This File,252');
+    expect(new Set(appointmentLines(csv).map((line) => line.split(',')[0])).size).toBe(252);
+  });
+
+  it('applies the same filters and scope to the full export', async () => {
+    bulkAppointments(250);
+    const filtered = await generateAdminReport(staffP1, { export: true, status: 'under_review' });
+    expect(filtered.appointments.map((item) => item.reference)).toEqual(['PL-002']);
+    const otherParish = await generateAdminReport(staffP2, { export: true });
+    expect(otherParish.appointments.map((item) => item.reference)).toEqual(['PL-003']);
+    const adminExport = await generateAdminReport(sysAdmin, { export: true });
+    expect(adminExport.appointments).toHaveLength(253);
+    expect(adminExport.appointments.every((item) => item.parishioner === 'Restricted parishioner')).toBe(true);
+    await expect(generateAdminReport(staffP1, { export: true, parishId: 'p2' })).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('refuses an export larger than the limit instead of returning part of it', async () => {
+    bulkAppointments(MAX_REPORT_EXPORT_ROWS); // 5,002 San Guillermo appointments in total
+    await expect(generateAdminReport(staffP1, { export: true })).rejects.toMatchObject({
+      status: 413,
+      message: expect.stringContaining('Narrow the dates or filters'),
+    });
+    // Narrowing the filters makes the export possible again.
+    const narrowed = await generateAdminReport(staffP1, { export: true, from: '2026-09-01' });
+    expect(narrowed.appointmentsTruncated).toBe(false);
+    expect(narrowed.appointments.map((item) => item.reference)).toEqual(['PL-002', 'PL-001']);
+    // The on-screen preview is unaffected.
+    await expect(generateAdminReport(staffP1, {})).resolves.toMatchObject({ appointmentsTruncated: true });
+  });
+
+  it('rejects an export flag that is not true or false', async () => {
+    await expect(generateAdminReport(staffP1, { export: 'yes' })).rejects.toMatchObject({ status: 400 });
   });
 
   it('filters accurately by Manila calendar dates and rejects invalid date ranges', async () => {

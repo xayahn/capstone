@@ -15,6 +15,7 @@ import { dispatchPushNotifications, registerPushDevice, unregisterPushDevice } f
 import { callExpo, PushProviderError } from '../backend/notifications/expo-provider';
 import { POST as dispatchRoute } from '../backend/routes/system/push-dispatch';
 import { requestPushDispatch } from '../jobs/push-scheduler';
+import { scheduleReminderKey } from '../backend/services/reminders';
 
 const projectId = '12345678-1234-4234-8234-123456789abc';
 const installation = 'aaaaaaaa-1234-4234-8234-123456789abc';
@@ -204,6 +205,29 @@ describe('durable session-bound Expo push pipeline', () => {
     await dispatch(sendOk()); await dispatch(sendOk());
     expect(sql.prepare("SELECT count(*) AS n FROM notifications WHERE type='appointment_reminder'").get()?.n).toBe(1);
     expect(sql.prepare('SELECT count(*) AS n FROM push_deliveries').get()?.n).toBe(1);
+  });
+  it('skips the push reminder when the in-app reminder for the same time exists, and honours older keys until a reschedule', async () => {
+    await register();
+    sql.exec("INSERT INTO service_types(id,slug,name,duration_minutes)VALUES('svc','svc','Test',60)");
+    for (const [id, hours] of [['a1', 12], ['a2', 13], ['a3', 14]] as const) {
+      sql.prepare(`INSERT INTO appointments(id,reference,parishioner_user_id,parishioner_name,service_type_id,parish_id,starts_at,ends_at,status)
+        VALUES(?,?,'u1','Private','svc','p1',datetime(?,'unixepoch','+${hours} hours'),datetime(?,'unixepoch','+${hours + 1} hours'),'approved')`)
+        .run(id, id.toUpperCase(), now, now);
+    }
+    const storedStart = (id: string) => (sql.prepare('SELECT starts_at AS s FROM appointments WHERE id = ?').get(id) as { s: string }).s;
+    // a1: in-app reminder already exists for this exact time (current key format; SQLite-format start time).
+    sql.prepare(`INSERT INTO notifications(id,recipient_user_id,type,title,body,entity_type,entity_id,dedupe_key)
+      VALUES('in-app-a1','u1','reminder','Appointment tomorrow','Body','appointment','a1',?)`).run(scheduleReminderKey('a1', storedStart('a1'), '1d'));
+    // a2: older key format, appointment not rescheduled since -> still counts.
+    // a3: older key format, but the appointment was rescheduled afterwards -> remind again.
+    sql.exec(`INSERT INTO notifications(id,recipient_user_id,type,title,body,entity_type,entity_id,dedupe_key,created_at) VALUES
+      ('old-a2','u1','reminder','Appointment tomorrow','Body','appointment','a2','reminder:a2:1d',datetime('now','-1 hour')),
+      ('old-a3','u1','reminder','Appointment tomorrow','Body','appointment','a3','reminder:a3:1d',datetime('now','-1 hour'));
+      INSERT INTO appointment_events(id,appointment_id,event_type,detail,created_at) VALUES('ev-a3','a3','rescheduled','Moved',datetime('now'));`);
+    await dispatch(sendOk());
+    const pushed = (sql.prepare("SELECT entity_id AS id FROM notifications WHERE type='appointment_reminder' ORDER BY entity_id").all() as { id: string }[])
+      .map((row) => row.id);
+    expect(pushed).toEqual(['a3']);
   });
 });
 

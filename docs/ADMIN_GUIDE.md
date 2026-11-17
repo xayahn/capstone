@@ -9,10 +9,10 @@ The portal supports coordination; it does not transfer canonical authority to so
 ## 2. Sign-in and security
 
 1. Open only the approved HTTPS portal address.
-2. Sign in with your named internal account and complete MFA.
+2. Sign in with your named internal email and password (multi-factor sign-in is planned, not yet available).
 3. Confirm the displayed role and effective parish scope before work.
 4. Lock/sign out when leaving the device. Never share an account or approval token.
-5. Reauthenticate when prompted for high-risk configuration, export, or access.
+5. Sessions end 12 hours after sign-in. Change your password from the portal if you suspect it is known to someone else; this signs out your other sessions.
 
 If scope is wrong, stop and contact an authorized system administrator. Do not work around the restriction through another account or exported copy.
 
@@ -52,7 +52,7 @@ Use the reschedule workflow so the backend rechecks duration, buffers, clergy, v
 
 1. Open **Documents** from the scoped queue or appointment.
 2. Confirm the appointment and exact checklist requirement.
-3. Open the private, time-limited viewer. Do not download unless the approved procedure requires it.
+3. Open the document preview. Only parish staff of the appointment's parish can open it; the file is sent as a private, non-cached download.
 4. Check readability and the approved pre-validation rule. Automated scanning/OCR does not decide acceptance.
 5. Choose **Verified** or **Needs replacement**. For replacement, provide a concise note that helps the parishioner without exposing sensitive values in notification text.
 6. Confirm reviewer/time/history and close the view.
@@ -106,7 +106,7 @@ Never paste raw HTML/scripts, uploaded-document detail, private appointment info
 
 ## 11. Reports and evaluation
 
-Operational reports use scoped authoritative data and identify filters, local time zone, generation time, and source. Exports are purpose-limited, minimized, protected, and audited.
+Operational reports use scoped authoritative data and identify filters, local time zone, generation time, and source. The screen lists the first 200 matching appointments; **Export CSV** fetches every matching appointment (up to 5,000; otherwise narrow the dates or filters) and the file states both the number of matching appointments and the number of rows it contains. Exports are purpose-limited and minimized (system administrators see no parishioner names). Report generation and exports are not yet written to the audit log.
 
 ISO/IEC 25010 reports may use only actual consented responses from the validated instrument. The source appendix is missing, and no planned evaluation is assumed complete. If there are no valid responses, report **No validated results**. Do not copy prototype scores or invent Chapter IV/V findings.
 
@@ -124,7 +124,7 @@ Authorized system administrators may:
 - review audit/security/health signals and perform controlled support;
 - execute approved migrations, backups/restores, retention, and incident procedures.
 
-High-risk access/configuration/export/disposal uses reauthentication and recommended dual review. Never edit production data directly to bypass a workflow. Use versioned tools/migrations and preserve an audit/correction event.
+High-risk access/configuration/export/disposal should use dual review (reauthentication prompts are planned, not implemented). Never edit production data directly to bypass a workflow. Use versioned tools/migrations and preserve an audit/correction event.
 
 ## 14. Common exceptions
 

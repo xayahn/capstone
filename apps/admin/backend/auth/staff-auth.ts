@@ -258,18 +258,39 @@ export async function changeStaffPassword(identity: StaffIdentity, input: Record
 
   const salt = randomHex();
   const passwordHash = await derivePassword(newPassword, salt, PASSWORD_ITERATIONS);
+  // One transaction. Each step is conditional so that, when two changes race,
+  // only the request whose new hash is actually stored ends other sessions and
+  // writes the audit entry; the losing request changes nothing.
   const results = await db.batch([
+    // The password changes only if it is still the one verified above AND the
+    // requesting session is still active (not revoked, signed out or expired).
     db.prepare(`UPDATE staff_credentials SET password_hash = ?, password_salt = ?, password_iterations = ?,
         must_change_password = 0, failed_attempts = 0, locked_until = NULL,
         password_changed_at = datetime('now'), updated_at = datetime('now')
-      WHERE user_id = ? AND password_hash = ?`)
-      .bind(passwordHash, salt, PASSWORD_ITERATIONS, identity.userId, credential.passwordHash),
-    // Keep the current browser signed in; end every other session.
+      WHERE user_id = ? AND password_hash = ?
+        AND EXISTS (SELECT 1 FROM staff_sessions WHERE id = ? AND user_id = ? AND revoked_at IS NULL
+          AND datetime(expires_at) > datetime('now'))`)
+      .bind(passwordHash, salt, PASSWORD_ITERATIONS, identity.userId, credential.passwordHash, identity.sessionId, identity.userId),
+    // Keep the current browser signed in; end every other session, but only
+    // when this request's new password is the one now stored.
     db.prepare(`UPDATE staff_sessions SET revoked_at = datetime('now')
-      WHERE user_id = ? AND id <> ? AND revoked_at IS NULL`).bind(identity.userId, identity.sessionId),
+      WHERE user_id = ? AND id <> ? AND revoked_at IS NULL
+        AND EXISTS (SELECT 1 FROM staff_credentials WHERE user_id = ? AND password_hash = ?)`)
+      .bind(identity.userId, identity.sessionId, identity.userId, passwordHash),
+    db.prepare(`INSERT INTO audit_logs
+        (ip_hash, id, actor_id, action, entity_type, entity_id, parish_id, outcome, detail)
+      SELECT ?, ?, ?, 'staff.password.change', 'user', ?, (SELECT home_parish_id FROM users WHERE id = ?),
+        'success', 'Password changed; other sessions ended'
+      WHERE EXISTS (SELECT 1 FROM staff_credentials WHERE user_id = ? AND password_hash = ?)`)
+      .bind(await auditIpHash(), crypto.randomUUID(), identity.userId, identity.userId, identity.userId, identity.userId, passwordHash),
   ]);
-  if (Number(results[0]?.meta.changes) < 1) throw new StaffAuthError('Your password changed in another request. Sign in again.', 409);
-  await writeStaffAudit(identity.userId, 'staff.password.change', identity.userId, 'success', 'Password changed; other sessions ended');
+  if (!(Number(results[0]?.meta.changes) >= 1)) {
+    const session = await db.prepare(`SELECT 1 AS active FROM staff_sessions
+      WHERE id = ? AND user_id = ? AND revoked_at IS NULL AND datetime(expires_at) > datetime('now')`)
+      .bind(identity.sessionId, identity.userId).first<{ active: number }>();
+    if (!session) throw new StaffAuthError('Your session has ended. Sign in again.', 401);
+    throw new StaffAuthError('Your password changed in another request. Sign in again.', 409);
+  }
 }
 
 const TEMP_ALPHABET = {

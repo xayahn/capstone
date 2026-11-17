@@ -277,3 +277,93 @@ describe('AdminPortal 10-module navigation, Reports, Audit log, and Settings', (
     });
   });
 });
+
+describe('Reports CSV export', () => {
+  const row = (index: number) => ({
+    id: `appt-${index}`,
+    reference: `PL-2026-EXP${String(index).padStart(3, '0')}`,
+    parishioner: 'Restricted parishioner',
+    service: 'Baptism',
+    parish: 'San Guillermo Parish',
+    clergy: 'Fr. A. Manalo',
+    venue: 'Main church',
+    startsAt: '2026-09-10T01:30:00.000Z',
+    status: 'submitted' as const,
+    verifiedDocuments: 0,
+    requiredDocuments: 2,
+  });
+  let reportBodies: Record<string, unknown>[];
+  let saved: Blob[];
+
+  beforeEach(() => {
+    reportBodies = [];
+    saved = [];
+    vi.stubGlobal('document', {
+      visibilityState: 'visible',
+      getElementById: () => ({ focus() {} }),
+      createElement: () => ({ click: vi.fn(), remove: vi.fn(), href: '', download: '' }),
+      body: { appendChild: vi.fn() },
+    });
+    vi.stubGlobal('URL', class extends URL {
+      static override createObjectURL = vi.fn((blob: Blob) => { saved.push(blob); return 'blob:report'; });
+      static override revokeObjectURL = vi.fn();
+    });
+    // The screen shows only the first rows; the full export must be requested separately.
+    reportPayload = { ...reportPayload, totals: { ...reportPayload.totals, appointments: 3 }, appointments: [row(1)], appointmentsTruncated: true };
+  });
+
+  async function settle() {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+  }
+
+  it('downloads every matching appointment from a separate full export, not the on-screen preview', async () => {
+    customResponder = (path, init) => {
+      if (path !== '/api/admin/reports') return null;
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      reportBodies.push(body);
+      return body.export === true
+        ? json({ ...reportPayload, appointments: [row(1), row(2), row(3)], appointmentsTruncated: false })
+        : json(reportPayload);
+    };
+    await mount();
+    await click('Reports');
+    expect(view()).toContain('First 1 of 3 rows');
+
+    await click('Export CSV');
+    await settle();
+    expect(reportBodies.at(-1)).toEqual({ status: 'all', export: true });
+    expect(saved).toHaveLength(1);
+    const csv = await saved[0]!.text();
+    expect(csv.match(/^PL-2026-EXP/gm)).toHaveLength(3);
+    expect(csv).toContain('Appointments Matching Filters,3');
+    expect(csv).toContain('Appointment Rows in This File,3');
+  });
+
+  it('shows the server message and saves nothing when the export is refused', async () => {
+    customResponder = (path, init) => {
+      if (path !== '/api/admin/reports') return null;
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return body.export === true
+        ? json({ error: 'More than 5,000 appointments match these filters. Narrow the dates or filters, then export again.' }, 413)
+        : json(reportPayload);
+    };
+    await mount();
+    await click('Reports');
+    await click('Export CSV');
+    await settle();
+    expect(view()).toContain('Narrow the dates or filters, then export again.');
+    expect(saved).toHaveLength(0);
+  });
+
+  it('refuses to save a truncated export even if the server returned one', async () => {
+    customResponder = (path) => (path === '/api/admin/reports' ? json(reportPayload) : null);
+    await mount();
+    await click('Reports');
+    await click('Export CSV');
+    await settle();
+    expect(view()).toContain('only part of the matching appointments');
+    expect(saved).toHaveLength(0);
+  });
+});

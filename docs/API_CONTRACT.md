@@ -25,7 +25,7 @@ The current client/server integration uses `/api/mobile` and returns the domain 
 | `GET` | `/api/mobile/snapshot` | Mobile bearer token |
 | `POST` | `/api/mobile/availability` | Mobile bearer token, user-throttled |
 | `POST` | `/api/mobile/appointments` | Mobile bearer token, user-throttled, `Idempotency-Key` |
-| `POST` | `/api/mobile/appointments/{id}/documents/{documentId}` | Mobile bearer token, appointment ownership |
+| `POST` | `/api/mobile/appointments/{id}/documents/{documentId}` | Mobile bearer token, appointment ownership, user-throttled (20/hour); 10 MB, PDF/JPEG/PNG signature checks; production requires a scanner |
 | `POST` | `/api/mobile/notifications/{id}/read` | Mobile bearer token, notification ownership |
 | `POST` | `/api/mobile/queue/tickets` | Mobile bearer token, user-throttled, `Idempotency-Key` |
 | `DELETE` | `/api/mobile/queue/tickets/active` | Mobile bearer token |
@@ -34,9 +34,9 @@ The current client/server integration uses `/api/mobile` and returns the domain 
 | `DELETE` | `/api/mobile/push/devices` | Mobile bearer token; unregisters only the matching current user/session installation |
 | `PUT` | `/api/mobile/profile` | Mobile bearer token |
 
-The internal portal uses `GET/POST /api/admin/state` for role-scoped reads and command-style writes, plus private document upload/download routes under `/api/admin/documents`. Admin writes use the protected internal session, same-origin validation, server role/parish checks, bounded JSON input, optimistic versions where applicable, and an `Idempotency-Key` per logical command.
+The internal portal uses `GET/POST /api/admin/state` for role-scoped reads and command-style writes, private document routes (`GET /api/admin/documents/{id}`, `POST /api/admin/documents/upload`), `POST /api/admin/reports`, `POST /api/admin/audit`, `POST /api/admin/records`, `POST /api/admin/assignments`, and `POST /api/admin/auth/{sign-in,sign-out,change-password,temporary-password}`. `POST /api/admin/reports` takes the report filters plus an optional `export` boolean: without it the response lists at most 200 appointments (`appointmentsTruncated` marks a longer list); with `export: true` it lists every matching appointment up to 5,000, and returns 413 asking the user to narrow the filters when more match. Admin writes use the protected internal session, same-origin validation, server role/parish checks, bounded JSON input, optimistic versions where applicable, and an `Idempotency-Key` per logical command.
 
-Browser-origin mobile calls receive CORS headers only for an exact configured origin. Development defaults cover `localhost:8081` and `127.0.0.1:8081`; production accepts only exact HTTPS origins in `MOBILE_ALLOWED_ORIGINS`. Native clients normally send no browser `Origin` header. Wildcard credentialed CORS is not used.
+Browser-origin mobile calls receive CORS headers only for an exact configured origin. Development defaults cover `localhost:8081` and `127.0.0.1:8081`, plus `http://<private-LAN-address>:8081` when the API itself is reached on that private (RFC 1918) address; production accepts only exact HTTPS origins in `MOBILE_ALLOWED_ORIGINS`. Requests with no `Origin` header are allowed. Native clients normally send no browser `Origin` header. Wildcard credentialed CORS is not used.
 
 The `/api/v1` material below remains the forward contract for a future explicitly versioned public API. A pre-release decision must either adopt it and migrate the clients or record `/api/mobile` as version 1; clients and server must not silently diverge.
 
@@ -74,7 +74,7 @@ New and legacy accounts can have `emailVerified:false`. The server returns that 
 
 | Header | Use |
 |---|---|
-| `Authorization` or secure session cookie | Authentication, according to selected identity architecture |
+| `Authorization` or secure session cookie | Mobile: `Authorization: Bearer <43-character token>`. Portal: `HttpOnly`, `SameSite=Strict` session cookie |
 | `Idempotency-Key` | Required on retryable create/consequential POST operations; random per logical action |
 | `If-Match` | Required for versioned transitions/updates, using the current entity version/ETag |
 | `X-Request-Id` | Optional client correlation; server returns a safe authoritative request ID |

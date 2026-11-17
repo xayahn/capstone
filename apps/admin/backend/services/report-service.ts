@@ -11,7 +11,14 @@ import {
   type ReportBreakdownRow,
 } from '@/shared/domain';
 
-const MAX_REPORT_ROWS = 200;
+/** Rows shown in the on-screen appointment log. */
+export const MAX_REPORT_PREVIEW_ROWS = 200;
+/**
+ * Rows allowed in a CSV export. An export is either complete or refused: when
+ * more appointments match, the request fails with a clear message instead of
+ * silently returning a partial list.
+ */
+export const MAX_REPORT_EXPORT_ROWS = 5000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function optionalFilterString(value: unknown, label: string, max: number): string | null {
@@ -47,6 +54,10 @@ export async function generateAdminReport(
   ) {
     throw new AdminServiceError('Assigned internal access is required to generate operational reports.', 403);
   }
+
+  const exportAll = input.export ?? false;
+  if (typeof exportAll !== 'boolean') throw new AdminServiceError('Export must be true or false.');
+  const rowLimit = exportAll ? MAX_REPORT_EXPORT_ROWS : MAX_REPORT_PREVIEW_ROWS;
 
   const db = getRawDb();
   const requestedParishId = optionalFilterString(input.parishId, 'Parish filter', 100);
@@ -241,9 +252,16 @@ export async function generateAdminReport(
            ORDER BY julianday(a.starts_at) DESC, a.id DESC
            LIMIT ?`,
         )
-        .bind(...values, MAX_REPORT_ROWS + 1)
+        .bind(...values, rowLimit + 1)
         .all<ReportAppointmentRow>(),
     ]);
+
+  if (exportAll && appointmentRows.results.length > rowLimit) {
+    throw new AdminServiceError(
+      `More than ${MAX_REPORT_EXPORT_ROWS.toLocaleString('en-US')} appointments match these filters. Narrow the dates or filters, then export again.`,
+      413,
+    );
+  }
 
   const countsByStatus = new Map<AppointmentStatus, number>();
   for (const row of statusRows.results) {
@@ -271,7 +289,7 @@ export async function generateAdminReport(
         ? selectedParish.name
         : 'Vicariate-wide (all eight parishes)';
 
-  const boundedAppointments = appointmentRows.results.slice(0, MAX_REPORT_ROWS).map((row) => ({
+  const boundedAppointments = appointmentRows.results.slice(0, rowLimit).map((row) => ({
     ...row,
     parishioner: actor.role === 'system_admin' ? 'Restricted parishioner' : row.parishioner,
     startsAt: new Date(utcTimestamp(row.startsAt)).toISOString(),
@@ -330,6 +348,6 @@ export async function generateAdminReport(
         approved: Number(row.approved),
       })),
     appointments: boundedAppointments,
-    appointmentsTruncated: appointmentRows.results.length > MAX_REPORT_ROWS,
+    appointmentsTruncated: appointmentRows.results.length > rowLimit,
   };
 }

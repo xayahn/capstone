@@ -29,7 +29,21 @@ function metricCell(value: number | null): number | string {
   return value === null ? 'Restricted' : value;
 }
 
+export class IncompleteReportExportError extends Error {
+  constructor() {
+    super('This report lists only part of the matching appointments. Request the full export before creating a CSV file.');
+    this.name = 'IncompleteReportExportError';
+  }
+}
+
+/**
+ * CSV for a complete report. Refuses a truncated report so an exported file can
+ * never silently omit appointments, and states both the number of matching
+ * appointments and the number of rows written so readers can confirm the file
+ * is complete.
+ */
 export function formatReportCsv(report: AdminReport): string {
+  if (report.appointmentsTruncated) throw new IncompleteReportExportError();
   const lines: string[] = [];
 
   lines.push(csvRow(['ParishLink Operational Report']));
@@ -39,6 +53,8 @@ export function formatReportCsv(report: AdminReport): string {
   lines.push(csvRow(['Date To', report.filters.to ?? 'All dates']));
   lines.push(csvRow(['Sacrament Filter', report.filters.serviceTypeId ? humanizeStatus(report.filters.serviceTypeId.replaceAll('-', '_')) : 'All sacraments']));
   lines.push(csvRow(['Status Filter', report.filters.status === 'all' ? 'All statuses' : humanizeStatus(report.filters.status)]));
+  lines.push(csvRow(['Appointments Matching Filters', report.totals.appointments]));
+  lines.push(csvRow(['Appointment Rows in This File', report.appointments.length]));
   lines.push('');
 
   lines.push(csvRow(['Summary Metric', 'Value']));
