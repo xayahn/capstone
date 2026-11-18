@@ -77,11 +77,22 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   ) {
     throw new Error('Release verification requires EXPO_PUBLIC_APP_ENV=production.');
   }
+  // Over-the-air updates opened in Expo Go must target Expo Go's SDK runtime.
+  // Only this explicit publishing mode switches the runtime policy; native
+  // builds keep the appVersion policy from app.json.
+  const expoGoUpdate = process.env.PARISHLINK_EXPO_GO_UPDATE === 'true';
+  if (expoGoUpdate && !projectId) {
+    throw new Error('PARISHLINK_EXPO_GO_UPDATE requires the Expo project ID.');
+  }
 
   return {
     ...config,
     name: config.name ?? 'ParishLink',
     slug: config.slug ?? 'parishlink-mobile',
+    ...(expoGoUpdate ? {
+      runtimeVersion: { policy: 'sdkVersion' as const },
+      updates: { ...config.updates, url: `https://u.expo.dev/${projectId}` },
+    } : {}),
     ...(googleServicesFile ? { android: { ...config.android, googleServicesFile } } : {}),
     extra: {
       ...config.extra,

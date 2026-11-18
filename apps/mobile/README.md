@@ -31,6 +31,20 @@ Open the app in Expo Go (same Wi-Fi as the laptop) or press `w` for the web prev
 
 `.env` is ignored by git. Setting `EXPO_PUBLIC_DEMO_MODE=true` instead runs a self-contained demonstration that stores fictional data on the device only; it does not reach any parish.
 
+### Demonstration update for Expo Go
+
+To open the on-device demonstration on a phone without the laptop, publish it as an EAS Update that Expo Go can load. `PARISHLINK_EXPO_GO_UPDATE=true` switches the runtime policy to Expo Go's SDK runtime for this publish only; normal builds keep the `appVersion` policy from `app.json`.
+
+```powershell
+$env:EXPO_NO_DOTENV = '1'            # do not read the local .env (it holds a LAN address)
+$env:EXPO_PUBLIC_APP_ENV = 'preview'
+$env:EXPO_PUBLIC_DEMO_MODE = 'true'
+$env:PARISHLINK_EXPO_GO_UPDATE = 'true'
+npx eas-cli update --branch demo --environment preview --message "ParishLink parishioner demo"
+```
+
+Open the update from its QR code or link on the Expo dashboard. On iPhone, Expo Go must be signed in to an Expo account that can access the project. The demonstration has no staff portal and keeps its fictional data on the phone.
+
 ## How it talks to the server
 
 Screens never call the network directly. They use `src/repositories/parishLinkRepository.ts`, which uses `src/api/mobileApiClient.ts` for authentication headers, timeouts, cancellation and safe error messages. Session tokens are kept in Expo SecureStore on phones (AsyncStorage only in the web preview).
