@@ -42,7 +42,7 @@ To recover a forgotten parishioner password:
 3. If an email arrives, enter the newest code, a new 12–128 character password with uppercase and lowercase letters plus a number, and the matching confirmation.
 4. After **Reset confirmed**, return to sign-in and enter the new password manually. Every prior mobile session and push-device binding has been revoked, so re-enable push on trusted devices if/when native push is released.
 
-The current local environment cannot send these messages because `MAIL_ENABLED`, `MAIL_DELIVERY_VERIFIED`, `RESEND_API_KEY`, and `MAIL_FROM` are unavailable. A `503`/delivery-unavailable message is expected locally and is not evidence that an email was attempted or delivered. Internal parish staff, clergy, and system administrators use their separately governed SSO recovery path; they do not use the parishioner reset form. See [`ACCOUNT_RECOVERY.md`](ACCOUNT_RECOVERY.md).
+The local development environment cannot send these messages because `MAIL_ENABLED`, `MAIL_DELIVERY_VERIFIED`, `RESEND_API_KEY`, and `MAIL_FROM` are unavailable there; a `503`/delivery-unavailable message is expected locally and is not evidence that an email was attempted or delivered. The online demonstration server can send codes, but only to the Resend account owner's mailbox (Resend's free test sender). Internal parish staff, clergy, and system administrators do not use the parishioner reset form; a system administrator issues them a one-time temporary password that must be changed at first sign-in (see [`STAFF_AUTHENTICATION.md`](STAFF_AUTHENTICATION.md)). See [`ACCOUNT_RECOVERY.md`](ACCOUNT_RECOVERY.md).
 
 ## 4. Explore parishes and services
 

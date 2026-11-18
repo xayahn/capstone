@@ -72,7 +72,7 @@ Screens never call the network directly. They use `src/repositories/parishLinkRe
 
 The server is the final authority for scheduling conflicts, file checks, ownership and permissions; the app's own checks only give faster feedback.
 
-Email codes need an email sender configured on the server, and push notifications are disabled on the server. Neither has been tested on a physical phone.
+Email codes need an email sender configured on the server. The online demonstration server has one (Resend's free test sender, which delivers only to the Resend account owner's mailbox); the local development server does not. Push notifications are disabled on the server and have not been tested on a physical phone.
 
 ## Parish assistant
 

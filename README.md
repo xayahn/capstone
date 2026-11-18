@@ -44,7 +44,7 @@ Working locally and on the hosted synthetic-data demonstration, and covered by a
 Not done for real-parish launch (release gates):
 
 - **Real-parish production hosting is not launched.** An online demonstration copy runs on Cloudflare with fictional data only (`DEMO_DEPLOYMENT=true`) and private demonstration passwords.
-- **Email is not set up.** Password-reset and email-verification codes cannot be delivered until an email sender is configured.
+- **Email works only on the online demonstration, and only to one address.** It uses Resend's free test sender (`onboarding@resend.dev`), which delivers only to the Resend account owner's own mailbox. On 18 November 2026 a password-reset code sent from the online demonstration was received in that mailbox. Sending to any parishioner needs a verified sender domain. The local development server has no email sender.
 - **Push notifications are disabled** and have never been tested on a physical phone. In-app notifications work.
 - **No document malware scanner is configured.** In production mode the server refuses uploads until one is.
 - **No user evaluation yet.** No pilot or ISO/IEC 25010 survey has been run; no evaluation scores exist.

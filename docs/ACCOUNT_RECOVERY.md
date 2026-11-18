@@ -1,6 +1,8 @@
 # Account recovery and email verification
 
-Status at 2026-11-09: backend/mobile implementation, 39 actual-Worker source-route checks and 36 running-development-backend HTTP checks pass. Browser recovery navigation, input validation and unavailable-mail handling were observed. **Live email delivery is not configured or accepted. Installed Android/iPhone acceptance is not executed. No deployment.** See [local account acceptance](LOCAL_ACCOUNT_ACCEPTANCE_2026-11-09.md) for the test-router/DB-bootstrap boundary, disabled-provider controls and exact evidence. Historical dated audits remain historical evidence.
+Update 2026-11-18 (online demonstration only): the hosted demonstration server (`DEMO_DEPLOYMENT=true`, fictional data) has `MAIL_ENABLED=true`, `MAIL_DELIVERY_VERIFIED=true`, `MAIL_FROM=onboarding@resend.dev` and a server-only `RESEND_API_KEY`. A password-reset request for the owner's own account was accepted by Resend (challenge `delivery_status` became `ready`) and the owner confirmed the code arrived in that mailbox. Resend's test sender delivers only to the Resend account owner's address, so no other recipient can receive codes until a sender domain is verified. The local development server still has no email sender.
+
+Status at 2026-11-09: backend/mobile implementation, 39 actual-Worker source-route checks and 36 running-development-backend HTTP checks pass. Browser recovery navigation, input validation and unavailable-mail handling were observed. **At that date live email delivery was not configured or accepted. Installed Android/iPhone acceptance is not executed.** See [local account acceptance](LOCAL_ACCOUNT_ACCEPTANCE_2026-11-09.md) for the test-router/DB-bootstrap boundary, disabled-provider controls and exact evidence. Historical dated audits remain historical evidence.
 
 ## User flows
 
