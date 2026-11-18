@@ -4,6 +4,7 @@ declare namespace Cloudflare {
     GEMINI_MODEL?: string;
     MOBILE_ALLOWED_ORIGINS?: string;
     RELEASE_VERSION?: string;
-    FILES: R2Bucket;
+    FILES?: R2Bucket;
+    DEMO_FILES_KV?: KVNamespace;
   }
 }

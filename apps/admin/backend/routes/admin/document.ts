@@ -1,5 +1,5 @@
 import { auditIpHash } from '@/backend/security/audit-ip';
-import { env } from 'cloudflare:workers';
+import { getPrivateDocumentStore } from '@/backend/storage/private-documents';
 import { getStaffUser } from '@/backend/auth/staff-session';
 import { AdminServiceError, resolveActor } from '@/backend/services/admin-service';
 import { getRawDb } from '@/db/runtime';
@@ -26,7 +26,8 @@ export async function GET(
     const identity = await getStaffUser();
     if (!identity) throw new AdminServiceError('Sign in to continue.', 401);
     const actor = await resolveActor(identity);
-    if (!env.FILES) throw new AdminServiceError('Private document storage is unavailable.', 503);
+    const store = getPrivateDocumentStore();
+    if (!store) throw new AdminServiceError('Private document storage is unavailable.', 503);
     const { id } = await context.params;
     const row = await getRawDb().prepare(`SELECT ds.id, ds.storage_key AS storageKey,
       ds.original_file_name AS fileName, ds.mime_type AS mimeType,
@@ -41,7 +42,7 @@ export async function GET(
     const authorized = actor.role === 'parish_staff' && actor.parishId === row.parishId;
     if (!authorized) throw new AdminServiceError('You cannot access this document.', 403);
     if (!row.storageKey) throw new AdminServiceError('No stored file was found for this document record.', 404);
-    const object = await env.FILES.get(row.storageKey);
+    const object = await store.get(row.storageKey);
     if (!object) throw new AdminServiceError('The stored file could not be found.', 404);
 
     await getRawDb().prepare(`INSERT INTO audit_logs

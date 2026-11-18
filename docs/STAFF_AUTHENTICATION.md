@@ -43,7 +43,7 @@ Seeded only in local development, together with the synthetic demonstration data
 
 ## Verification
 
-**18 November 2026 (local):** admin release check passed: 374 admin tests (17 staff-auth), 121/121 security regressions, 39/39 account Worker checks, TypeScript, ESLint and production build.
+**18 November 2026 (local):** admin release check passed: 375 admin tests (17 staff-auth), 123/123 security regressions, 39/39 account Worker checks, TypeScript, ESLint and production build.
 
 **9 November 2026 (historical, at introduction):**
 

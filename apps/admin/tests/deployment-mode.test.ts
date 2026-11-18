@@ -89,7 +89,30 @@ describe('/ready in production', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       deployment: 'standard',
-      checks: { documentScanner: 'configured', passwordHashing: 'pbkdf2-sha256-210000' },
+      checks: { privateStorage: 'configured', documentScanner: 'configured', passwordHashing: 'pbkdf2-sha256-210000' },
+    });
+  });
+
+  it('allows DEMO_FILES_KV only when DEMO_DEPLOYMENT is exactly "true", and refuses it otherwise', async () => {
+    resetEnv();
+    delete env.FILES;
+    env.DEMO_FILES_KV = { put: async () => {}, getWithMetadata: async () => ({ value: null, metadata: null }), delete: async () => {} };
+    env.DOCUMENT_SCANNER = { fetch: async () => Response.json({}) };
+    vi.stubEnv('NODE_ENV', 'production');
+    expect((await readiness()).status).toBe(503);
+
+    delete env.DOCUMENT_SCANNER;
+    env.DEMO_DEPLOYMENT = 'true';
+    const response = await readiness();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      status: 'ready',
+      deployment: 'demo-fictional-data-only',
+      checks: {
+        privateStorage: 'demo-kv',
+        documentScanner: 'demo-deployment-prefilter-only',
+        passwordHashing: 'pbkdf2-sha256-100000',
+      },
     });
   });
 });

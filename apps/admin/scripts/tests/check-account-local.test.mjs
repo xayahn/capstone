@@ -64,7 +64,7 @@ async function preflightFixture(checks) {
 
 test('configured mail or push and a production-capable scanner state stop before any account write', async () => {
   const safe = { database: 'ok', privateStorage: 'configured', documentScanner: 'development-prefilter-only', accountEmail: 'disabled', pushNotifications: 'disabled' };
-  for (const changed of [{ accountEmail: 'configured' }, { pushNotifications: 'configured' }, { documentScanner: 'configured' }, { documentScanner: 'demo-deployment-prefilter-only' }, { database: 'failed' }]) {
+  for (const changed of [{ accountEmail: 'configured' }, { pushNotifications: 'configured' }, { documentScanner: 'configured' }, { documentScanner: 'demo-deployment-prefilter-only' }, { privateStorage: 'demo-kv' }, { database: 'failed' }]) {
     const { calls, result } = await preflightFixture({ ...safe, ...changed });
     assert.equal(result.passed, false);
     assert.deepEqual(calls.map(row => row.path), ['/health', '/ready']);

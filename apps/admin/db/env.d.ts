@@ -16,7 +16,8 @@ declare namespace Cloudflare {
     RELEASE_VERSION?: string;
     AUDIT_IP_HASH_KEY?: string;
     DEMO_DEPLOYMENT?: string;
-    FILES: R2Bucket;
+    FILES?: R2Bucket;
+    DEMO_FILES_KV?: KVNamespace;
     DOCUMENT_SCANNER?: Fetcher;
   }
 }

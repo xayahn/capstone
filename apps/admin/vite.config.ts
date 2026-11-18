@@ -19,6 +19,13 @@ const demoDeploymentBuild = process.env.PARISHLINK_DEMO_DEPLOYMENT === 'true';
 if (demoDeploymentBuild && !deployDatabaseId) {
   throw new Error('PARISHLINK_DEMO_DEPLOYMENT requires PARISHLINK_D1_DATABASE_ID.');
 }
+const deployKvNamespaceId = process.env.PARISHLINK_DEMO_KV_NAMESPACE_ID?.trim();
+if (deployKvNamespaceId && !/^[0-9a-f]{32}$/i.test(deployKvNamespaceId)) {
+  throw new Error('PARISHLINK_DEMO_KV_NAMESPACE_ID must be a 32-character KV namespace ID.');
+}
+if (deployKvNamespaceId && !demoDeploymentBuild) {
+  throw new Error('PARISHLINK_DEMO_KV_NAMESPACE_ID is only allowed with PARISHLINK_DEMO_DEPLOYMENT=true.');
+}
 const releaseVersion = process.env.PARISHLINK_RELEASE_VERSION?.trim();
 
 const localBindingConfig = {
@@ -32,12 +39,23 @@ const localBindingConfig = {
       migrations_dir: 'drizzle',
     },
   ],
-  r2_buckets: [
-    {
-      binding: 'FILES',
-      bucket_name: 'parishlink-r2',
-    },
-  ],
+  ...(deployKvNamespaceId
+    ? {
+        kv_namespaces: [
+          {
+            binding: 'DEMO_FILES_KV',
+            id: deployKvNamespaceId,
+          },
+        ],
+      }
+    : {
+        r2_buckets: [
+          {
+            binding: 'FILES',
+            bucket_name: 'parishlink-r2',
+          },
+        ],
+      }),
   ...(demoDeploymentBuild ? {
     vars: {
       DEMO_DEPLOYMENT: 'true',

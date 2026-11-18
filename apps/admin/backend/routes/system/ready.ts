@@ -4,6 +4,7 @@ import { mobileAllowedOrigins, publicReleaseVersion } from '@/backend/config/run
 import { recordServerFailure } from '@/backend/observability/server-log';
 import { integrationReadiness } from '@/backend/config/integration-readiness';
 import { isDemoDeployment, passwordHashIterations } from '@/backend/config/deployment-mode';
+import { getPrivateDocumentStore } from '@/backend/storage/private-documents';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +16,8 @@ const HEADERS = {
 
 export async function GET(): Promise<Response> {
   try {
-    if (!env.DB || !env.FILES) throw new Error('Required storage binding unavailable.');
+    const store = getPrivateDocumentStore();
+    if (!env.DB || !store) throw new Error('Required storage binding unavailable.');
     const demoDeployment = isDemoDeployment();
     if (process.env.NODE_ENV === 'production' && !env.DOCUMENT_SCANNER && !demoDeployment) throw new Error('Required document safety scanner binding unavailable.');
     const integrations = integrationReadiness(env);
@@ -36,7 +38,7 @@ export async function GET(): Promise<Response> {
         deployment: demoDeployment ? 'demo-fictional-data-only' : 'standard',
         checks: {
           database: 'ok',
-          privateStorage: 'configured',
+          privateStorage: store.kind === 'r2' ? 'configured' : 'demo-kv',
           documentScanner: env.DOCUMENT_SCANNER
             ? 'configured'
             : demoDeployment ? 'demo-deployment-prefilter-only' : 'development-prefilter-only',

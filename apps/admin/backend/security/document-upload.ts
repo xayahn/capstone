@@ -3,6 +3,7 @@ import { env } from 'cloudflare:workers';
 import { getRawDb } from '@/db/runtime';
 import { MobileServiceError } from '@/backend/auth/mobile-auth';
 import { isDemoDeployment } from '@/backend/config/deployment-mode';
+import { getPrivateDocumentStore } from '@/backend/storage/private-documents';
 import { enforceMobileRateLimit } from '@/backend/security/mobile-rate-limit';
 
 export const WRITABLE_DOCUMENT_STATES = ['submitted', 'documents_pending', 'under_review', 'needs_changes'];
@@ -71,7 +72,8 @@ type UploadScope = { actorId: string; appointmentId: string; documentId: string;
 export async function saveDocument(scope: UploadScope, file: File): Promise<void> {
   await enforceMobileRateLimit(scope.actorId, 'document-upload', 20, 3600);
   if (file.size < 1 || file.size > MAX_FILE_BYTES) throw new MobileServiceError('Files must be between 1 byte and 10 MB.');
-  if (!env.FILES) throw new MobileServiceError('Private document storage is unavailable.', 503);
+  const store = getPrivateDocumentStore();
+  if (!store) throw new MobileServiceError('Private document storage is unavailable.', 503);
   const db = getRawDb();
   const row = await db.prepare(`SELECT ds.id, ds.storage_key AS oldKey, ds.sha256 AS oldHash,
       a.parish_id AS parishId, a.status, a.version
@@ -99,7 +101,7 @@ export async function saveDocument(scope: UploadScope, file: File): Promise<void
   }
   const name = file.name.normalize('NFKC').replace(/[^a-zA-Z0-9._ -]/g, '').replace(/\s+/g,'-').slice(-100) || 'document';
   const key = `private/${row.parishId}/${scope.appointmentId}/${crypto.randomUUID()}-${name}`;
-  await env.FILES.put(key, buffer, { httpMetadata: { contentType: file.type, contentDisposition: `attachment; filename="${name}"` } });
+  await store.put(key, buffer, { contentType: file.type, contentDisposition: `attachment; filename="${name}"` });
   let committed = false;
   try {
     const result = await db.batch([
@@ -123,5 +125,5 @@ export async function saveDocument(scope: UploadScope, file: File): Promise<void
     committed = Number(result[0]?.meta.changes) === 1;
     if (!committed) throw new MobileServiceError('The request changed while uploading. Refresh before trying again.', 409);
     // Retain previous immutable objects; audit entries preserve their identities.
-  } finally { if (!committed) await env.FILES.delete(key).catch(() => undefined); }
+  } finally { if (!committed) await store.delete(key).catch(() => undefined); }
 }

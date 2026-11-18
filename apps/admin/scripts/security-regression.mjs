@@ -463,6 +463,27 @@ try {
     record('demonstration accepts a prefiltered upload without a scanner',demoUpload.status,200,demoUpload.status===200);
     const demoActive=await upload('demo-active.pdf',pdf('/JavaScript (app.alert)'));
     record('demonstration still rejects active PDF content',demoActive.status,400,demoActive.status===400);
+    const savedFiles=env.FILES, kvStore=new Map();
+    try {
+      delete env.FILES;
+      env.DEMO_FILES_KV={
+        async put(k,v,opts){kvStore.set(k,{value:v,metadata:opts?.metadata??null});},
+        async getWithMetadata(k){const o=kvStore.get(k);return o?{value:o.value,metadata:o.metadata}:{value:null,metadata:null};},
+        async delete(k){kvStore.delete(k);},
+      };
+      delete env.DEMO_DEPLOYMENT;
+      const kvWithoutDemo=await upload('kv-rejected.pdf');
+      record('standard mode refuses DEMO_FILES_KV without R2 FILES',kvWithoutDemo.status,503,kvWithoutDemo.status===503);
+      env.DEMO_DEPLOYMENT='true';
+      const kvReady=await readyRoute.GET(), kvReadyBody=await kvReady.json();
+      const kvUpload=await upload('kv-demo.pdf');
+      identity={userId:staff.id,email:staff.email};
+      const kvDownload=await downloadRoute.GET(new Request('http://localhost/api/admin/documents/'+doc.id),{params:Promise.resolve({id:doc.id})});
+      record('demonstration KV store supports readiness, upload, and authorized download',
+        {ready:kvReadyBody.checks?.privateStorage,upload:kvUpload.status,download:kvDownload.status},
+        'demo-kv, 200, 200',
+        kvReady.status===200&&kvReadyBody.checks?.privateStorage==='demo-kv'&&kvUpload.status===200&&kvDownload.status===200);
+    } finally {env.FILES=savedFiles;delete env.DEMO_FILES_KV;}
   } finally {if(previousEnvironment===undefined)delete process.env.NODE_ENV;else process.env.NODE_ENV=previousEnvironment;delete env.DEMO_DEPLOYMENT;}
   {
     const iterationsFor=email=>sql.prepare('SELECT mc.password_iterations AS n FROM mobile_credentials mc JOIN users u ON u.id=mc.user_id WHERE u.email=?').get(email)?.n;

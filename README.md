@@ -37,13 +37,13 @@ Roles and parish boundaries are enforced by the server on every request, not onl
 
 ## Project status
 
-**Local capstone build. Nothing is deployed, published to an app store, or installed on a phone as a native build.**
+**Capstone build with an online synthetic-data demonstration (Cloudflare Workers + D1 + Workers KV, plus Expo Go updates). Not launched for real parish records or published to an app store.**
 
-Working locally and covered by automated checks: everything listed above.
+Working locally and on the hosted synthetic-data demonstration, and covered by automated checks: everything listed above.
 
-Not done (release gates):
+Not done for real-parish launch (release gates):
 
-- **No hosting.** The system runs on a laptop (admin/API on port 3000, mobile on Expo).
+- **Real-parish production hosting is not launched.** An online demonstration copy runs on Cloudflare with fictional data only (`DEMO_DEPLOYMENT=true`) and private demonstration passwords.
 - **Email is not set up.** Password-reset and email-verification codes cannot be delivered until an email sender is configured.
 - **Push notifications are disabled** and have never been tested on a physical phone. In-app notifications work.
 - **No document malware scanner is configured.** In production mode the server refuses uploads until one is.
@@ -112,7 +112,7 @@ The full list (staff for every parish, more clergy and parishioners) is in [`doc
 - **Sessions:** only a SHA-256 hash of each session token is stored. Mobile sessions last 30 days and staff sessions 12 hours (no idle timeout), at most 5 per person; staff sessions use an HttpOnly, SameSite=Strict cookie.
 - **Password changes:** need the current password and an active session. If two changes race, only one succeeds, and only that one signs out the person's other sessions. A signed-out or expired session cannot change a password.
 - **No double booking:** the server checks priest, venue and preparation/cleanup time, and inserts the appointment in the same SQL statement. A clashing request gets HTTP 409.
-- **Documents:** stored privately with a SHA-256 checksum. The server checks size (10 MB) and the file's real PDF/JPEG/PNG signature, not just its name, rejects PDFs with active content (scripts, launch actions, embedded files), and allows 20 uploads per hour per account. In production mode, uploads are refused until a malware scanner is configured. The only exception is a server marked `DEMO_DEPLOYMENT=true` (fictional data only): it accepts uploads that pass the checks above without a scanner, and its `/ready` response says so (`"deployment": "demo-fictional-data-only"`, `"documentScanner": "demo-deployment-prefilter-only"`). The setting is off unless set to exactly `true`.
+- **Documents:** stored privately with a SHA-256 checksum. The server checks size (10 MB) and the file's real PDF/JPEG/PNG signature, not just its name, rejects PDFs with active content (scripts, launch actions, embedded files), and allows 20 uploads per hour per account. In production mode, uploads require private R2 storage (`FILES`) and are refused until a malware scanner is configured. The only exception is a server marked `DEMO_DEPLOYMENT=true` (fictional data only): it accepts uploads that pass the checks above without a scanner, may store demonstration files in Cloudflare Workers KV (`DEMO_FILES_KV`) on free accounts without R2, and reports this openly on `/ready` (`"deployment": "demo-fictional-data-only"`, `"privateStorage": "demo-kv"`, `"documentScanner": "demo-deployment-prefilter-only"`). The setting is off unless set to exactly `true`.
 - **Rate limits:** sign-in 30 per 15 minutes per address (staff and mobile), sign-up 8 per hour, mobile password change 5 per 15 minutes, plus limits on account-email codes, availability, bookings, changes, queue, assistant and push registration. Not rate-limited yet: staff password change, temporary passwords and report exports.
 - **Report exports:** **Export CSV** contains every matching appointment (up to 5,000; otherwise narrow the filters) and states the matching count and the row count. Report generation and exports are not audit-logged yet.
 - **Audit history cannot be edited.** Database triggers block every UPDATE and DELETE on `audit_logs` and `appointment_events`.
@@ -125,8 +125,8 @@ The full list (staff for every parish, more clergy and parishioners) is in [`doc
 | Check | Result |
 |---|---|
 | Admin TypeScript and ESLint | 0 errors, 0 warnings |
-| Admin unit and integration tests | 374 passed (27 files) |
-| Security regression suite | 121/121 passed |
+| Admin unit and integration tests | 375 passed (27 files) |
+| Security regression suite | 123/123 passed |
 | Migration validation | 9 files, 30 tables, 56 indexes; integrity and foreign keys valid |
 | Provider Worker compatibility | 9/9 passed (synthetic responses, no external traffic) |
 | Account Worker route checks | 39/39 passed |
