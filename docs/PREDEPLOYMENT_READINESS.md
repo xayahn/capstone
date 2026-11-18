@@ -59,13 +59,13 @@ The current repository is a release-conscious local capstone implementation. Its
 
 | Area | Current control | Evidence status |
 |---|---|---|
-| Parishioner passwords | PBKDF2-SHA-256, 210,000 iterations, unique 16-byte salts; 12-128 characters with upper/lower/digit rules | Implemented and exercised |
+| Parishioner passwords | PBKDF2-SHA-256, 210,000 iterations, unique 16-byte salts; 12-128 characters with upper/lower/digit rules (100,000 iterations only on a server marked `DEMO_DEPLOYMENT=true`, the Cloudflare Workers maximum) | Implemented and exercised |
 | Brute force | Generic login failure, five-failure 15-minute account lock, database-backed IP/auth throttling | Implemented and exercised |
 | Mobile sessions | Random 32-byte bearer values; only SHA-256 token hashes stored; 30-day expiry; five-session cap; revoke/sign-out; other-session revoke on password change | Implemented and exercised |
 | Device token storage | Expo SecureStore using this-device-only, available-after-unlock protection | Implemented; physical-device validation pending |
 | Admin authorization | Cookie-authenticated internal identity, server RBAC, parish membership scope, same-origin write validation | Implemented; production identity/MFA provider pending |
 | Scheduling | Server-authoritative availability plus atomic/idempotent creation with participants, frozen checklist, overlap checks, event, notification, and audit | Implemented and locally exercised |
-| Uploads | Ownership/scope, 10 MB limit, MIME allow-list, beginning/end file signatures, checksum, private object key, audit | Implemented; malware scanner pending |
+| Uploads | Ownership/scope, 10 MB limit, MIME allow-list, beginning/end file signatures, checksum, private object key, audit | Implemented; malware scanner pending (the `DEMO_DEPLOYMENT=true` demonstration accepts prefiltered uploads without it and reports that on `/ready`) |
 | Web hardening | Per-request nonce CSP, frame denial, HSTS in production, no-sniff, referrer policy, COOP/CORP, permissions policy | Implemented and production-build header checked |
 | Mobile API origin policy | Exact reflected development/approved HTTPS origins; wildcard credentialed CORS removed; denied origins receive no allow-origin header | Implemented and locally exercised |
 | Production database startup | Production requests verify migrated tables, release columns, indexes, and foreign keys; they never create/seed schema or auto-promote an administrator | Implemented; provider migration rehearsal pending |

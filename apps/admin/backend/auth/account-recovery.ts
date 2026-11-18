@@ -1,7 +1,8 @@
 import { auditIpHash } from '@/backend/security/audit-ip';
 import * as workers from 'cloudflare:workers';
 import { ensurePublicRuntimeDatabase, getRawDb } from '@/db/runtime';
-import { derivePassword, MobileServiceError, normalizeEmail, PASSWORD_ITERATIONS, randomHex, validEmail, validatePassword, type MobileActor } from '@/backend/auth/mobile-auth';
+import { derivePassword, MobileServiceError, normalizeEmail, randomHex, validEmail, validatePassword, type MobileActor } from '@/backend/auth/mobile-auth';
+import { passwordHashIterations } from '@/backend/config/deployment-mode';
 import { createAccountMailer, type AccountMailer } from '@/backend/auth/account-mailer';
 import { enforceMobileIpRateLimit, enforceMobileRateLimit } from '@/backend/security/mobile-rate-limit';
 import { recordServerFailure } from '@/backend/observability/server-log';
@@ -126,7 +127,8 @@ export async function confirmMobilePasswordReset(request: Request, input: Record
     AND purpose='password_reset' AND ${ELIGIBLE} AND code_hash<>?`).bind(email,hash).run();
   // Hash even an unknown/wrong challenge, avoiding an account-existence oracle.
   const salt = randomHex();
-  const passwordHash = await derivePassword(password,salt,PASSWORD_ITERATIONS);
+  const iterations = passwordHashIterations();
+  const passwordHash = await derivePassword(password,salt,iterations);
   const claim = crypto.randomUUID();
   const claimed = `SELECT user_id FROM mobile_email_challenges WHERE consumed_by=? AND purpose='password_reset'`;
   const result = await db.batch([
@@ -140,7 +142,7 @@ export async function confirmMobilePasswordReset(request: Request, input: Record
     db.prepare(`UPDATE mobile_credentials SET password_hash=?,password_salt=?,password_iterations=?,
       failed_attempts=0,locked_until=NULL,password_changed_at=datetime('now'),updated_at=datetime('now'),
       email_verified_at=COALESCE(email_verified_at,datetime('now')) WHERE user_id IN (${claimed})`)
-      .bind(passwordHash,salt,PASSWORD_ITERATIONS,claim),
+      .bind(passwordHash,salt,iterations,claim),
   ]);
   // D1's change count includes trigger/cascade writes. The credential update is
   // bounded to the one claimed user, but its invalidation trigger adds changes.

@@ -1,8 +1,10 @@
 import { auditIpHash } from '@/backend/security/audit-ip';
+import { passwordHashIterations, STANDARD_PASSWORD_ITERATIONS } from '@/backend/config/deployment-mode';
 import { ensurePublicRuntimeDatabase, getRawDb } from '@/db/runtime';
 import { validPhoneNumber } from '@/shared/validation';
 
-export const PASSWORD_ITERATIONS = 210_000;
+/** Standard iteration count. New hashes use passwordHashIterations(). */
+export const PASSWORD_ITERATIONS = STANDARD_PASSWORD_ITERATIONS;
 const SESSION_DAYS = 30;
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_MINUTES = 15;
@@ -175,7 +177,8 @@ export async function signUpMobile(input: Record<string, unknown>, userAgent: st
 
   const userId = crypto.randomUUID();
   const salt = randomHex();
-  const passwordHash = await derivePassword(password, salt, PASSWORD_ITERATIONS);
+  const iterations = passwordHashIterations();
+  const passwordHash = await derivePassword(password, salt, iterations);
   try {
     await db.batch([
     db.prepare(`INSERT INTO users
@@ -183,7 +186,7 @@ export async function signUpMobile(input: Record<string, unknown>, userAgent: st
       VALUES (?, ?, ?, 'parishioner', ?, ?)`).bind(userId, email, displayName, homeParishId, mobileNumber),
     db.prepare(`INSERT INTO mobile_credentials
       (user_id, password_hash, password_salt, password_iterations)
-      VALUES (?, ?, ?, ?)`).bind(userId, passwordHash, salt, PASSWORD_ITERATIONS),
+      VALUES (?, ?, ?, ?)`).bind(userId, passwordHash, salt, iterations),
     db.prepare(`INSERT INTO notifications
       (id, recipient_user_id, type, title, body, entity_type)
       VALUES (?, ?, 'account', 'Welcome to ParishLink',
@@ -227,7 +230,7 @@ export async function signInMobile(input: Record<string, unknown>, userAgent: st
   const candidateHash = await derivePassword(
     password,
     row?.passwordSalt ?? '0'.repeat(32),
-    row?.passwordIterations ?? PASSWORD_ITERATIONS,
+    row?.passwordIterations ?? passwordHashIterations(),
   );
   const locked = Boolean(row?.lockedUntil && new Date(row.lockedUntil).getTime() > Date.now());
   if (!row || !row.isActive || locked || !constantTimeEqual(candidateHash, row.passwordHash)) {
@@ -322,13 +325,14 @@ export async function changeMobilePassword(request: Request, input: Record<strin
   const candidate = await derivePassword(currentPassword, credential.passwordSalt, credential.passwordIterations);
   if (!constantTimeEqual(candidate, credential.passwordHash)) throw new MobileServiceError('The current password is incorrect.', 400);
   const salt = randomHex();
-  const passwordHash = await derivePassword(newPassword, salt, PASSWORD_ITERATIONS);
+  const iterations = passwordHashIterations();
+  const passwordHash = await derivePassword(newPassword, salt, iterations);
   const changed = await getRawDb().batch([
     getRawDb().prepare(`UPDATE mobile_credentials SET password_hash = ?, password_salt = ?,
       password_iterations = ?, failed_attempts = 0, locked_until = NULL,
       password_changed_at = datetime('now'), updated_at = datetime('now') WHERE user_id = ? AND password_hash = ?
         AND EXISTS (SELECT 1 FROM mobile_sessions WHERE id = ? AND revoked_at IS NULL AND datetime(expires_at) > datetime('now'))`)
-      .bind(passwordHash, salt, PASSWORD_ITERATIONS, actor.id, credential.passwordHash, actor.sessionId),
+      .bind(passwordHash, salt, iterations, actor.id, credential.passwordHash, actor.sessionId),
     getRawDb().prepare(`UPDATE mobile_sessions SET revoked_at = datetime('now')
       WHERE user_id = ? AND id <> ? AND revoked_at IS NULL
         AND EXISTS (SELECT 1 FROM mobile_credentials WHERE user_id = ? AND password_hash = ?)`)

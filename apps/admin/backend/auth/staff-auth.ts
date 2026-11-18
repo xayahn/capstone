@@ -1,6 +1,7 @@
 import { auditIpHash } from '@/backend/security/audit-ip';
 import { getRawDb } from '@/db/runtime';
-import { derivePassword, PASSWORD_ITERATIONS, normalizeEmail, randomHex, validEmail } from '@/backend/auth/mobile-auth';
+import { derivePassword, normalizeEmail, randomHex, validEmail } from '@/backend/auth/mobile-auth';
+import { passwordHashIterations } from '@/backend/config/deployment-mode';
 
 /**
  * Email/password sign-in for internal ParishLink personnel (parish staff,
@@ -175,7 +176,7 @@ export async function signInStaff(input: Record<string, unknown>, userAgent: str
     WHERE lower(u.email) = lower(?) AND u.role IN ${INTERNAL_ROLE_SQL} LIMIT 1`).bind(email).first<CredentialRow>();
 
   // Always derive a hash so unknown accounts take the same time as known ones.
-  const candidate = await derivePassword(password, row?.passwordSalt ?? '0'.repeat(32), row?.passwordIterations ?? PASSWORD_ITERATIONS);
+  const candidate = await derivePassword(password, row?.passwordSalt ?? '0'.repeat(32), row?.passwordIterations ?? passwordHashIterations());
   const locked = Boolean(row?.lockedUntil && new Date(row.lockedUntil).getTime() > Date.now());
   if (!row || !row.isActive || locked || !constantTimeEqual(candidate, row.passwordHash)) {
     if (row && !locked) {
@@ -257,7 +258,8 @@ export async function changeStaffPassword(identity: StaffIdentity, input: Record
   if (!constantTimeEqual(candidate, credential.passwordHash)) throw new StaffAuthError('The current password is incorrect.');
 
   const salt = randomHex();
-  const passwordHash = await derivePassword(newPassword, salt, PASSWORD_ITERATIONS);
+  const iterations = passwordHashIterations();
+  const passwordHash = await derivePassword(newPassword, salt, iterations);
   // One transaction. Each step is conditional so that, when two changes race,
   // only the request whose new hash is actually stored ends other sessions and
   // writes the audit entry; the losing request changes nothing.
@@ -270,7 +272,7 @@ export async function changeStaffPassword(identity: StaffIdentity, input: Record
       WHERE user_id = ? AND password_hash = ?
         AND EXISTS (SELECT 1 FROM staff_sessions WHERE id = ? AND user_id = ? AND revoked_at IS NULL
           AND datetime(expires_at) > datetime('now'))`)
-      .bind(passwordHash, salt, PASSWORD_ITERATIONS, identity.userId, credential.passwordHash, identity.sessionId, identity.userId),
+      .bind(passwordHash, salt, iterations, identity.userId, credential.passwordHash, identity.sessionId, identity.userId),
     // Keep the current browser signed in; end every other session, but only
     // when this request's new password is the one now stored.
     db.prepare(`UPDATE staff_sessions SET revoked_at = datetime('now')
@@ -339,7 +341,8 @@ export async function issueTemporaryStaffPassword(actor: { id: string; role: str
 
   const temporaryPassword = generateTemporaryPassword();
   const salt = randomHex();
-  const passwordHash = await derivePassword(temporaryPassword, salt, PASSWORD_ITERATIONS);
+  const iterations = passwordHashIterations();
+  const passwordHash = await derivePassword(temporaryPassword, salt, iterations);
   await db.batch([
     db.prepare(`INSERT INTO staff_credentials
         (user_id, password_hash, password_salt, password_iterations, must_change_password)
@@ -348,7 +351,7 @@ export async function issueTemporaryStaffPassword(actor: { id: string; role: str
         password_salt = excluded.password_salt, password_iterations = excluded.password_iterations,
         must_change_password = 1, failed_attempts = 0, locked_until = NULL,
         password_changed_at = datetime('now'), updated_at = datetime('now')`)
-      .bind(target.id, passwordHash, salt, PASSWORD_ITERATIONS),
+      .bind(target.id, passwordHash, salt, iterations),
     db.prepare(`UPDATE staff_sessions SET revoked_at = datetime('now') WHERE user_id = ? AND revoked_at IS NULL`).bind(target.id),
   ]);
   await writeStaffAudit(actor.id, 'staff.password.temporary', target.id, 'success', 'Temporary password issued; sessions ended');

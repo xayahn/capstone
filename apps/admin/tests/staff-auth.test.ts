@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -27,6 +27,7 @@ import {
 } from '../backend/auth/staff-auth';
 import { derivePassword, PASSWORD_ITERATIONS } from '../backend/auth/mobile-auth';
 import { resolveActor } from '../backend/services/admin-service';
+import { env as workersEnv } from 'cloudflare:workers';
 
 let sql: DatabaseSync;
 const PASSWORD = 'StaffPassword2026';
@@ -254,5 +255,35 @@ describe('password-change races', () => {
     sql.prepare("UPDATE staff_sessions SET expires_at = datetime('now','-1 minute') WHERE id = ?").run(identity!.sessionId);
     await expect(change(identity, 'MyNewPassword2026')).rejects.toMatchObject({ status: 401 });
     await expect(signInStaff({ email, password: PASSWORD }, null)).resolves.toMatchObject({ mustChangePassword: false });
+  });
+});
+
+describe('password hashing in the online demonstration', () => {
+  const flags = workersEnv as { DEMO_DEPLOYMENT?: string };
+  const storedIterations = (userId: string) =>
+    Number((sql.prepare('SELECT password_iterations AS n FROM staff_credentials WHERE user_id = ?').get(userId) as { n: number }).n);
+  afterEach(() => { delete flags.DEMO_DEPLOYMENT; });
+
+  it('keeps 210,000 iterations for new staff passwords unless the demonstration flag is set', async () => {
+    expect(PASSWORD_ITERATIONS).toBe(210_000);
+    for (const value of [undefined, 'TRUE', '1', 'yes', ' true']) {
+      if (value === undefined) delete flags.DEMO_DEPLOYMENT; else flags.DEMO_DEPLOYMENT = value;
+      await issueTemporaryStaffPassword({ id: 'admin', role: 'system_admin' }, 'staff');
+      expect(storedIterations('staff')).toBe(210_000);
+    }
+  });
+
+  it('uses 100,000 iterations only when DEMO_DEPLOYMENT is exactly "true", and still verifies older hashes', async () => {
+    flags.DEMO_DEPLOYMENT = 'true';
+    const { temporaryPassword } = await issueTemporaryStaffPassword({ id: 'admin', role: 'system_admin' }, 'staff');
+    expect(storedIterations('staff')).toBe(100_000);
+    const temporary = await signInStaff({ email: 'staff@parishlink.test', password: temporaryPassword }, null);
+    const identity = (await readStaffSession(cookieFor(temporary.token)))!;
+    await changeStaffPassword(identity, { currentPassword: temporaryPassword, newPassword: 'DemoPassword2026', confirmPassword: 'DemoPassword2026' });
+    expect(storedIterations('staff')).toBe(100_000);
+    await expect(signInStaff({ email: 'staff@parishlink.test', password: 'DemoPassword2026' }, null)).resolves.toMatchObject({ mustChangePassword: false });
+    // A hash made with the standard count verifies with the count stored beside it.
+    expect(storedIterations('admin')).toBe(210_000);
+    await expect(signInStaff({ email: 'admin@parishlink.test', password: PASSWORD }, null)).resolves.toMatchObject({ mustChangePassword: false });
   });
 });

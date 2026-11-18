@@ -7,7 +7,7 @@
 | Item | Implementation |
 |---|---|
 | Sign-in | Email + password at `/` (admin web portal). Parishioners keep using the mobile app; their mobile password **cannot** open the portal. |
-| Password storage | PBKDF2-SHA-256, 210,000 iterations, per-user random salt (`staff_credentials`). Same policy as parishioners: 12–128 characters with uppercase, lowercase and a number. |
+| Password storage | PBKDF2-SHA-256, 210,000 iterations, per-user random salt (`staff_credentials`). Same policy as parishioners: 12–128 characters with uppercase, lowercase and a number. A server marked `DEMO_DEPLOYMENT=true` (online demonstration, fictional data only) uses 100,000 iterations for new hashes because Cloudflare Workers allows no more; each hash keeps its own stored count. |
 | Session | Random 256-bit token in an `HttpOnly`, `SameSite=Strict` cookie (`__Host-` prefixed and `Secure` in production). Only the token's SHA-256 hash is stored (`staff_sessions`). Sessions last 12 hours from sign-in (there is no idle timeout); at most 5 per person. |
 | Brute-force protection | 5 wrong passwords lock the account for 15 minutes; 30 sign-in attempts per client address per 15 minutes (fixed window). Wrong email and wrong password return the same generic message. Changing a password and issuing a temporary password have no separate rate limit: a change always needs the current password and an active session, and only a system administrator can issue a temporary password. |
 | Password change | Needs the current password and an active session. In one database transaction the new password is stored only if the stored password is still the one that was checked **and** the session is still active; only then are all of that person's other sessions ended and `staff.password.change` audited. If two changes race, exactly one succeeds and the other changes nothing (HTTP 409 when the same session double-submits; HTTP 401 when the winning change has already ended the other session). A change from a signed-out or expired session gets HTTP 401 and changes nothing. |
@@ -43,7 +43,7 @@ Seeded only in local development, together with the synthetic demonstration data
 
 ## Verification
 
-**17 November 2026 (local):** admin release check passed: 366 admin tests (15 staff-auth), 113/113 security regressions, 39/39 account Worker checks, TypeScript, ESLint and production build.
+**18 November 2026 (local):** admin release check passed: 374 admin tests (17 staff-auth), 121/121 security regressions, 39/39 account Worker checks, TypeScript, ESLint and production build.
 
 **9 November 2026 (historical, at introduction):**
 

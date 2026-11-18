@@ -29,7 +29,7 @@ const routes = {
 const paths = [
   'backend/auth/mobile-auth.ts', 'backend/auth/account-recovery.ts', 'backend/auth/account-mailer.ts',
   'backend/security/mobile-rate-limit.ts', 'backend/http/mobile-http.ts', 'backend/http/small-json.ts',
-  'backend/config/runtime-config.ts', 'backend/observability/server-log.ts', 'shared/validation.ts',
+  'backend/config/runtime-config.ts', 'backend/config/deployment-mode.ts', 'backend/observability/server-log.ts', 'shared/validation.ts',
   'backend/notifications/background-dispatch.ts', 'backend/notifications/push-service.ts',
   'backend/notifications/expo-provider.ts', 'backend/security/audit-ip.ts',
   ...Object.values(routes).map(([, file]) => `backend/routes/mobile/auth/${file}.ts`),

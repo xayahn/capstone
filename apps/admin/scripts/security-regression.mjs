@@ -446,6 +446,42 @@ try {
     const clean=await upload('scanned.pdf');
     record('matching clean scan accepted',clean.status,200,clean.status===200);
   } finally {if(previousEnvironment===undefined)delete process.env.NODE_ENV;else process.env.NODE_ENV=previousEnvironment;delete env.DOCUMENT_SCANNER;}
+  // Online demonstration (fictional data only): DEMO_DEPLOYMENT must be exactly "true".
+  try {
+    process.env.NODE_ENV='production';
+    const readyRoute=load(resolve(root,'backend/routes/system/ready.ts'));
+    env.DEMO_DEPLOYMENT='TRUE';
+    const inexactReady=await readyRoute.GET(), inexactUpload=await upload('inexact-flag.pdf');
+    record('demonstration flag other than exactly "true" keeps the scanner requirement',[inexactReady.status,inexactUpload.status],[503,503],inexactReady.status===503&&inexactUpload.status===503);
+    env.DEMO_DEPLOYMENT='true';
+    const demoReady=await readyRoute.GET(), demoBody=await demoReady.json();
+    record('demonstration readiness states fictional-data mode and prefilter-only uploads',
+      {status:demoReady.status,deployment:demoBody.deployment,scanner:demoBody.checks?.documentScanner,hashing:demoBody.checks?.passwordHashing},
+      '200, demo-fictional-data-only, demo-deployment-prefilter-only, pbkdf2-sha256-100000',
+      demoReady.status===200&&demoBody.deployment==='demo-fictional-data-only'&&demoBody.checks?.documentScanner==='demo-deployment-prefilter-only'&&demoBody.checks?.passwordHashing==='pbkdf2-sha256-100000');
+    const demoUpload=await upload('demo-deployment.pdf');
+    record('demonstration accepts a prefiltered upload without a scanner',demoUpload.status,200,demoUpload.status===200);
+    const demoActive=await upload('demo-active.pdf',pdf('/JavaScript (app.alert)'));
+    record('demonstration still rejects active PDF content',demoActive.status,400,demoActive.status===400);
+  } finally {if(previousEnvironment===undefined)delete process.env.NODE_ENV;else process.env.NODE_ENV=previousEnvironment;delete env.DEMO_DEPLOYMENT;}
+  {
+    const iterationsFor=email=>sql.prepare('SELECT mc.password_iterations AS n FROM mobile_credentials mc JOIN users u ON u.id=mc.user_id WHERE u.email=?').get(email)?.n;
+    const standardInput={displayName:'Synthetic Standard Account',email:'synthetic-standard@example.test',mobileNumber:'+63 917 000 0000',homeParishId:'p1',password:'SyntheticStandard!2026',confirmPassword:'SyntheticStandard!2026',acceptPrivacyNotice:true};
+    await auth.signUpMobile(standardInput,null);
+    record('standard parishioner password uses 210,000 iterations',iterationsFor(standardInput.email),210000,iterationsFor(standardInput.email)===210000);
+    env.DEMO_DEPLOYMENT='true';
+    try {
+      const demoInput={displayName:'Synthetic Demo Account',email:'synthetic-demo@example.test',mobileNumber:'+63 917 000 0000',homeParishId:'p1',password:'SyntheticDemo!2026',confirmPassword:'SyntheticDemo!2026',acceptPrivacyNotice:true};
+      const demoSignup=await auth.signUpMobile(demoInput,null);
+      record('demonstration parishioner password uses 100,000 iterations',iterationsFor(demoInput.email),100000,iterationsFor(demoInput.email)===100000);
+      const demoSignIn=await attempt(()=>auth.signInMobile({email:demoInput.email,password:demoInput.password},null));
+      const olderSignIn=await attempt(()=>auth.signInMobile({email:standardInput.email,password:standardInput.password},null));
+      record('demonstration signs in new and older hashes with their stored counts',[demoSignIn.status,olderSignIn.status],[200,200],demoSignIn.status===200&&olderSignIn.status===200);
+      const demoPasswordRoute=load(resolve(root,'backend/routes/mobile/auth/change-password.ts'));
+      const demoChange=await demoPasswordRoute.POST(new Request('http://localhost/api/mobile/auth/change-password',{method:'POST',headers:{Authorization:`Bearer ${demoSignup.accessToken}`,'Content-Type':'application/json'},body:JSON.stringify({currentPassword:demoInput.password,newPassword:'SyntheticDemoNew!2026',confirmPassword:'SyntheticDemoNew!2026'})}));
+      record('demonstration password change keeps 100,000 iterations',[demoChange.status,iterationsFor(demoInput.email)],[204,100000],demoChange.status===204&&iterationsFor(demoInput.email)===100000);
+    } finally {delete env.DEMO_DEPLOYMENT;}
+  }
   await mutate(staff,{action:'queue.issue',parishId:'p1',parishionerName:'Synthetic Queue Visitor',service:'General inquiry'});
   const issuedTicket=sql.prepare("SELECT id,ticket_number AS number FROM queue_tickets WHERE parish_id='p1' AND status='waiting' ORDER BY issued_at DESC LIMIT 1").get();
   record('front-desk ticket uses sequential MMDD-NNN format',issuedTicket?.number,'MMDD-NNN',/^\d{4}-\d{3}$/.test(issuedTicket?.number??''));

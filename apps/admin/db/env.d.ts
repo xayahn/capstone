@@ -15,6 +15,7 @@ declare namespace Cloudflare {
     MOBILE_ALLOWED_ORIGINS?: string;
     RELEASE_VERSION?: string;
     AUDIT_IP_HASH_KEY?: string;
+    DEMO_DEPLOYMENT?: string;
     FILES: R2Bucket;
     DOCUMENT_SCANNER?: Fetcher;
   }

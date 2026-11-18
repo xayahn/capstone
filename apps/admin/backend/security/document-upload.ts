@@ -2,6 +2,7 @@ import { auditIpHash } from '@/backend/security/audit-ip';
 import { env } from 'cloudflare:workers';
 import { getRawDb } from '@/db/runtime';
 import { MobileServiceError } from '@/backend/auth/mobile-auth';
+import { isDemoDeployment } from '@/backend/config/deployment-mode';
 import { enforceMobileRateLimit } from '@/backend/security/mobile-rate-limit';
 
 export const WRITABLE_DOCUMENT_STATES = ['submitted', 'documents_pending', 'under_review', 'needs_changes'];
@@ -50,7 +51,8 @@ export function validDocumentSignature(bytes: Uint8Array, mime: string): boolean
     const hasCatalogOrObjStm =
       /\/Type\s*\/Catalog\b/.test(text)
       || (/\/Type\s*\/(?:XRef|ObjStm)\b/.test(text) && /\/Root\b/.test(text));
-    // Structural prefilter only: production additionally requires the safety scanner.
+    // Structural prefilter only: production additionally requires the safety scanner
+    // (except the explicitly marked online demonstration with fictional data).
     return /^%PDF-(?:1\.[0-7]|2\.0)/.test(text)
       && /\d+\s+\d+\s+obj\b/.test(text)
       && hasCatalogOrObjStm
@@ -83,7 +85,10 @@ export async function saveDocument(scope: UploadScope, file: File): Promise<void
   const buffer = await file.arrayBuffer();
   if (!validDocumentSignature(new Uint8Array(buffer), file.type)) throw new MobileServiceError('Choose a valid PDF, JPEG, or PNG without active content.');
   const sha256 = [...new Uint8Array(await crypto.subtle.digest('SHA-256', buffer))].map(x => x.toString(16).padStart(2,'0')).join('');
-  if (process.env.NODE_ENV === 'production' && !env.DOCUMENT_SCANNER) throw new MobileServiceError('Document safety scanning is not configured. Contact parish staff.', 503);
+  // Production requires the safety scanner. The only exception is the online
+  // demonstration explicitly marked DEMO_DEPLOYMENT=true, which holds fictional
+  // data and keeps the structural prefilter above; /ready reports that mode.
+  if (process.env.NODE_ENV === 'production' && !env.DOCUMENT_SCANNER && !isDemoDeployment()) throw new MobileServiceError('Document safety scanning is not configured. Contact parish staff.', 503);
   if (env.DOCUMENT_SCANNER) {
     const response = await env.DOCUMENT_SCANNER.fetch(new Request('https://document-scanner/scan', {
       method: 'POST', body: buffer, signal: AbortSignal.timeout(15_000),

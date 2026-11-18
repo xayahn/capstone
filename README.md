@@ -107,12 +107,12 @@ The full list (staff for every parish, more clergy and parishioners) is in [`doc
 
 ## Security and data integrity
 
-- **Passwords:** PBKDF2-SHA-256 with 210,000 iterations and a unique random salt per account. Passwords must be 12–128 characters with an uppercase letter, a lowercase letter and a number.
+- **Passwords:** PBKDF2-SHA-256 with 210,000 iterations and a unique random salt per account. Passwords must be 12–128 characters with an uppercase letter, a lowercase letter and a number. Exception: a server marked `DEMO_DEPLOYMENT=true` (the online demonstration with fictional data only) uses 100,000 iterations, because Cloudflare Workers does not allow more. Each hash stores its own iteration count, so existing passwords keep working.
 - **Lockout:** 5 wrong passwords lock an account for 15 minutes. Wrong email and wrong password get the same message.
 - **Sessions:** only a SHA-256 hash of each session token is stored. Mobile sessions last 30 days and staff sessions 12 hours (no idle timeout), at most 5 per person; staff sessions use an HttpOnly, SameSite=Strict cookie.
 - **Password changes:** need the current password and an active session. If two changes race, only one succeeds, and only that one signs out the person's other sessions. A signed-out or expired session cannot change a password.
 - **No double booking:** the server checks priest, venue and preparation/cleanup time, and inserts the appointment in the same SQL statement. A clashing request gets HTTP 409.
-- **Documents:** stored privately with a SHA-256 checksum. The server checks size (10 MB) and the file's real PDF/JPEG/PNG signature, not just its name, rejects PDFs with active content (scripts, launch actions, embedded files), and allows 20 uploads per hour per account. In production mode, uploads are refused until a malware scanner is configured.
+- **Documents:** stored privately with a SHA-256 checksum. The server checks size (10 MB) and the file's real PDF/JPEG/PNG signature, not just its name, rejects PDFs with active content (scripts, launch actions, embedded files), and allows 20 uploads per hour per account. In production mode, uploads are refused until a malware scanner is configured. The only exception is a server marked `DEMO_DEPLOYMENT=true` (fictional data only): it accepts uploads that pass the checks above without a scanner, and its `/ready` response says so (`"deployment": "demo-fictional-data-only"`, `"documentScanner": "demo-deployment-prefilter-only"`). The setting is off unless set to exactly `true`.
 - **Rate limits:** sign-in 30 per 15 minutes per address (staff and mobile), sign-up 8 per hour, mobile password change 5 per 15 minutes, plus limits on account-email codes, availability, bookings, changes, queue, assistant and push registration. Not rate-limited yet: staff password change, temporary passwords and report exports.
 - **Report exports:** **Export CSV** contains every matching appointment (up to 5,000; otherwise narrow the filters) and states the matching count and the row count. Report generation and exports are not audit-logged yet.
 - **Audit history cannot be edited.** Database triggers block every UPDATE and DELETE on `audit_logs` and `appointment_events`.
@@ -120,13 +120,13 @@ The full list (staff for every parish, more clergy and parishioners) is in [`doc
 - **Retries are safe:** appointment and queue requests carry an idempotency key, so a retried request never creates a duplicate.
 - **Assistant boundaries:** the assistant cannot approve, verify or change anything. Questions about a user's own requests, documents or queue ticket are answered only from the database. Gemini is used only when the server is configured for it and the user has allowed it, and it receives only general public questions.
 
-## Verification (17 November 2026, local)
+## Verification (18 November 2026, local)
 
 | Check | Result |
 |---|---|
 | Admin TypeScript and ESLint | 0 errors, 0 warnings |
-| Admin unit and integration tests | 366 passed (26 files) |
-| Security regression suite | 113/113 passed |
+| Admin unit and integration tests | 374 passed (27 files) |
+| Security regression suite | 121/121 passed |
 | Migration validation | 9 files, 30 tables, 56 indexes; integrity and foreign keys valid |
 | Provider Worker compatibility | 9/9 passed (synthetic responses, no external traffic) |
 | Account Worker route checks | 39/39 passed |
