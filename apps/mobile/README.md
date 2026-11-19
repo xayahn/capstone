@@ -45,6 +45,22 @@ npx eas-cli update --branch demo --environment preview --message "ParishLink par
 
 Open the update from its QR code or link on the Expo dashboard. On iPhone, Expo Go must be signed in to an Expo account that can access the project. The demonstration has no staff portal and keeps its fictional data on the phone.
 
+### Web version (for survey respondents)
+
+The same app can be exported as a website so respondents can use it in Safari or Chrome without installing anything or signing in to Expo. It talks to the hosted server, so it uses real accounts and appears in the staff portal.
+
+```powershell
+$env:EXPO_NO_DOTENV = '1'
+$env:EXPO_PUBLIC_APP_ENV = 'preview'
+$env:EXPO_PUBLIC_DEMO_MODE = 'false'
+$env:EXPO_PUBLIC_API_BASE_URL = 'https://<server>/api'
+npx expo export --platform web --output-dir web-build
+node scripts/prepare-web-deploy.mjs            # checks the bundle, writes security headers
+node ../admin/node_modules/wrangler/bin/wrangler.js deploy --config wrangler.web.json
+```
+
+The server must list the web app's address in `MOBILE_ALLOWED_ORIGINS` (exact HTTPS origin); other browser origins stay blocked. In the browser the session token is kept in browser storage (on phones it is kept in the device's protected store), and push alerts are not available; updates appear inside the app.
+
 ## How it talks to the server
 
 Screens never call the network directly. They use `src/repositories/parishLinkRepository.ts`, which uses `src/api/mobileApiClient.ts` for authentication headers, timeouts, cancellation and safe error messages. Session tokens are kept in Expo SecureStore on phones (AsyncStorage only in the web preview).
